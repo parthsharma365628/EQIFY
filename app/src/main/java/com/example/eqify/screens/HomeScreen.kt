@@ -1,5 +1,4 @@
-package com.example.eqify.screens
-
+package com.example.eqify
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -14,11 +13,20 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.eqify.ui.theme.*
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.eqify.HomeViewModel
 
 @Composable
-fun HomeScreen(onNavigateToHeadphones: () -> Unit = {}) {
+fun HomeScreen(
+    onNavigateToHeadphones: () -> Unit = {},
+    viewModel: HomeViewModel = viewModel()
+) {
     var autoEqEnabled by remember { mutableStateOf(true) }
+
+    // These pull the live data directly from your updated ViewModel!
+    val trackName by viewModel.currentTrack.collectAsState()
+    val artistName by viewModel.currentArtist.collectAsState()
+    val detectedGenre by viewModel.currentGenre.collectAsState()
 
     Column(
         modifier = Modifier
@@ -27,20 +35,25 @@ fun HomeScreen(onNavigateToHeadphones: () -> Unit = {}) {
             .verticalScroll(rememberScrollState())
     ) {
         TopBar()
+
         NowPlayingCard(
-            trackName = "INDUSTRY BABY",
-            artistName = "Lil Nas X, Jack Harlow",
-            genre = "Hip-Hop"
+            trackName = trackName,
+            artistName = artistName,
+            genre = detectedGenre
         )
+
         EqStatusCard(
             enabled = autoEqEnabled,
             onToggle = { autoEqEnabled = it }
         )
+
         HeadphoneCard(
             headphoneName = "Sony WH-1000XM5",
             onChangeClick = onNavigateToHeadphones
         )
-        QuickPresets(activePreset = "Hip-Hop")
+
+        QuickPresets(activePreset = detectedGenre)
+
         Spacer(modifier = Modifier.height(16.dp))
     }
 }
@@ -134,7 +147,7 @@ fun EqStatusCard(enabled: Boolean, onToggle: (Boolean) -> Unit) {
                     letterSpacing = 1.5.sp
                 )
                 Text(
-                    text = if (enabled) "Active — Hip-Hop profile" else "Disabled",
+                    text = if (enabled) "Active — Auto profile" else "Disabled",
                     fontSize = 12.sp,
                     color = if (enabled) AccentPurpleLight else TextSecondary,
                     fontWeight = FontWeight.SemiBold

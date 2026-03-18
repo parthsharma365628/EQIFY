@@ -1,4 +1,4 @@
-package com.example.eqify.ui.theme
+package com.example.eqify
 
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.MaterialTheme

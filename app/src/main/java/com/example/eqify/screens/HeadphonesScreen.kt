@@ -1,4 +1,4 @@
-package com.example.eqify.screens
+package com.example.eqify
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background

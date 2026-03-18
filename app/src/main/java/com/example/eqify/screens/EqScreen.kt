@@ -1,4 +1,4 @@
-package com.example.eqify.screens
+package com.example.eqify
 
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
