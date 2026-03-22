@@ -1,55 +1,105 @@
 package com.example.eqify
 
-import androidx.lifecycle.ViewModel
+import android.app.Application
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-// Keep your existing imports
-import com.example.eqify.GenreRequest
-import com.example.eqify.RetrofitClient
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 
-class HomeViewModel : ViewModel() {
+class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
-    // Holds the currently detected genre
-    private val _currentGenre = MutableStateFlow("Detecting...")
-    val currentGenre: StateFlow<String> = _currentGenre.asStateFlow()
+    private val repository = (application as EqifyApplication).repository
 
-    // 1. Point these directly to our live bridge!
-    val currentTrack = NowPlayingState.track
-    val currentArtist = NowPlayingState.artist
+    private val _genreUiState = MutableStateFlow<GenreUiState>(GenreUiState.Idle)
+    val genreUiState: StateFlow<GenreUiState> = _genreUiState.asStateFlow()
+
+    val currentTrack         = NowPlayingState.track
+    val currentArtist        = NowPlayingState.artist
+    val selectedHeadphone    = NowPlayingState.selectedHeadphone
+    val mediaListenerEnabled = NowPlayingState.mediaListenerEnabled
 
     init {
-        // 2. Listen for changes from the Service continuously
         viewModelScope.launch {
-            // Whenever the track changes in NowPlayingState, this block runs automatically
-            NowPlayingState.track.collect { newTrack ->
-                // Don't fetch the genre if it's just the placeholder text
-                if (newTrack != "Waiting for music..." && newTrack.isNotBlank()) {
-                    _currentGenre.value = "Detecting..." // Reset UI while fetching
+            combine(
+                NowPlayingState.track,
+                NowPlayingState.artist,
+                repository.autoGenreDetection
+            ) { track, artist, autoGenreOn -> Triple(track, artist, autoGenreOn) }
+                .collect { (newTrack, newArtist, autoGenreOn) ->
+                    val listenerOn = NowPlayingState.mediaListenerEnabled.value
+                    val isPlaying  = newTrack != "Waiting for music…" && newTrack.isNotBlank()
 
-                    // Trigger the API call with the LIVE data
-                    fetchGenreForCurrentTrack(newTrack, NowPlayingState.artist.value)
+                    when {
+                        listenerOn && isPlaying && autoGenreOn && newArtist.isBlank() -> {
+                            _genreUiState.value = GenreUiState.Detecting
+                            NowPlayingState.updateCurrentGenre("")
+                        }
+                        listenerOn && isPlaying && autoGenreOn && newArtist.isNotBlank() -> {
+                            _genreUiState.value = GenreUiState.Detecting
+                            fetchGenre(newTrack, newArtist)
+                        }
+                        listenerOn && isPlaying && !autoGenreOn -> {
+                            NowPlayingState.updateCurrentGenre("")
+                            _genreUiState.value = GenreUiState.DetectionOff
+                        }
+                        else -> {
+                            _genreUiState.value = GenreUiState.Idle
+                            NowPlayingState.updateCurrentGenre("")
+                        }
+                    }
                 }
-            }
         }
     }
 
-    // 3. Updated this function to accept the live track/artist as arguments
-    private fun fetchGenreForCurrentTrack(track: String, artist: String) {
+    fun setEqEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            EqState.setEnabled(enabled)
+            repository.setEqEnabled(enabled)
+        }
+    }
+
+    // ── Bass boost ────────────────────────────────────────────────────
+    // Sets the level in EqState (picked up by EqProcessingService via combine)
+    // and persists it so it survives app restarts.
+
+    fun setBassBoost(level: Float) {
+        viewModelScope.launch {
+            EqState.setBassBoost(level)
+            repository.setBassBoostLevel(level)
+        }
+    }
+
+    private fun fetchGenre(track: String, artist: String) {
         viewModelScope.launch {
             try {
-                // Call our Node.js backend!
-                val request = GenreRequest(track, artist)
-                val response = RetrofitClient.apiService.resolveGenre(request)
-
-                // Update the UI with the result
-                _currentGenre.value = response.genre
+                val response = RetrofitClient.apiService.resolveGenre(
+                    GenreRequest(
+                        track  = track.trim(),
+                        artist = cleanArtistString(artist)
+                    )
+                )
+                NowPlayingState.updateCurrentGenre(response.genre)
+                _genreUiState.value = GenreUiState.Detected(response.genre)
             } catch (e: Exception) {
-                _currentGenre.value = "Unknown"
                 e.printStackTrace()
+                val local = LocalGenreDetector.detect(track, artist)
+                NowPlayingState.updateCurrentGenre(local)
+                _genreUiState.value = GenreUiState.Detected(local)
             }
         }
     }
+
+    private fun cleanArtistString(raw: String): String =
+        raw.substringBefore("•").substringBefore("·").trim()
+}
+
+sealed class GenreUiState {
+    object Idle         : GenreUiState()
+    object Detecting    : GenreUiState()
+    object DetectionOff : GenreUiState()
+    data class Detected(val genre: String) : GenreUiState()
+    object Error        : GenreUiState()
 }
