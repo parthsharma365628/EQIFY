@@ -1,7 +1,6 @@
 package com.example.eqify
 
 import android.Manifest
-import android.content.Context.RECEIVER_EXPORTED
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
@@ -33,7 +32,6 @@ class MainActivity : ComponentActivity() {
         ActivityResultContracts.RequestPermission()
     ) { granted ->
         android.util.Log.d("MainActivity", "BLUETOOTH_CONNECT granted=$granted")
-        if (granted) BluetoothHeadphoneDetector.preloadHeadphoneNames()
     }
 
     // ── Lifecycle ─────────────────────────────────────────────────────
@@ -46,58 +44,24 @@ class MainActivity : ComponentActivity() {
             notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
 
-        // Register Spotify / YouTube Music audio session receiver
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(
-                EqEngine.sessionReceiver,
-                EqEngine.getSessionIntentFilter(),
-                RECEIVER_EXPORTED
-            )
-        } else {
-            registerReceiver(
-                EqEngine.sessionReceiver,
-                EqEngine.getSessionIntentFilter()
-            )
-        }
-
-        // Register Bluetooth headphone auto-detection receiver
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(
-                BluetoothHeadphoneDetector.receiver,
-                BluetoothHeadphoneDetector.getIntentFilter(),
-                RECEIVER_EXPORTED
-            )
-        } else {
-            registerReceiver(
-                BluetoothHeadphoneDetector.receiver,
-                BluetoothHeadphoneDetector.getIntentFilter()
-            )
-        }
+        // Audio session + Bluetooth receivers live on [EqifyApplication] so they survive
+        // activity destruction when the user switches to a music app.
 
         // Request BLUETOOTH_CONNECT permission (Android 12+) for reading device names
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            if (ContextCompat.checkSelfPermission(
-                    this, Manifest.permission.BLUETOOTH_CONNECT
-                ) == PackageManager.PERMISSION_GRANTED
-            ) {
-                BluetoothHeadphoneDetector.preloadHeadphoneNames()
-            } else {
-                bluetoothPermissionLauncher.launch(Manifest.permission.BLUETOOTH_CONNECT)
-            }
-        } else {
-            // Android < 12 — BLUETOOTH permission is install-time, no runtime request
-            BluetoothHeadphoneDetector.preloadHeadphoneNames()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+            ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.BLUETOOTH_CONNECT
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            bluetoothPermissionLauncher.launch(Manifest.permission.BLUETOOTH_CONNECT)
         }
 
         // Start foreground EQ service
         val serviceIntent = Intent(this, EqProcessingService::class.java).apply {
             action = EqProcessingService.ACTION_START
         }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            startForegroundService(serviceIntent)
-        } else {
-            startService(serviceIntent)
-        }
+        startForegroundService(serviceIntent)
 
         setContent {
             EQifyTheme {
@@ -106,12 +70,8 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    override fun onDestroy() {
-        super.onDestroy()
-        unregisterReceiver(EqEngine.sessionReceiver)
-        unregisterReceiver(BluetoothHeadphoneDetector.receiver)
-        EqEngine.releaseEqualizer()
-    }
+    // Do not unregister global receivers or release [EqEngine] here — the foreground
+    // [EqProcessingService] keeps EQ active while the user listens in other apps.
 }
 
 // ── Navigation ────────────────────────────────────────────────────────

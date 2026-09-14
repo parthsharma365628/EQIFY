@@ -19,6 +19,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.eqify.ui.theme.*
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -33,8 +34,11 @@ class HeadphonesViewModel(application: Application) : AndroidViewModel(applicati
     private val _results = MutableStateFlow<List<HeadphoneResult>>(emptyList())
     val results: StateFlow<List<HeadphoneResult>> = _results.asStateFlow()
 
-    private val _isLoading = MutableStateFlow(false)
+    private val _isLoading = MutableStateFlow(true)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
+
+    private val _errorMessage = MutableStateFlow<String?>(null)
+    val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
 
     private val _localSelectedHeadphone = MutableStateFlow(NowPlayingState.selectedHeadphone.value)
     val localSelectedHeadphone: StateFlow<String> = _localSelectedHeadphone.asStateFlow()
@@ -49,24 +53,29 @@ class HeadphonesViewModel(application: Application) : AndroidViewModel(applicati
             searchQuery
                 .debounce(300)
                 .distinctUntilChanged()
-                .collect { query -> searchHeadphones(query) }
+                .collectLatest { query -> searchHeadphones(query) }
         }
-        searchHeadphones("")
     }
 
-    private fun searchHeadphones(query: String) {
-        viewModelScope.launch {
-            _isLoading.value = true
-            try {
-                val response = RetrofitClient.apiService.getHeadphones(query)
-                _results.value = response.map { HeadphoneResult(name = it.name, type = it.type) }
-            } catch (e: Exception) {
-                _results.value = emptyList()
-                e.printStackTrace()
-            } finally {
-                _isLoading.value = false
-            }
+    private suspend fun searchHeadphones(query: String) {
+        _isLoading.value = true
+        _errorMessage.value = null
+        try {
+            val response = RetrofitClient.apiService.getHeadphones(query)
+            _results.value = response.map { HeadphoneResult(name = it.name, type = it.type) }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            _results.value = emptyList()
+            _errorMessage.value =
+                "Cannot reach the headphone database. Start the EQify backend and try again."
+        } finally {
+            _isLoading.value = false
         }
+    }
+
+    fun retry() {
+        viewModelScope.launch { searchHeadphones(searchQuery.value) }
     }
 
     fun selectHeadphoneLocally(name: String) { _localSelectedHeadphone.value = name }
@@ -82,10 +91,10 @@ class HeadphonesViewModel(application: Application) : AndroidViewModel(applicati
 
     fun saveCustomHeadphone(name: String) {
         viewModelScope.launch {
-            repository.saveCustomHeadphone(name, emptyMap())
-            repository.setSelectedHeadphone(name)
-            NowPlayingState.updateSelectedHeadphone(name)
-            selectHeadphoneLocally(name)
+            val trimmedName = name.trim()
+            repository.setSelectedHeadphone(trimmedName)
+            NowPlayingState.updateSelectedHeadphone(trimmedName)
+            selectHeadphoneLocally(trimmedName)
             _showCustomDialog.value = false
         }
     }
@@ -99,6 +108,7 @@ fun HeadphonesScreen(
 ) {
     val results by vm.results.collectAsState()
     val isLoading by vm.isLoading.collectAsState()
+    val errorMessage by vm.errorMessage.collectAsState()
     val localSelectedHeadphone by vm.localSelectedHeadphone.collectAsState()
     val searchQuery by vm.searchQuery.collectAsState()
     val showCustomDialog by vm.showCustomDialog.collectAsState()
@@ -139,7 +149,7 @@ fun HeadphonesScreen(
                     )
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        "After adding, go to the EQ screen and use Save to set custom values for each genre preset.",
+                        "Custom headphones use flat correction. Adjust the tone from the EQ screen.",
                         color = TextSecondary,
                         fontSize = 11.sp
                     )
@@ -258,8 +268,27 @@ fun HeadphonesScreen(
                     }
                 }
                 results.isEmpty() -> {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text("No headphones found", color = TextSecondary, fontSize = 13.sp)
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(24.dp),
+                        verticalArrangement = Arrangement.Center,
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            errorMessage ?: "No headphones found",
+                            color = TextSecondary,
+                            fontSize = 13.sp
+                        )
+                        if (errorMessage != null) {
+                            Spacer(Modifier.height(12.dp))
+                            Button(
+                                onClick = { vm.retry() },
+                                colors = ButtonDefaults.buttonColors(containerColor = AccentPurple)
+                            ) {
+                                Text("Retry")
+                            }
+                        }
                     }
                 }
                 else -> {
@@ -302,7 +331,7 @@ fun HeadphonesScreen(
                                             color = AccentPurpleLight
                                         )
                                         Text(
-                                            "Set manual EQ for each genre",
+                                            "Use a manually named flat profile",
                                             fontSize = 10.sp,
                                             color = TextSecondary
                                         )

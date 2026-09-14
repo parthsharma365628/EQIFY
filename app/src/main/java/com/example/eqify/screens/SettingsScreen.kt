@@ -20,6 +20,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
@@ -45,6 +46,10 @@ fun SettingsScreen(
     val forceMono          by vm.forceMono.collectAsState(initial = false)
     val mediaListenerEnabled  by vm.mediaListenerEnabled.collectAsState(initial = true)
     val headphoneAutoDetect   by vm.headphoneAutoDetect.collectAsState(initial = true)
+    val savedLastFmApiKey     by vm.lastFmApiKey.collectAsState(initial = "")
+    var lastFmApiKeyDraft by remember(savedLastFmApiKey) {
+        mutableStateOf(savedLastFmApiKey)
+    }
 
     // ── Runtime / permission state ────────────────────────────────────
     var isPermissionGranted by remember { mutableStateOf(isNotificationServiceEnabled(context)) }
@@ -185,6 +190,44 @@ fun SettingsScreen(
                     checked  = headphoneAutoDetect,
                     onCheckedChange = { vm.setHeadphoneAutoDetect(it) }
                 )
+            }
+
+            SettingsGroup(title = "GENRE SERVICE") {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = "Last.fm API key",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = TextPrimary
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = lastFmApiKeyDraft,
+                        onValueChange = { lastFmApiKeyDraft = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        placeholder = { Text("Paste your Last.fm API key") },
+                        visualTransformation = PasswordVisualTransformation(),
+                        supportingText = {
+                            Text("Optional. Sent only to Last.fm over HTTPS.")
+                        }
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End
+                    ) {
+                        if (lastFmApiKeyDraft.isNotEmpty()) {
+                            TextButton(onClick = {
+                                lastFmApiKeyDraft = ""
+                                vm.setLastFmApiKey("")
+                            }) { Text("Clear", color = TextSecondary) }
+                        }
+                        TextButton(
+                            enabled = lastFmApiKeyDraft.trim() != savedLastFmApiKey,
+                            onClick = { vm.setLastFmApiKey(lastFmApiKeyDraft) }
+                        ) { Text("Save", color = AccentPurpleLight) }
+                    }
+                }
             }
 
             // ── Feedback ──────────────────────────────────────────────
