@@ -47,6 +47,7 @@ fun SettingsScreen(
     val mediaListenerEnabled  by vm.mediaListenerEnabled.collectAsState(initial = true)
     val headphoneAutoDetect   by vm.headphoneAutoDetect.collectAsState(initial = true)
     val savedLastFmApiKey     by vm.lastFmApiKey.collectAsState(initial = "")
+    val cacheMessage          by vm.cacheMessage.collectAsState()
     var lastFmApiKeyDraft by remember(savedLastFmApiKey) {
         mutableStateOf(savedLastFmApiKey)
     }
@@ -54,6 +55,7 @@ fun SettingsScreen(
     // ── Runtime / permission state ────────────────────────────────────
     var isPermissionGranted by remember { mutableStateOf(isNotificationServiceEnabled(context)) }
     var showPermissionDialog by remember { mutableStateOf(false) }
+    var showClearCacheDialog by remember { mutableStateOf(false) }
 
     // Refresh permission state when user returns from the system settings screen
     DisposableEffect(lifecycleOwner) {
@@ -92,6 +94,45 @@ fun SettingsScreen(
             dismissButton = {
                 TextButton(onClick = { showPermissionDialog = false }) {
                     Text("Cancel", color = TextSecondary)
+                }
+            },
+            containerColor = Surface2Dark
+        )
+    }
+
+    if (showClearCacheDialog) {
+        AlertDialog(
+            onDismissRequest = { showClearCacheDialog = false },
+            title = { Text("Clear downloaded corrections?", color = TextPrimary) },
+            text = {
+                Text(
+                    "Selected AutoEQ corrections will be downloaded again when needed.",
+                    color = TextSecondary
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showClearCacheDialog = false
+                    vm.clearDownloadedCorrections()
+                }) { Text("Clear", color = AccentPurpleLight) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showClearCacheDialog = false }) {
+                    Text("Cancel", color = TextSecondary)
+                }
+            },
+            containerColor = Surface2Dark
+        )
+    }
+
+    cacheMessage?.let { message ->
+        AlertDialog(
+            onDismissRequest = vm::dismissCacheMessage,
+            title = { Text("AutoEQ cache", color = TextPrimary) },
+            text = { Text(message, color = TextSecondary) },
+            confirmButton = {
+                TextButton(onClick = vm::dismissCacheMessage) {
+                    Text("OK", color = AccentPurpleLight)
                 }
             },
             containerColor = Surface2Dark
@@ -247,6 +288,11 @@ fun SettingsScreen(
             // ── About ─────────────────────────────────────────────────
             SettingsGroup(title = "ABOUT") {
                 SimpleSettingsItem(
+                    title = "Clear downloaded corrections",
+                    subtitle = "Remove locally cached AutoEQ curves",
+                    onClick = { showClearCacheDialog = true }
+                )
+                SimpleSettingsItem(
                     title    = "Version",
                     subtitle = "1.0.0 (Beta)",
                     onClick  = {}
@@ -255,6 +301,12 @@ fun SettingsScreen(
                     title    = "AutoEQ Database",
                     subtitle = "Served from EQify backend + on-device cache",
                     onClick  = {}
+                )
+                SimpleSettingsItem(
+                    title = "Privacy",
+                    subtitle = "Song title and artist may be sent to the genre service. " +
+                        "Headphone correction is fetched only after a headphone is selected.",
+                    onClick = {}
                 )
             }
         }

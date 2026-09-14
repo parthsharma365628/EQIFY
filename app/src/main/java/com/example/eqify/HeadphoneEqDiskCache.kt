@@ -61,4 +61,17 @@ object HeadphoneEqDiskCache {
         root.put(keyFor(headphoneName), arr)
         writeAll(ctx, root)
     }
+
+    fun entryCount(ctx: Context): Int = loadAll(ctx).length()
+
+    /** Removes only downloaded AutoEQ correction curves. */
+    fun clear(ctx: Context): Int {
+        val count = entryCount(ctx)
+        val cacheFile = file(ctx)
+        if (cacheFile.exists() && !cacheFile.delete()) {
+            Log.w(TAG, "Failed to delete correction cache")
+            return -1
+        }
+        return count
+    }
 }

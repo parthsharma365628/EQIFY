@@ -42,6 +42,7 @@ fun HomeScreen(
     val activePreset         by EqState.activePresetName.collectAsState()
     val serviceRunning       by EqState.isServiceRunning.collectAsState()
     val wiredConnected       by BluetoothHeadphoneDetector.wiredConnected.collectAsState()
+    val testToneMessage      by viewModel.testToneMessage.collectAsState()
 
     Column(
         modifier = Modifier
@@ -73,7 +74,9 @@ fun HomeScreen(
             enabled        = isEqEnabled,
             activePreset   = activePreset,
             serviceRunning = serviceRunning,
-            onToggle       = { viewModel.setEqEnabled(it) }
+            testToneMessage = testToneMessage,
+            onToggle       = { viewModel.setEqEnabled(it) },
+            onTestEq       = viewModel::playEqTestTone
         )
 
         HeadphoneCard(
@@ -259,7 +262,7 @@ fun NowPlayingCard(trackName: String, artistName: String, genreUiState: GenreUiS
             Spacer(Modifier.height(10.dp))
             when (genreUiState) {
                 is GenreUiState.Detecting    -> DetectingChip()
-                is GenreUiState.Detected     -> GenreChip(genre = genreUiState.genre)
+                is GenreUiState.Detected     -> GenreChip(state = genreUiState)
                 is GenreUiState.DetectionOff -> DetectionOffChip()
                 is GenreUiState.Error        -> ErrorChip()
                 is GenreUiState.Idle         -> {}
@@ -269,15 +272,22 @@ fun NowPlayingCard(trackName: String, artistName: String, genreUiState: GenreUiS
 }
 
 @Composable
-private fun GenreChip(genre: String) {
+private fun GenreChip(state: GenreUiState.Detected) {
     AnimatedVisibility(visible = true, enter = fadeIn(), exit = fadeOut()) {
         Surface(shape = RoundedCornerShape(20.dp), color = AccentPurple.copy(alpha = 0.15f)) {
-            Text(
-                text     = "● $genre",
-                fontSize = 10.sp,
-                color    = AccentPurpleLight,
-                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-            )
+            Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)) {
+                Text(
+                    text = "● ${state.genre}",
+                    fontSize = 10.sp,
+                    color = AccentPurpleLight
+                )
+                Text(
+                    text = "Source: ${state.source} • Confidence: ${state.confidence}" +
+                        if (state.isFallback) " • fallback" else "",
+                    fontSize = 9.sp,
+                    color = TextSecondary
+                )
+            }
         }
     }
 }
@@ -332,7 +342,9 @@ fun EqStatusCard(
     enabled: Boolean,
     activePreset: String,
     serviceRunning: Boolean,
-    onToggle: (Boolean) -> Unit
+    testToneMessage: String?,
+    onToggle: (Boolean) -> Unit,
+    onTestEq: () -> Unit
 ) {
     Card(
         modifier = Modifier
@@ -341,12 +353,13 @@ fun EqStatusCard(
         shape  = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = Surface2Dark)
     ) {
-        Row(
-            modifier              = Modifier.fillMaxWidth().padding(16.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment     = Alignment.CenterVertically
-        ) {
-            Column {
+        Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
                 Text(
                     text          = "AUTO EQ",
                     fontSize      = 10.sp,
@@ -364,14 +377,27 @@ fun EqStatusCard(
                     fontWeight = FontWeight.SemiBold
                 )
             }
-            Switch(
-                checked         = enabled,
-                onCheckedChange = onToggle,
-                colors          = SwitchDefaults.colors(
-                    checkedThumbColor = Color.White,
-                    checkedTrackColor = AccentPurple
+                Switch(
+                    checked = enabled,
+                    onCheckedChange = onToggle,
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = Color.White,
+                        checkedTrackColor = AccentPurple
+                    )
                 )
-            )
+            }
+            Spacer(Modifier.height(8.dp))
+            OutlinedButton(
+                onClick = onTestEq,
+                enabled = serviceRunning && testToneMessage != "Playing test sound...",
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    testToneMessage ?: "Test EQ",
+                    fontSize = 11.sp,
+                    color = if (serviceRunning) AccentPurpleLight else TextSecondary
+                )
+            }
         }
     }
 }

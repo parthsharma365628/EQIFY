@@ -3,6 +3,14 @@ package com.example.eqify
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
+sealed class HeadphoneCorrectionStatus {
+    object Idle : HeadphoneCorrectionStatus()
+    data class Loading(val headphoneName: String) : HeadphoneCorrectionStatus()
+    data class Downloaded(val headphoneName: String) : HeadphoneCorrectionStatus()
+    data class Cached(val headphoneName: String) : HeadphoneCorrectionStatus()
+    data class Unavailable(val headphoneName: String) : HeadphoneCorrectionStatus()
+}
+
 /**
  * Central state bus for EQify's EQ engine.
  *
@@ -71,6 +79,10 @@ object EqState {
     private val _currentHeadphoneCorrection = MutableStateFlow(FloatArray(8))
     val currentHeadphoneCorrection = _currentHeadphoneCorrection.asStateFlow()
 
+    private val _headphoneCorrectionStatus =
+        MutableStateFlow<HeadphoneCorrectionStatus>(HeadphoneCorrectionStatus.Idle)
+    val headphoneCorrectionStatus = _headphoneCorrectionStatus.asStateFlow()
+
     // ── Bass boost ────────────────────────────────────────────────────
     private val _bassBoostLevel = MutableStateFlow(0f)
     val bassBoostLevel = _bassBoostLevel.asStateFlow()
@@ -90,6 +102,10 @@ object EqState {
 
     fun updateHeadphoneCorrection(correction: FloatArray) {
         _currentHeadphoneCorrection.value = correction.copyOf()
+    }
+
+    fun updateHeadphoneCorrectionStatus(status: HeadphoneCorrectionStatus) {
+        _headphoneCorrectionStatus.value = status
     }
 
     // ── Compound setters ──────────────────────────────────────────────

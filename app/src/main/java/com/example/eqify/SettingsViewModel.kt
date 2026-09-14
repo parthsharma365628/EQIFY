@@ -1,8 +1,12 @@
 package com.example.eqify
 
 import android.app.Application
+import android.content.Intent
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
 /**
@@ -32,6 +36,9 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     val mediaListenerEnabled = repository.mediaListenerEnabled
     val headphoneAutoDetect  = repository.headphoneAutoDetect
     val lastFmApiKey          = repository.lastFmApiKey
+
+    private val _cacheMessage = MutableStateFlow<String?>(null)
+    val cacheMessage = _cacheMessage.asStateFlow()
 
     // ── Write methods ─────────────────────────────────────────────────
 
@@ -80,5 +87,26 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     fun setLastFmApiKey(apiKey: String) {
         viewModelScope.launch { repository.setLastFmApiKey(apiKey) }
+    }
+
+    fun clearDownloadedCorrections() {
+        val app = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.IO) {
+            val count = HeadphoneEqDiskCache.clear(app)
+            app.startService(
+                Intent(app, EqProcessingService::class.java).apply {
+                    action = EqProcessingService.ACTION_CLEAR_HEADPHONE_CACHE
+                }
+            )
+            _cacheMessage.value = when {
+                count < 0 -> "Could not clear downloaded corrections."
+                count == 0 -> "No downloaded corrections to clear."
+                else -> "Cleared $count downloaded correction${if (count == 1) "" else "s"}."
+            }
+        }
+    }
+
+    fun dismissCacheMessage() {
+        _cacheMessage.value = null
     }
 }

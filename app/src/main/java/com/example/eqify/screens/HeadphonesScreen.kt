@@ -67,8 +67,7 @@ class HeadphonesViewModel(application: Application) : AndroidViewModel(applicati
             throw e
         } catch (_: Exception) {
             _results.value = emptyList()
-            _errorMessage.value =
-                "Cannot reach the headphone database. Start the EQify backend and try again."
+            _errorMessage.value = "Server unavailable"
         } finally {
             _isLoading.value = false
         }
@@ -112,6 +111,22 @@ fun HeadphonesScreen(
     val localSelectedHeadphone by vm.localSelectedHeadphone.collectAsState()
     val searchQuery by vm.searchQuery.collectAsState()
     val showCustomDialog by vm.showCustomDialog.collectAsState()
+    val correctionStatus by EqState.headphoneCorrectionStatus.collectAsState()
+    val correctionStatusText = when (val status = correctionStatus) {
+        is HeadphoneCorrectionStatus.Loading ->
+            if (status.headphoneName == localSelectedHeadphone) "Downloading correction..."
+            else null
+        is HeadphoneCorrectionStatus.Downloaded ->
+            if (status.headphoneName == localSelectedHeadphone) "Correction downloaded and saved"
+            else null
+        is HeadphoneCorrectionStatus.Cached ->
+            if (status.headphoneName == localSelectedHeadphone) "Using cached correction"
+            else null
+        is HeadphoneCorrectionStatus.Unavailable ->
+            if (status.headphoneName == localSelectedHeadphone) "Correction unavailable - using flat EQ"
+            else null
+        HeadphoneCorrectionStatus.Idle -> null
+    }
 
     if (showCustomDialog) {
         var customName by remember { mutableStateOf("") }
@@ -256,6 +271,14 @@ fun HeadphonesScreen(
                                 fontWeight = FontWeight.SemiBold,
                                 color = TextPrimary
                             )
+                            correctionStatusText?.let { statusText ->
+                                Text(
+                                    statusText,
+                                    fontSize = 10.sp,
+                                    color = if (statusText == "Using cached correction")
+                                        NeonCyan else TextSecondary
+                                )
+                            }
                         }
                     }
                 }
@@ -263,8 +286,14 @@ fun HeadphonesScreen(
 
             when {
                 isLoading -> {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Column(
+                        Modifier.fillMaxSize(),
+                        verticalArrangement = Arrangement.Center,
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
                         CircularProgressIndicator(color = AccentPurple)
+                        Spacer(Modifier.height(12.dp))
+                        Text("Searching...", color = TextSecondary, fontSize = 13.sp)
                     }
                 }
                 results.isEmpty() -> {
@@ -276,7 +305,7 @@ fun HeadphonesScreen(
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Text(
-                            errorMessage ?: "No headphones found",
+                            errorMessage ?: "No matches",
                             color = TextSecondary,
                             fontSize = 13.sp
                         )

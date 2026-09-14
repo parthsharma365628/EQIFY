@@ -30,6 +30,8 @@ class EqProcessingService : Service() {
         const val ACTION_START    = "com.example.eqify.ACTION_START"
         const val ACTION_STOP     = "com.example.eqify.ACTION_STOP"
         const val ACTION_TOGGLE   = "com.example.eqify.ACTION_TOGGLE"
+        const val ACTION_CLEAR_HEADPHONE_CACHE =
+            "com.example.eqify.ACTION_CLEAR_HEADPHONE_CACHE"
         private const val LIMIT_OUTPUT_GAIN_DB = 6f
     }
 
@@ -74,6 +76,10 @@ class EqProcessingService : Service() {
                 serviceScope.launch {
                     (application as EqifyApplication).repository.setEqEnabled(enabled)
                 }
+            }
+            ACTION_CLEAR_HEADPHONE_CACHE -> {
+                headphoneEqCache.clear()
+                EqState.updateHeadphoneCorrectionStatus(HeadphoneCorrectionStatus.Idle)
             }
         }
         return START_STICKY
@@ -252,21 +258,38 @@ class EqProcessingService : Service() {
 
     // ── Headphone correction ──────────────────────────────────────────
     private suspend fun resolveHeadphoneCorrection(headphoneName: String): FloatArray {
-        headphoneEqCache[headphoneName]?.let { return it }
+        EqState.updateHeadphoneCorrectionStatus(
+            HeadphoneCorrectionStatus.Loading(headphoneName)
+        )
+        headphoneEqCache[headphoneName]?.let {
+            EqState.updateHeadphoneCorrectionStatus(
+                HeadphoneCorrectionStatus.Cached(headphoneName)
+            )
+            return it
+        }
 
         HeadphoneEqDiskCache.load(this, headphoneName)?.let {
             headphoneEqCache[headphoneName] = it
+            EqState.updateHeadphoneCorrectionStatus(
+                HeadphoneCorrectionStatus.Cached(headphoneName)
+            )
             return it
         }
 
         val apiResult = fetchHeadphoneEqFromApi(headphoneName)
         if (apiResult == null) {
             Log.w(TAG, "HP EQ not found for '$headphoneName' — using flat until retry")
+            EqState.updateHeadphoneCorrectionStatus(
+                HeadphoneCorrectionStatus.Unavailable(headphoneName)
+            )
             return FloatArray(8)
         }
 
         headphoneEqCache[headphoneName] = apiResult
         HeadphoneEqDiskCache.save(this, headphoneName, apiResult)
+        EqState.updateHeadphoneCorrectionStatus(
+            HeadphoneCorrectionStatus.Downloaded(headphoneName)
+        )
         Log.d(TAG, "HP EQ cached: $headphoneName → ${apiResult.map { "%.1f".format(it) }}")
         return apiResult
     }

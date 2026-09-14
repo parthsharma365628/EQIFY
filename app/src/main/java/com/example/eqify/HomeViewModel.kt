@@ -23,6 +23,9 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     val selectedHeadphone    = NowPlayingState.selectedHeadphone
     val mediaListenerEnabled = NowPlayingState.mediaListenerEnabled
 
+    private val _testToneMessage = MutableStateFlow<String?>(null)
+    val testToneMessage: StateFlow<String?> = _testToneMessage.asStateFlow()
+
     init {
         viewModelScope.launch {
             combine(
@@ -80,11 +83,29 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun playEqTestTone() {
+        if (_testToneMessage.value == "Playing test sound...") return
+        _testToneMessage.value = "Playing test sound..."
+        viewModelScope.launch {
+            val played = EqTestTonePlayer.play()
+            _testToneMessage.value = if (played) {
+                "Test complete: low, mid, and high tones"
+            } else {
+                "Test sound unavailable on this device"
+            }
+        }
+    }
+
     private suspend fun resolveGenre(track: String, artist: String, lastFmApiKey: String) {
         val cleanArtist = cleanArtistString(artist)
         val localGenre = LocalGenreDetector.detect(track, cleanArtist)
         NowPlayingState.updateCurrentGenre(localGenre)
-        _genreUiState.value = GenreUiState.Detected(localGenre)
+        _genreUiState.value = GenreUiState.Detected(
+            genre = localGenre,
+            source = "Offline",
+            confidence = "Low",
+            isFallback = true
+        )
 
         if (lastFmApiKey.isNotBlank()) {
             try {
@@ -100,7 +121,11 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 )
                 if (lastFmGenre != null) {
                     NowPlayingState.updateCurrentGenre(lastFmGenre)
-                    _genreUiState.value = GenreUiState.Detected(lastFmGenre)
+                    _genreUiState.value = GenreUiState.Detected(
+                        genre = lastFmGenre,
+                        source = "Last.fm",
+                        confidence = "High"
+                    )
                     return
                 }
             } catch (e: CancellationException) {
@@ -121,7 +146,11 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             )
             if (itunesGenre != null) {
                 NowPlayingState.updateCurrentGenre(itunesGenre)
-                _genreUiState.value = GenreUiState.Detected(itunesGenre)
+                _genreUiState.value = GenreUiState.Detected(
+                    genre = itunesGenre,
+                    source = "iTunes",
+                    confidence = "Medium"
+                )
                 return
             }
         } catch (e: CancellationException) {
@@ -138,7 +167,22 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 )
             )
             NowPlayingState.updateCurrentGenre(response.genre)
-            _genreUiState.value = GenreUiState.Detected(response.genre)
+            val normalizedSource = response.source.lowercase()
+            val backendSource = when (normalizedSource) {
+                "lastfm" -> "Last.fm"
+                "itunes" -> "iTunes"
+                "cache" -> "EQify cache"
+                else -> "Offline"
+            }
+            val fallback =
+                "keyword" in normalizedSource || "fallback" in normalizedSource ||
+                    normalizedSource == "local"
+            _genreUiState.value = GenreUiState.Detected(
+                genre = response.genre,
+                source = backendSource,
+                confidence = if (fallback) "Low" else "Medium",
+                isFallback = fallback
+            )
         } catch (e: CancellationException) {
             throw e
         } catch (_: Exception) {
@@ -161,6 +205,11 @@ sealed class GenreUiState {
     object Idle         : GenreUiState()
     object Detecting    : GenreUiState()
     object DetectionOff : GenreUiState()
-    data class Detected(val genre: String) : GenreUiState()
+    data class Detected(
+        val genre: String,
+        val source: String,
+        val confidence: String,
+        val isFallback: Boolean = false
+    ) : GenreUiState()
     object Error        : GenreUiState()
 }
