@@ -78,6 +78,7 @@ class UserPreferencesRepository(private val context: Context) {
         val CUSTOM_PRESET_NAMES   = stringPreferencesKey("custom_preset_names")
         val LAST_PRESET           = stringPreferencesKey("last_preset")
         val LASTFM_API_KEY        = stringPreferencesKey("lastfm_api_key")
+        val FAVORITE_HEADPHONES   = stringPreferencesKey("favorite_headphones")
     }
 
     // ── Standard settings ─────────────────────────────────────────────
@@ -120,6 +121,10 @@ class UserPreferencesRepository(private val context: Context) {
 
     val lastFmApiKey: Flow<String> = context.dataStore.data.map { prefs ->
         prefs[Keys.LASTFM_API_KEY] ?: ""
+    }
+
+    val favoriteHeadphones: Flow<List<String>> = context.dataStore.data.map { prefs ->
+        CustomPresetNameCodec.decode(prefs[Keys.FAVORITE_HEADPHONES] ?: "")
     }
 
     // ── Write methods ─────────────────────────────────────────────────
@@ -165,6 +170,17 @@ class UserPreferencesRepository(private val context: Context) {
             val cleaned = apiKey.trim()
             if (cleaned.isEmpty()) prefs.remove(Keys.LASTFM_API_KEY)
             else prefs[Keys.LASTFM_API_KEY] = cleaned
+        }
+    }
+
+    suspend fun toggleFavoriteHeadphone(name: String) {
+        context.dataStore.edit { prefs ->
+            val favorites = CustomPresetNameCodec
+                .decode(prefs[Keys.FAVORITE_HEADPHONES] ?: "")
+                .toMutableList()
+            val existing = favorites.indexOfFirst { it.equals(name, ignoreCase = true) }
+            if (existing >= 0) favorites.removeAt(existing) else favorites.add(name.trim())
+            prefs[Keys.FAVORITE_HEADPHONES] = CustomPresetNameCodec.encode(favorites)
         }
     }
 

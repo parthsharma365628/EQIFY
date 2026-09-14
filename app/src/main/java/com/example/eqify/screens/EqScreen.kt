@@ -245,6 +245,7 @@ fun EqScreen(vm: EqScreenViewModel = viewModel()) {
     val allPresets        by vm.allPresetNames.collectAsState()
     val customPresets     by vm.customPresetNames.collectAsState()
     val hasUnsavedChanges by vm.hasUnsavedChanges.collectAsState()
+    val isBypassed        by EqState.isBypassed.collectAsState()
 
     if (showPicker) PresetPickerDialog(
         allPresets = allPresets, customPresets = customPresets, activePreset = activePreset,
@@ -278,6 +279,13 @@ fun EqScreen(vm: EqScreenViewModel = viewModel()) {
                 }
                 TextButton(onClick = { vm.resetCurrentPreset() }) {
                     Text("Reset", color = TextSecondary, fontSize = 12.sp)
+                }
+                TextButton(onClick = { EqState.setBypassed(!isBypassed) }) {
+                    Text(
+                        if (isBypassed) "Original" else "A/B",
+                        color = if (isBypassed) TextPrimary else TextSecondary,
+                        fontSize = 12.sp
+                    )
                 }
             }
         }
@@ -428,7 +436,7 @@ private fun PresetRow(
         }
         if (isCustom) {
             TextButton(onClick = onDelete, contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)) {
-                Text("🗑", fontSize = 14.sp, color = Color(0xFFFF5252))
+                Text("Delete", fontSize = 12.sp, color = TextSecondary)
             }
         }
     }
@@ -494,8 +502,48 @@ fun VerticalEqSlider(gainDb: Float, frequency: String, onChange: (Float) -> Unit
         ((it * 2).roundToInt() / 2f).coerceIn(-12f, 12f)
     }
 
+    var showPreciseInput by remember { mutableStateOf(false) }
+    var draft by remember(gainDb, showPreciseInput) { mutableStateOf("%.1f".format(gainDb)) }
+    if (showPreciseInput) {
+        AlertDialog(
+            onDismissRequest = { showPreciseInput = false },
+            title = { Text("$frequency band") },
+            text = {
+                Column {
+                    OutlinedTextField(
+                        value = draft,
+                        onValueChange = { draft = it },
+                        singleLine = true,
+                        label = { Text("Gain (-12 to +12 dB)") },
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                            keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal
+                        )
+                    )
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                        TextButton(onClick = { onChange((gainDb - .5f).coerceAtLeast(-12f)); showPreciseInput = false }) { Text("-0.5") }
+                        TextButton(onClick = { onChange(0f); showPreciseInput = false }) { Text("Zero") }
+                        TextButton(onClick = { onChange((gainDb + .5f).coerceAtMost(12f)); showPreciseInput = false }) { Text("+0.5") }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    draft.replace(',', '.').toFloatOrNull()?.let { onChange(quantize(it)) }
+                    showPreciseInput = false
+                }) { Text("Apply") }
+            },
+            dismissButton = { TextButton(onClick = { showPreciseInput = false }) { Text("Cancel") } }
+        )
+    }
+
     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxHeight()) {
-        Text("${if (gainDb > 0) "+" else ""}${gainDb.toInt()}", fontSize = 10.sp, color = AccentPurpleLight, fontWeight = FontWeight.Bold)
+        Text(
+            "%+.1f".format(gainDb),
+            fontSize = 10.sp,
+            color = AccentPurpleLight,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.clickable { showPreciseInput = true }
+        )
         Spacer(Modifier.height(6.dp))
         Canvas(
             modifier = Modifier

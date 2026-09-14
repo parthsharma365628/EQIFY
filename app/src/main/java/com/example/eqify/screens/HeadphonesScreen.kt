@@ -40,6 +40,9 @@ class HeadphonesViewModel(application: Application) : AndroidViewModel(applicati
     private val _errorMessage = MutableStateFlow<String?>(null)
     val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
 
+    val favorites: StateFlow<List<String>> = repository.favoriteHeadphones
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
     private val _localSelectedHeadphone = MutableStateFlow(NowPlayingState.selectedHeadphone.value)
     val localSelectedHeadphone: StateFlow<String> = _localSelectedHeadphone.asStateFlow()
 
@@ -62,12 +65,18 @@ class HeadphonesViewModel(application: Application) : AndroidViewModel(applicati
         _errorMessage.value = null
         try {
             val response = RetrofitClient.apiService.getHeadphones(query)
-            _results.value = response.map { HeadphoneResult(name = it.name, type = it.type) }
+            val saved = favorites.value
+                .filter { query.isBlank() || it.contains(query, ignoreCase = true) }
+                .map { HeadphoneResult(it, "favorite") }
+            _results.value = (saved + response.map { HeadphoneResult(it.name, it.type) })
+                .distinctBy { it.name.lowercase() }
         } catch (e: CancellationException) {
             throw e
         } catch (_: Exception) {
-            _results.value = emptyList()
-            _errorMessage.value = "Server unavailable"
+            _results.value = favorites.value
+                .filter { query.isBlank() || it.contains(query, ignoreCase = true) }
+                .map { HeadphoneResult(it, "favorite") }
+            _errorMessage.value = if (_results.value.isEmpty()) "Server unavailable" else "Offline favorites"
         } finally {
             _isLoading.value = false
         }
@@ -78,6 +87,10 @@ class HeadphonesViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     fun selectHeadphoneLocally(name: String) { _localSelectedHeadphone.value = name }
+
+    fun toggleFavorite(name: String) {
+        viewModelScope.launch { repository.toggleFavoriteHeadphone(name) }
+    }
 
     fun confirmSelection() {
         val name = _localSelectedHeadphone.value
@@ -112,6 +125,7 @@ fun HeadphonesScreen(
     val searchQuery by vm.searchQuery.collectAsState()
     val showCustomDialog by vm.showCustomDialog.collectAsState()
     val correctionStatus by EqState.headphoneCorrectionStatus.collectAsState()
+    val favorites by vm.favorites.collectAsState()
     val correctionStatusText = when (val status = correctionStatus) {
         is HeadphoneCorrectionStatus.Loading ->
             if (status.headphoneName == localSelectedHeadphone) "Downloading correction..."
@@ -226,6 +240,9 @@ fun HeadphonesScreen(
                     fontSize = 11.sp,
                     color = TextSecondary
                 )
+                if (errorMessage == "Offline favorites") {
+                    Text("Server unavailable · showing saved favorites", fontSize = 10.sp, color = NeonCyan)
+                }
                 Spacer(Modifier.height(10.dp))
                 OutlinedTextField(
                     value = searchQuery,
@@ -256,7 +273,7 @@ fun HeadphonesScreen(
                         modifier = Modifier.padding(12.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("🎧", fontSize = 20.sp)
+                        AppGlyph("Headphones", AccentPurpleLight)
                         Spacer(Modifier.width(10.dp))
                         Column {
                             Text(
@@ -331,6 +348,8 @@ fun HeadphonesScreen(
                                 name = hp.name,
                                 type = hp.type,
                                 isSelected = hp.name == localSelectedHeadphone,
+                                isFavorite = favorites.any { it.equals(hp.name, ignoreCase = true) },
+                                onFavoriteClick = { vm.toggleFavorite(hp.name) },
                                 onClick = { vm.selectHeadphoneLocally(hp.name) }
                             )
                         }
@@ -350,7 +369,7 @@ fun HeadphonesScreen(
                                     modifier = Modifier.padding(14.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Text("➕", fontSize = 22.sp)
+                                    Text("+", fontSize = 24.sp, color = AccentPurpleLight)
                                     Spacer(Modifier.width(12.dp))
                                     Column {
                                         Text(
@@ -377,7 +396,14 @@ fun HeadphonesScreen(
 }
 
 @Composable
-fun HeadphoneListItem(name: String, type: String, isSelected: Boolean, onClick: () -> Unit) {
+fun HeadphoneListItem(
+    name: String,
+    type: String,
+    isSelected: Boolean,
+    isFavorite: Boolean,
+    onFavoriteClick: () -> Unit,
+    onClick: () -> Unit
+) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -395,7 +421,7 @@ fun HeadphoneListItem(name: String, type: String, isSelected: Boolean, onClick: 
             modifier = Modifier.padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text("🎧", fontSize = 22.sp)
+            AppGlyph("Headphones")
             Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
@@ -410,6 +436,13 @@ fun HeadphoneListItem(name: String, type: String, isSelected: Boolean, onClick: 
                     fontWeight = FontWeight.SemiBold,
                     color = TextPrimary
                 )
+            }
+            TextButton(
+                onClick = onFavoriteClick,
+                contentPadding = PaddingValues(4.dp),
+                modifier = Modifier.size(36.dp)
+            ) {
+                Text(if (isFavorite) "★" else "☆", color = if (isFavorite) AccentPurpleLight else TextSecondary)
             }
             if (isSelected) {
                 Surface(shape = RoundedCornerShape(50), color = AccentPurple) {

@@ -48,6 +48,9 @@ object EqState {
     private val _isEqEnabled = MutableStateFlow(true)
     val isEqEnabled = _isEqEnabled.asStateFlow()
 
+    private val _isBypassed = MutableStateFlow(false)
+    val isBypassed = _isBypassed.asStateFlow()
+
     // ── Service running flag ──────────────────────────────────────────
     private val _isServiceRunning = MutableStateFlow(false)
     val isServiceRunning = _isServiceRunning.asStateFlow()
@@ -94,6 +97,7 @@ object EqState {
     // ── Setters ───────────────────────────────────────────────────────
 
     fun setEnabled(enabled: Boolean)           { _isEqEnabled.value = enabled }
+    fun setBypassed(bypassed: Boolean)         { _isBypassed.value = bypassed }
     fun setServiceRunning(running: Boolean)    { _isServiceRunning.value = running }
     fun setBassBoost(level: Float)             { _bassBoostLevel.value = level }
     fun setLimitOutputGain(enabled: Boolean)   { _isLimitOutputGain.value = enabled }

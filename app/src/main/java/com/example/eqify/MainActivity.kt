@@ -181,15 +181,15 @@ fun EqifyApp() {
     Scaffold(
         bottomBar = {
             if (currentRoute == "home" || currentRoute == "eq") {
-                NavigationBar {
+                NavigationBar(containerColor = SurfaceDark, tonalElevation = 0.dp) {
                     NavigationBarItem(
-                        icon     = { Text("🏠") },
+                        icon     = { AppGlyph("Home", if (currentRoute == "home") TextPrimary else TextSecondary) },
                         label    = { Text("Home") },
                         selected = currentRoute == "home",
                         onClick  = { navController.navigate("home") { launchSingleTop = true } }
                     )
                     NavigationBarItem(
-                        icon     = { Text("🎛️") },
+                        icon     = { AppGlyph("Equalizer", if (currentRoute == "eq") TextPrimary else TextSecondary) },
                         label    = { Text("EQ") },
                         selected = currentRoute == "eq",
                         onClick  = { navController.navigate("eq") { launchSingleTop = true } }

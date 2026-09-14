@@ -30,6 +30,8 @@ class EqProcessingService : Service() {
         const val ACTION_START    = "com.example.eqify.ACTION_START"
         const val ACTION_STOP     = "com.example.eqify.ACTION_STOP"
         const val ACTION_TOGGLE   = "com.example.eqify.ACTION_TOGGLE"
+        const val ACTION_SET_ENABLED = "com.example.eqify.ACTION_SET_ENABLED"
+        const val EXTRA_ENABLED = "enabled"
         const val ACTION_CLEAR_HEADPHONE_CACHE =
             "com.example.eqify.ACTION_CLEAR_HEADPHONE_CACHE"
         private const val LIMIT_OUTPUT_GAIN_DB = 6f
@@ -77,6 +79,13 @@ class EqProcessingService : Service() {
                     (application as EqifyApplication).repository.setEqEnabled(enabled)
                 }
             }
+            ACTION_SET_ENABLED -> {
+                val enabled = intent.getBooleanExtra(EXTRA_ENABLED, true)
+                EqState.setEnabled(enabled)
+                serviceScope.launch {
+                    (application as EqifyApplication).repository.setEqEnabled(enabled)
+                }
+            }
             ACTION_CLEAR_HEADPHONE_CACHE -> {
                 headphoneEqCache.clear()
                 EqState.updateHeadphoneCorrectionStatus(HeadphoneCorrectionStatus.Idle)
@@ -108,8 +117,9 @@ class EqProcessingService : Service() {
                 combine(
                     NowPlayingState.currentGenre,
                     NowPlayingState.selectedHeadphone,
-                    EqState.isEqEnabled
-                ) { g, h, e -> Triple(g, h, e) },
+                    EqState.isEqEnabled,
+                    EqState.isBypassed
+                ) { g, h, e, bypassed -> SourceState(g, h, e, bypassed) },
                 combine(
                     repository.limitOutputGain,
                     repository.forceMono,
@@ -123,9 +133,10 @@ class EqProcessingService : Service() {
                 ) { a, bt, tn, manual -> AutoToneState(a, bt, tn, manual) }
             ) { t1, t2, t3 ->
                 EqPipe(
-                    genre         = t1.first,
-                    headphone     = t1.second,
-                    enabled       = t1.third,
+                    genre         = t1.genre,
+                    headphone     = t1.headphone,
+                    enabled       = t1.enabled,
+                    bypassed      = t1.bypassed,
                     limitGain     = t2.first,
                     mono          = t2.second,
                     bassBoost     = t2.third,
@@ -138,10 +149,10 @@ class EqProcessingService : Service() {
                 EqState.setLimitOutputGain(pipe.limitGain)
                 setMonoOutput(pipe.mono)
 
-                if (!pipe.enabled) {
+                if (!pipe.enabled || pipe.bypassed) {
                     EqEngine.applyFlat()
                     EqState.updateOutputGains(FloatArray(8))
-                    updateNotification("EQ paused")
+                    updateNotification(if (pipe.bypassed) "EQ bypassed for comparison" else "EQ paused")
                     return@collectLatest
                 }
 
@@ -203,6 +214,7 @@ class EqProcessingService : Service() {
         serviceScope.launch {
             EqState.manualBandUpdate.collectLatest { toneGains ->
                 toneGains ?: return@collectLatest
+                if (EqState.isBypassed.value) return@collectLatest
 
                 if (EqEngine.equalizer == null) {
                     EqEngine.initSessionZero()
@@ -226,9 +238,17 @@ class EqProcessingService : Service() {
 
     private data class EqPipe(
         val genre: String, val headphone: String, val enabled: Boolean,
+        val bypassed: Boolean,
         val limitGain: Boolean, val mono: Boolean, val bassBoost: Float,
         val autoGenre: Boolean, val baseToneGains: FloatArray, val toneName: String,
         val manualOverride: Boolean
+    )
+
+    private data class SourceState(
+        val genre: String,
+        val headphone: String,
+        val enabled: Boolean,
+        val bypassed: Boolean
     )
 
     private data class AutoToneState(

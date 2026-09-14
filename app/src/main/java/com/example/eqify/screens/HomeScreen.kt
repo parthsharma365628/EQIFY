@@ -175,7 +175,7 @@ fun WiredHeadphoneBanner(onChangeClick: () -> Unit, onDismissClick: () -> Unit) 
             modifier          = Modifier.fillMaxWidth().padding(14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text("🎧", fontSize = 22.sp)
+            AppGlyph("Headphones")
             Spacer(Modifier.width(10.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
@@ -226,7 +226,7 @@ fun TopBar(onSettingsClick: () -> Unit = {}) {
             color      = AccentPurpleLight
         )
         IconButton(onClick = onSettingsClick) {
-            Text("⚙️", fontSize = 20.sp)
+            AppGlyph("Settings")
         }
     }
 }
@@ -418,7 +418,7 @@ fun HeadphoneCard(headphoneName: String, onClick: () -> Unit) {
             modifier          = Modifier.padding(14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text("🎧", fontSize = 28.sp)
+            AppGlyph("Headphones", AccentPurpleLight)
             Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
@@ -427,7 +427,7 @@ fun HeadphoneCard(headphoneName: String, onClick: () -> Unit) {
                     fontWeight = FontWeight.SemiBold,
                     color      = TextPrimary
                 )
-                Text(text = "AutoEQ profile loaded", fontSize = 10.sp, color = TextSecondary)
+                Text(text = "Manage headphone correction", fontSize = 12.sp, color = TextSecondary)
             }
             Text(
                 text       = "Change",
