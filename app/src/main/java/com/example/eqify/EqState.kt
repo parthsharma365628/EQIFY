@@ -104,6 +104,11 @@ object EqState {
     fun setBaseToneGains(gains: FloatArray)    { _baseToneGains.value = gains.copyOf() }
     fun setTonePresetName(name: String)        { _tonePresetName.value = name }
 
+    fun renamePreset(oldName: String, newName: String) {
+        if (_tonePresetName.value == oldName) _tonePresetName.value = newName
+        if (_activePresetName.value == oldName) _activePresetName.value = newName
+    }
+
     fun updateHeadphoneCorrection(correction: FloatArray) {
         _currentHeadphoneCorrection.value = correction.copyOf()
     }
@@ -170,6 +175,7 @@ object EqState {
      * Updates display-only state (what the UI shows).
      */
     fun applyComputedOutput(presetName: String, toneGains: FloatArray, combinedGains: FloatArray) {
+        if (_manualOverrideActive.value && !toneGains.contentEquals(_baseToneGains.value)) return
         _activePresetName.value = presetName
         _activeToneGains.value  = toneGains.copyOf()
         _activeBandGains.value  = combinedGains.copyOf()

@@ -190,6 +190,12 @@ class EqProcessingService : Service() {
                 }
                 val bassTag = if (pipe.bassBoost > 0f) " · Bass +${pipe.bassBoost.toInt()}dB" else ""
 
+                // A combine emission can contain an older manual curve. Never
+                // publish it over a newer slider edit, even after a cache hit.
+                if (pipe.manualOverride != EqState.manualOverrideActive.value ||
+                    (EqState.manualOverrideActive.value &&
+                        !pipe.baseToneGains.contentEquals(EqState.baseToneGains.value))
+                ) return@collectLatest
                 EqState.applyComputedOutput(displayName, tonePart, combined)
                 EqEngine.applyGains(combined)
 
@@ -214,11 +220,10 @@ class EqProcessingService : Service() {
         serviceScope.launch {
             EqState.manualBandUpdate.collectLatest { toneGains ->
                 toneGains ?: return@collectLatest
-                if (EqState.isBypassed.value) return@collectLatest
+                if (EqState.isBypassed.value || !EqState.isEqEnabled.value) return@collectLatest
 
                 if (EqEngine.equalizer == null) {
                     EqEngine.initSessionZero()
-                    delay(100)
                 }
 
                 var finalGains = EqProfileManager.combineGains(

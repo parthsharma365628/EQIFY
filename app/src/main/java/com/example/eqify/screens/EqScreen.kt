@@ -97,6 +97,8 @@ class EqScreenViewModel(application: Application) : AndroidViewModel(application
         // does trigger this, but _bands is already at the same value so no-op).
         viewModelScope.launch {
             EqState.activeToneGains.collect { gains ->
+                if (EqState.manualOverrideActive.value &&
+                    !gains.contentEquals(EqState.baseToneGains.value)) return@collect
                 val current = _bands.value.toFloatArray()
                 if (!current.contentEquals(gains)) _bands.value = gains.toList()
             }
@@ -131,7 +133,11 @@ class EqScreenViewModel(application: Application) : AndroidViewModel(application
     // applies these directly to hardware WITHOUT adding HP correction again.
 
     fun updateBand(index: Int, gain: Float) {
-        val updated = _bands.value.toMutableList().apply { set(index, gain) }
+        if (!gain.isFinite()) return
+        presetSelectionJob?.cancel()
+        val latest = if (EqState.manualOverrideActive.value)
+            EqState.baseToneGains.value.toList() else EqState.activeToneGains.value.toList()
+        val updated = latest.toMutableList().apply { set(index, gain.coerceIn(-12f, 12f)) }
         _bands.value = updated
         val gains = updated.toFloatArray()
 
@@ -211,6 +217,21 @@ class EqScreenViewModel(application: Application) : AndroidViewModel(application
 
     fun cancelDelete() { _showDeleteConfirm.value = null }
 
+    suspend fun renameProfile(oldName: String, newName: String): String? {
+        return try {
+            repository.renameCustomPreset(oldName, newName)
+            val name = newName.trim()
+            customGainsCache.remove(oldName)?.let { customGainsCache[name] = it }
+            if (_activePreset.value == oldName) _activePreset.value = name
+            EqState.renamePreset(oldName, name)
+            null
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            e.message ?: "Unable to rename profile."
+        }
+    }
+
     // ── Dialog helpers ────────────────────────────────────────────────
 
     fun openPresetPicker()  { _showPresetPicker.value = true  }
@@ -246,10 +267,46 @@ fun EqScreen(vm: EqScreenViewModel = viewModel()) {
     val customPresets     by vm.customPresetNames.collectAsState()
     val hasUnsavedChanges by vm.hasUnsavedChanges.collectAsState()
     val isBypassed        by EqState.isBypassed.collectAsState()
+    var renameTarget by remember { mutableStateOf<String?>(null) }
+    var renameDraft by remember { mutableStateOf("") }
+    var renameError by remember { mutableStateOf<String?>(null) }
+    var renaming by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    renameTarget?.let { oldName ->
+        AlertDialog(
+            onDismissRequest = { if (!renaming) renameTarget = null },
+            title = { Text("Rename profile") },
+            text = {
+                OutlinedTextField(
+                    value = renameDraft,
+                    onValueChange = { renameDraft = it; renameError = null },
+                    singleLine = true,
+                    enabled = !renaming,
+                    label = { Text("Profile name") },
+                    isError = renameError != null,
+                    supportingText = { renameError?.let { Text(it) } }
+                )
+            },
+            confirmButton = {
+                TextButton(enabled = !renaming, onClick = {
+                    renaming = true
+                    scope.launch {
+                        renameError = vm.renameProfile(oldName, renameDraft)
+                        renaming = false
+                        if (renameError == null) renameTarget = null
+                    }
+                }) { Text("Rename") }
+            },
+            dismissButton = {
+                TextButton(enabled = !renaming, onClick = { renameTarget = null }) { Text("Cancel") }
+            }
+        )
+    }
 
     if (showPicker) PresetPickerDialog(
         allPresets = allPresets, customPresets = customPresets, activePreset = activePreset,
         onSelect = { vm.selectPreset(it) }, onDelete = { vm.requestDelete(it) },
+        onRename = { renameTarget = it; renameDraft = it; renameError = null; vm.closePresetPicker() },
         onNewProfile = { vm.openNewProfile() }, onDismiss = { vm.closePresetPicker() }
     )
 
@@ -335,6 +392,7 @@ fun EqScreen(vm: EqScreenViewModel = viewModel()) {
             ) {
                 EqProfileManager.BAND_LABELS.forEachIndexed { index, label ->
                     VerticalEqSlider(
+                        modifier = Modifier.weight(1f),
                         gainDb    = bands.getOrElse(index) { 0f },
                         frequency = label,
                         onChange  = { vm.updateBand(index, it) }
@@ -352,7 +410,7 @@ fun EqScreen(vm: EqScreenViewModel = viewModel()) {
 @Composable
 fun PresetPickerDialog(
     allPresets: List<String>, customPresets: List<String>, activePreset: String,
-    onSelect: (String) -> Unit, onDelete: (String) -> Unit,
+    onSelect: (String) -> Unit, onDelete: (String) -> Unit, onRename: (String) -> Unit,
     onNewProfile: () -> Unit, onDismiss: () -> Unit
 ) {
     AlertDialog(
@@ -383,7 +441,7 @@ fun PresetPickerDialog(
                     Text("MY PROFILES", fontSize = 9.sp, color = TextSecondary, letterSpacing = 1.5.sp,
                         modifier = Modifier.padding(bottom = 4.dp))
                     customPresets.forEach { name ->
-                        PresetRow(name, name == activePreset, true, { onSelect(name) }, { onDelete(name) })
+                        PresetRow(name, name == activePreset, true, { onSelect(name) }, { onDelete(name) }, { onRename(name) })
                     }
                 }
                 Spacer(Modifier.height(12.dp))
@@ -411,7 +469,7 @@ fun PresetPickerDialog(
 @Composable
 private fun PresetRow(
     name: String, isActive: Boolean, isCustom: Boolean,
-    onSelect: () -> Unit, onDelete: () -> Unit
+    onSelect: () -> Unit, onDelete: () -> Unit, onRename: () -> Unit = {}
 ) {
     Row(
         modifier = Modifier.fillMaxWidth().clickable { onSelect() }.padding(vertical = 8.dp, horizontal = 2.dp),
@@ -435,6 +493,9 @@ private fun PresetRow(
                 fontWeight = if (isActive) FontWeight.SemiBold else FontWeight.Normal)
         }
         if (isCustom) {
+            TextButton(onClick = onRename, contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)) {
+                Text("Rename", fontSize = 12.sp, color = AccentPurpleLight)
+            }
             TextButton(onClick = onDelete, contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)) {
                 Text("Delete", fontSize = 12.sp, color = TextSecondary)
             }
@@ -496,8 +557,9 @@ fun DeleteConfirmDialog(presetName: String, onConfirm: () -> Unit, onDismiss: ()
 // ── Vertical EQ Slider ────────────────────────────────────────────────
 
 @Composable
-fun VerticalEqSlider(gainDb: Float, frequency: String, onChange: (Float) -> Unit) {
+fun VerticalEqSlider(gainDb: Float, frequency: String, onChange: (Float) -> Unit, modifier: Modifier = Modifier) {
     val currentOnChange by rememberUpdatedState(onChange)
+    val currentGain by rememberUpdatedState(gainDb)
     val quantize: (Float) -> Float = {
         ((it * 2).roundToInt() / 2f).coerceIn(-12f, 12f)
     }
@@ -536,7 +598,7 @@ fun VerticalEqSlider(gainDb: Float, frequency: String, onChange: (Float) -> Unit
         )
     }
 
-    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxHeight()) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = modifier.fillMaxHeight()) {
         Text(
             "%+.1f".format(gainDb),
             fontSize = 10.sp,
@@ -548,7 +610,7 @@ fun VerticalEqSlider(gainDb: Float, frequency: String, onChange: (Float) -> Unit
         Canvas(
             modifier = Modifier
                 .weight(1f)
-                .width(40.dp)
+                .fillMaxWidth()
                 .semantics {
                     progressBarRangeInfo = ProgressBarRangeInfo(gainDb, -12f..12f, 47)
                     setProgress { requested ->
@@ -557,17 +619,14 @@ fun VerticalEqSlider(gainDb: Float, frequency: String, onChange: (Float) -> Unit
                     }
                 }
                 .pointerInput(Unit) {
-                    fun updateFromY(y: Float) {
-                        val inset = 10.dp.toPx()
-                        val usableHeight = (size.height - inset * 2f).coerceAtLeast(1f)
-                        val fraction = ((y - inset) / usableHeight).coerceIn(0f, 1f)
-                        currentOnChange(quantize(12f - fraction * 24f))
-                    }
+                    var dragGain = 0f
                     detectVerticalDragGestures(
-                        onDragStart = { updateFromY(it.y) },
-                        onVerticalDrag = { change, _ ->
+                        onDragStart = { dragGain = currentGain },
+                        onVerticalDrag = { change, dragAmount ->
                             change.consume()
-                            updateFromY(change.position.y)
+                            val usableHeight = (size.height - 20.dp.toPx()).coerceAtLeast(1f)
+                            dragGain = (dragGain - dragAmount * 24f / usableHeight).coerceIn(-12f, 12f)
+                            currentOnChange(quantize(dragGain))
                         }
                     )
                 }

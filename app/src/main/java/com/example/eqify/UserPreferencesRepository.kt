@@ -255,6 +255,30 @@ class UserPreferencesRepository(private val context: Context) {
         saveCustomPresetNamesList(current)
     }
 
+    suspend fun renameCustomPreset(oldName: String, newName: String) {
+        val name = newName.trim()
+        require(name.isNotEmpty()) { "Enter a profile name." }
+        require(!name.equals("Custom", true) &&
+            EqProfileManager.defaultProfiles.keys.none { it.equals(name, true) }) {
+            "This name is reserved."
+        }
+        context.dataStore.edit { prefs ->
+            val names = CustomPresetNameCodec.decode(prefs[Keys.CUSTOM_PRESET_NAMES] ?: "")
+            require(oldName in names) { "Profile no longer exists." }
+            require(names.none { it != oldName && it.equals(name, true) }) {
+                "A profile with this name already exists."
+            }
+            val oldKey = stringPreferencesKey("custom_gains_$oldName")
+            val gains = requireNotNull(prefs[oldKey]) { "Saved profile data is missing." }
+            prefs.remove(oldKey)
+            prefs[stringPreferencesKey("custom_gains_$name")] = gains
+            prefs[Keys.CUSTOM_PRESET_NAMES] = CustomPresetNameCodec.encode(
+                names.map { if (it == oldName) name else it }
+            )
+            if (prefs[Keys.LAST_PRESET] == oldName) prefs[Keys.LAST_PRESET] = name
+        }
+    }
+
     suspend fun loadAllCustomPresets(): Map<String, FloatArray> {
         val names = customPresetNames.first()
         val result = mutableMapOf<String, FloatArray>()

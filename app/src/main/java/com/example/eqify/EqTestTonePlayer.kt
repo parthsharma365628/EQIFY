@@ -54,16 +54,21 @@ object EqTestTonePlayer {
                 .setBufferSizeInBytes(samples.size * Short.SIZE_BYTES)
                 .build()
 
+            // MODE_STATIC starts in STATE_NO_STATIC_DATA until its first write.
+            if (track.state == AudioTrack.STATE_UNINITIALIZED) return@withContext false
+            if (track.write(samples, 0, samples.size) != samples.size) return@withContext false
             if (track.state != AudioTrack.STATE_INITIALIZED) return@withContext false
-            if (track.write(samples, 0, samples.size) <= 0) return@withContext false
             track.play()
             delay((SEGMENT_SECONDS * frequencies.size * 1_000).toLong() + 100)
             true
-        } catch (_: Exception) {
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            android.util.Log.w("EqTestTonePlayer", "Test playback failed", e)
             false
         } finally {
             runCatching { track?.stop() }
-            track?.release()
+            runCatching { track?.release() }
             playing.set(false)
         }
     }
