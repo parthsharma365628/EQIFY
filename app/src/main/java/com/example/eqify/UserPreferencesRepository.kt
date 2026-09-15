@@ -1,6 +1,7 @@
 package com.example.eqify
 
 import android.content.Context
+import android.os.Build
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
@@ -69,6 +70,8 @@ class UserPreferencesRepository(private val context: Context) {
     private object Keys {
         val IS_EQ_ENABLED         = booleanPreferencesKey("is_eq_enabled")
         val AUTO_GENRE_DETECTION  = booleanPreferencesKey("auto_genre_detection")
+        val OUTPUT_PROTECTION_MODE = stringPreferencesKey("output_protection_mode")
+        // Legacy Boolean retained only for migrating existing installations.
         val LIMIT_OUTPUT_GAIN     = booleanPreferencesKey("limit_output_gain")
         val FORCE_MONO            = booleanPreferencesKey("force_mono")
         val MEDIA_LISTENER        = booleanPreferencesKey("media_listener_enabled")
@@ -91,8 +94,16 @@ class UserPreferencesRepository(private val context: Context) {
         prefs[Keys.AUTO_GENRE_DETECTION] ?: true
     }
 
-    val limitOutputGain: Flow<Boolean> = context.dataStore.data.map { prefs ->
-        prefs[Keys.LIMIT_OUTPUT_GAIN] ?: true
+    val outputProtectionMode: Flow<OutputProtectionMode> = context.dataStore.data.map { prefs ->
+        OutputProtectionMode.fromStorageValue(prefs[Keys.OUTPUT_PROTECTION_MODE])
+            ?: when (prefs[Keys.LIMIT_OUTPUT_GAIN]) {
+                false -> OutputProtectionMode.OFF
+                true, null -> if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    OutputProtectionMode.BALANCED
+                } else {
+                    OutputProtectionMode.SAFE
+                }
+            }
     }
 
     val forceMono: Flow<Boolean> = context.dataStore.data.map { prefs ->
@@ -137,8 +148,11 @@ class UserPreferencesRepository(private val context: Context) {
         context.dataStore.edit { it[Keys.AUTO_GENRE_DETECTION] = enabled }
     }
 
-    suspend fun setLimitOutputGain(enabled: Boolean) {
-        context.dataStore.edit { it[Keys.LIMIT_OUTPUT_GAIN] = enabled }
+    suspend fun setOutputProtectionMode(mode: OutputProtectionMode) {
+        context.dataStore.edit { prefs ->
+            prefs[Keys.OUTPUT_PROTECTION_MODE] = mode.name
+            prefs.remove(Keys.LIMIT_OUTPUT_GAIN)
+        }
     }
 
     suspend fun setForceMono(enabled: Boolean) {

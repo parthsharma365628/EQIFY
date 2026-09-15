@@ -5,6 +5,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.provider.Settings
 import android.text.TextUtils
 import androidx.compose.foundation.background
@@ -42,7 +43,14 @@ fun SettingsScreen(
     // ── Persisted settings (from DataStore via ViewModel) ─────────────
     val isEqEnabled        by vm.isEqEnabled.collectAsState(initial = true)
     val autoGenreDetection by vm.autoGenreDetection.collectAsState(initial = true)
-    val limitOutputGain    by vm.limitOutputGain.collectAsState(initial = true)
+    val outputProtectionMode by vm.outputProtectionMode.collectAsState(
+        initial = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            OutputProtectionMode.BALANCED
+        } else {
+            OutputProtectionMode.SAFE
+        }
+    )
+    val limiterStatus by vm.limiterDiagnosticStatus.collectAsState()
     val forceMono          by vm.forceMono.collectAsState(initial = false)
     val mediaListenerEnabled  by vm.mediaListenerEnabled.collectAsState(initial = true)
     val headphoneAutoDetect   by vm.headphoneAutoDetect.collectAsState(initial = true)
@@ -56,6 +64,7 @@ fun SettingsScreen(
     var isPermissionGranted by remember { mutableStateOf(isNotificationServiceEnabled(context)) }
     var showPermissionDialog by remember { mutableStateOf(false) }
     var showClearCacheDialog by remember { mutableStateOf(false) }
+    var showOutputProtectionDialog by remember { mutableStateOf(false) }
 
     // Refresh permission state when user returns from the system settings screen
     DisposableEffect(lifecycleOwner) {
@@ -125,6 +134,18 @@ fun SettingsScreen(
         )
     }
 
+    if (showOutputProtectionDialog) {
+        OutputProtectionDialog(
+            selectedMode = outputProtectionMode,
+            limiterStatus = limiterStatus,
+            onSelect = { mode ->
+                vm.setOutputProtectionMode(mode)
+                showOutputProtectionDialog = false
+            },
+            onDismiss = { showOutputProtectionDialog = false }
+        )
+    }
+
     cacheMessage?.let { message ->
         AlertDialog(
             onDismissRequest = vm::dismissCacheMessage,
@@ -183,11 +204,10 @@ fun SettingsScreen(
 
             // ── Audio ─────────────────────────────────────────────────
             SettingsGroup(title = "AUDIO") {
-                ControlledSettingsItem(
-                    title    = "Limit Output Gain",
-                    subtitle = "Avoid clipping during heavy EQing",
-                    checked  = limitOutputGain,
-                    onCheckedChange = { vm.setLimitOutputGain(it) }
+                OutputProtectionSettingsItem(
+                    mode = outputProtectionMode,
+                    limiterStatus = limiterStatus,
+                    onClick = { showOutputProtectionDialog = true }
                 )
                 ControlledSettingsItem(
                     title    = "Force Mono",
@@ -372,6 +392,167 @@ fun ControlledSettingsItem(
                 checkedTrackColor = AccentPurple
             )
         )
+    }
+}
+
+@Composable
+private fun OutputProtectionSettingsItem(
+    mode: OutputProtectionMode,
+    limiterStatus: LimiterDiagnosticStatus,
+    onClick: () -> Unit
+) {
+    val subtitle = when (mode) {
+        OutputProtectionMode.BALANCED -> when (limiterStatus.state) {
+            LimiterDiagnosticState.ENABLED -> "Balanced - limiter active"
+            LimiterDiagnosticState.ATTACHED -> "Balanced - ready when EQ is active"
+            LimiterDiagnosticState.AVAILABLE -> "Balanced - preparing limiter"
+            LimiterDiagnosticState.FAILED,
+            LimiterDiagnosticState.UNSUPPORTED -> "Safe fallback - Balanced unavailable"
+        }
+        OutputProtectionMode.SAFE -> when (limiterStatus.state) {
+            LimiterDiagnosticState.FAILED,
+            LimiterDiagnosticState.UNSUPPORTED -> "Safe - Balanced unavailable on this device"
+            else -> "Safe - maximum compatible protection"
+        }
+        OutputProtectionMode.OFF -> "Off - no output protection"
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = "Output protection",
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = TextPrimary
+            )
+            Text(text = subtitle, fontSize = 11.sp, color = TextSecondary)
+        }
+        TextButton(onClick = onClick) {
+            Text("Change", color = AccentPurpleLight)
+        }
+    }
+}
+
+@Composable
+private fun OutputProtectionDialog(
+    selectedMode: OutputProtectionMode,
+    limiterStatus: LimiterDiagnosticStatus,
+    onSelect: (OutputProtectionMode) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val balancedAvailable = limiterStatus.state != LimiterDiagnosticState.FAILED &&
+        limiterStatus.state != LimiterDiagnosticState.UNSUPPORTED
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Output protection", color = TextPrimary) },
+        text = {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                Text(
+                    "Choose how EQify handles peaks created by boosted EQ bands.",
+                    color = TextSecondary,
+                    fontSize = 13.sp
+                )
+                Spacer(Modifier.height(12.dp))
+
+                OutputProtectionOption(
+                    mode = OutputProtectionMode.BALANCED,
+                    selectedMode = selectedMode,
+                    title = "Balanced",
+                    description = "Uses Android's real-time limiter to catch peaks while keeping the requested EQ curve.",
+                    caution = "Android 9+ only. Very loud peaks may be reduced slightly.",
+                    enabled = balancedAvailable,
+                    onSelect = onSelect
+                )
+                if (!balancedAvailable) {
+                    Text(
+                        text = if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
+                            "Balanced requires Android 9 or newer. Safe is selected automatically."
+                        } else {
+                            "The limiter could not start on this device. Safe is selected automatically."
+                        },
+                        modifier = Modifier.padding(start = 48.dp, end = 8.dp, bottom = 8.dp),
+                        color = AccentPurpleLight,
+                        fontSize = 11.sp
+                    )
+                }
+
+                OutputProtectionOption(
+                    mode = OutputProtectionMode.SAFE,
+                    selectedMode = selectedMode,
+                    title = "Safe",
+                    description = "Reduces EQ band gains proportionally when the strongest boost exceeds +6 dB.",
+                    caution = "Large boosts sound less pronounced because the curve is reduced.",
+                    onSelect = onSelect
+                )
+
+                OutputProtectionOption(
+                    mode = OutputProtectionMode.OFF,
+                    selectedMode = selectedMode,
+                    title = "Off",
+                    description = "Applies the EQ curve without output protection.",
+                    caution = "High boosts can clip or distort. Lower the gains or listening volume if needed.",
+                    onSelect = onSelect
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Close", color = AccentPurpleLight)
+            }
+        },
+        containerColor = Surface2Dark
+    )
+}
+
+@Composable
+private fun OutputProtectionOption(
+    mode: OutputProtectionMode,
+    selectedMode: OutputProtectionMode,
+    title: String,
+    description: String,
+    caution: String,
+    enabled: Boolean = true,
+    onSelect: (OutputProtectionMode) -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(enabled = enabled) { onSelect(mode) }
+            .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.Top
+    ) {
+        RadioButton(
+            selected = selectedMode == mode,
+            onClick = { onSelect(mode) },
+            enabled = enabled
+        )
+        Column(modifier = Modifier.padding(top = 2.dp, end = 4.dp)) {
+            Text(
+                text = title,
+                color = if (enabled) TextPrimary else TextSecondary,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+            Text(
+                text = description,
+                color = TextSecondary,
+                fontSize = 12.sp
+            )
+            Text(
+                text = "Caution: $caution",
+                color = TextSecondary,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium
+            )
+        }
     }
 }
 

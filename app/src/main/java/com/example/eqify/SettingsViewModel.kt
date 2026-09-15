@@ -31,7 +31,8 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     val isEqEnabled          = repository.isEqEnabled
     val autoGenreDetection   = repository.autoGenreDetection
-    val limitOutputGain      = repository.limitOutputGain
+    val outputProtectionMode = repository.outputProtectionMode
+    val limiterDiagnosticStatus = EqEngine.limiterDiagnosticStatus
     val forceMono            = repository.forceMono
     val mediaListenerEnabled = repository.mediaListenerEnabled
     val headphoneAutoDetect  = repository.headphoneAutoDetect
@@ -58,10 +59,9 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    fun setLimitOutputGain(enabled: Boolean) {
-        // Persisted to DataStore. EqProcessingService.observeAutoEqPipeline
-        // observes repository.limitOutputGain in its combine — takes effect immediately.
-        viewModelScope.launch { repository.setLimitOutputGain(enabled) }
+    fun setOutputProtectionMode(mode: OutputProtectionMode) {
+        // The processing service observes this preference and applies it immediately.
+        viewModelScope.launch { repository.setOutputProtectionMode(mode) }
     }
 
     fun setForceMono(enabled: Boolean) {

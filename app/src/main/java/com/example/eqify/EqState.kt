@@ -90,9 +90,9 @@ object EqState {
     private val _bassBoostLevel = MutableStateFlow(0f)
     val bassBoostLevel = _bassBoostLevel.asStateFlow()
 
-    // ── Limit output gain (synced from repository by service) ─────────
-    private val _isLimitOutputGain = MutableStateFlow(true)
-    val isLimitOutputGain get() = _isLimitOutputGain.value
+    // ── Output protection (synced from repository by service) ─────────
+    private val _outputProtectionMode = MutableStateFlow(OutputProtectionMode.BALANCED)
+    val outputProtectionMode get() = _outputProtectionMode.value
 
     // ── Setters ───────────────────────────────────────────────────────
 
@@ -100,7 +100,9 @@ object EqState {
     fun setBypassed(bypassed: Boolean)         { _isBypassed.value = bypassed }
     fun setServiceRunning(running: Boolean)    { _isServiceRunning.value = running }
     fun setBassBoost(level: Float)             { _bassBoostLevel.value = level }
-    fun setLimitOutputGain(enabled: Boolean)   { _isLimitOutputGain.value = enabled }
+    fun setOutputProtectionMode(mode: OutputProtectionMode) {
+        _outputProtectionMode.value = mode
+    }
     fun setBaseToneGains(gains: FloatArray)    { _baseToneGains.value = gains.copyOf() }
     fun setTonePresetName(name: String)        { _tonePresetName.value = name }
 

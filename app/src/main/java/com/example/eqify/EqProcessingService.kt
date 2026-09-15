@@ -121,7 +121,7 @@ class EqProcessingService : Service() {
                     EqState.isBypassed
                 ) { g, h, e, bypassed -> SourceState(g, h, e, bypassed) },
                 combine(
-                    repository.limitOutputGain,
+                    repository.outputProtectionMode,
                     repository.forceMono,
                     EqState.bassBoostLevel
                 ) { l, m, b -> Triple(l, m, b) },
@@ -137,7 +137,7 @@ class EqProcessingService : Service() {
                     headphone     = t1.headphone,
                     enabled       = t1.enabled,
                     bypassed      = t1.bypassed,
-                    limitGain     = t2.first,
+                    outputProtectionMode = t2.first,
                     mono          = t2.second,
                     bassBoost     = t2.third,
                     autoGenre     = t3.autoGenre,
@@ -146,8 +146,21 @@ class EqProcessingService : Service() {
                     manualOverride = t3.manualOverride
                 )
             }.collectLatest { pipe ->
-                EqState.setLimitOutputGain(pipe.limitGain)
+                EqState.setOutputProtectionMode(pipe.outputProtectionMode)
                 setMonoOutput(pipe.mono)
+                if (EqEngine.equalizer == null) EqEngine.initSessionZero()
+                EqEngine.setLimiterProtectionEnabled(
+                    pipe.enabled && !pipe.bypassed &&
+                        pipe.outputProtectionMode == OutputProtectionMode.BALANCED
+                )
+                val limiterState = EqEngine.limiterDiagnosticStatus.value.state
+                if (pipe.outputProtectionMode == OutputProtectionMode.BALANCED &&
+                    (limiterState == LimiterDiagnosticState.FAILED ||
+                        limiterState == LimiterDiagnosticState.UNSUPPORTED)
+                ) {
+                    Log.w(TAG, "Balanced protection unavailable; switching to Safe")
+                    repository.setOutputProtectionMode(OutputProtectionMode.SAFE)
+                }
 
                 if (!pipe.enabled || pipe.bypassed) {
                     EqEngine.applyFlat()
@@ -155,8 +168,6 @@ class EqProcessingService : Service() {
                     updateNotification(if (pipe.bypassed) "EQ bypassed for comparison" else "EQ paused")
                     return@collectLatest
                 }
-
-                if (EqEngine.equalizer == null) EqEngine.initSessionZero()
 
                 // Fetch headphone correction (cached after first fetch — no repeated calls)
                 val hpCorrection = resolveHeadphoneCorrection(pipe.headphone)
@@ -179,7 +190,13 @@ class EqProcessingService : Service() {
                     pipe.bassBoost
                 )
 
-                if (pipe.limitGain) combined = applyLimitOutputGain(combined)
+                val useSafeProtection =
+                    pipe.outputProtectionMode == OutputProtectionMode.SAFE ||
+                        (pipe.outputProtectionMode == OutputProtectionMode.BALANCED &&
+                            !EqEngine.isLimiterProtectionActive())
+                if (useSafeProtection) {
+                    combined = applyLimitOutputGain(combined)
+                }
 
                 val displayName = when {
                     pipe.manualOverride -> pipe.toneName.ifBlank { "Custom" }
@@ -231,7 +248,14 @@ class EqProcessingService : Service() {
                     EqState.currentHeadphoneCorrection.value,
                     EqState.bassBoostLevel.value
                 )
-                if (EqState.isLimitOutputGain) finalGains = applyLimitOutputGain(finalGains)
+                val protectionMode = EqState.outputProtectionMode
+                val useSafeProtection =
+                    protectionMode == OutputProtectionMode.SAFE ||
+                        (protectionMode == OutputProtectionMode.BALANCED &&
+                            !EqEngine.isLimiterProtectionActive())
+                if (useSafeProtection) {
+                    finalGains = applyLimitOutputGain(finalGains)
+                }
 
                 EqEngine.applyGains(finalGains)
                 EqState.updateOutputGains(finalGains)
@@ -244,7 +268,8 @@ class EqProcessingService : Service() {
     private data class EqPipe(
         val genre: String, val headphone: String, val enabled: Boolean,
         val bypassed: Boolean,
-        val limitGain: Boolean, val mono: Boolean, val bassBoost: Float,
+        val outputProtectionMode: OutputProtectionMode,
+        val mono: Boolean, val bassBoost: Float,
         val autoGenre: Boolean, val baseToneGains: FloatArray, val toneName: String,
         val manualOverride: Boolean
     )
