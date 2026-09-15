@@ -2,7 +2,7 @@
 
 This file gives AI coding assistants durable context for working in the EQify repository. Explicit user instructions always take priority over this document.
 
-## What this is
+## What this is.
 
 EQify is an Android equalizer that combines genre profiles, headphone-specific AutoEQ corrections, bass boost, and manual EQ adjustments. The Android client is written in Kotlin with Jetpack Compose. A small Node.js/Express backend supplies genre detection and converts the AutoEQ dataset into EQify's eight logical frequency bands.
 
