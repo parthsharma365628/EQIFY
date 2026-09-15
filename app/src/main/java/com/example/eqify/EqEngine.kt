@@ -43,6 +43,9 @@ object EqEngine {
     private val _limiterDiagnosticStatus = MutableStateFlow(initialLimiterStatus())
     val limiterDiagnosticStatus = _limiterDiagnosticStatus.asStateFlow()
 
+    private val _isEqualizerAttached = MutableStateFlow(false)
+    val isEqualizerAttached = _isEqualizerAttached.asStateFlow()
+
     // ── Session broadcast receiver ────────────────────────────────────
 
     val sessionReceiver = object : BroadcastReceiver() {
@@ -79,6 +82,7 @@ object EqEngine {
         try {
             currentSessionId = sessionId
             equalizer = Equalizer(0, sessionId).apply { enabled = true }
+            _isEqualizerAttached.value = true
             attachLimiterToSession(sessionId)
             Log.d(TAG, "Attached to session $sessionId — ${equalizer?.numberOfBands} bands")
             applyCurrentGains()
@@ -93,11 +97,13 @@ object EqEngine {
         try {
             currentSessionId = 0
             equalizer = Equalizer(0, 0).apply { enabled = true }
+            _isEqualizerAttached.value = true
             attachLimiterToSession(0)
             Log.d(TAG, "Session 0 attached — ${equalizer?.numberOfBands} bands")
             applyCurrentGains()
         } catch (e: Exception) {
             Log.e(TAG, "Session 0 fallback failed: ${e.message}")
+            releaseEqualizer()
         }
     }
 
@@ -433,5 +439,6 @@ object EqEngine {
             Log.w(TAG, "Error releasing equalizer: ${e.message}")
         }
         equalizer = null
+        _isEqualizerAttached.value = false
     }
 }

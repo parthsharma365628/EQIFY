@@ -16,6 +16,7 @@ The Android app supports API 26 and newer. `DynamicsProcessing.Limiter` is only 
 - `app/src/main/java/com/example/eqify/ui/theme/` - Compose theme tokens.
 - `eqify-backend/` - Express backend and backend tests.
 - `eqify-backend/autoeq-results/` - large external AutoEQ dataset; do not commit it.
+- `CLOUDFLARE_AUTOEQ_MIGRATION.md` - deferred, step-by-step plan for converting AutoEQ data and moving the API to Cloudflare Workers + D1.
 - `EQify_PRD.docx` - product requirements reference when present. Read it as requirements only and do not modify it.
 
 ## Running
@@ -84,6 +85,8 @@ Do not change limiter parameters based only on whether the difference is obvious
 ### Persistence
 
 `UserPreferencesRepository` is the DataStore boundary. Screens should write settings through their view models rather than directly mutating processing objects. `EqProcessingService` observes persisted settings and mirrors values needed by the immediate manual path into `EqState`.
+
+`EqProcessingSnapshot` is the compact persisted status for external controls. The processing service derives it from the master toggle, bypass state, active display profile, and `EqEngine.isEqualizerAttached`. The Quick Settings tile combines that snapshot with the process-local service-running flag so it does not claim that EQ is active after the service or app process has stopped.
 
 The former `limit_output_gain` Boolean is a migration-only preference. Existing `false` values migrate to Off; existing `true` or missing values migrate to Balanced on API 28+ and Safe on older Android versions. Do not remove migration handling without considering installed users.
 

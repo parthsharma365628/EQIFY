@@ -80,6 +80,8 @@ class UserPreferencesRepository(private val context: Context) {
         val BASS_BOOST_LEVEL      = floatPreferencesKey("bass_boost_level")
         val CUSTOM_PRESET_NAMES   = stringPreferencesKey("custom_preset_names")
         val LAST_PRESET           = stringPreferencesKey("last_preset")
+        val PROCESSING_STATUS     = stringPreferencesKey("processing_status")
+        val PROCESSING_PROFILE    = stringPreferencesKey("processing_profile")
         val LASTFM_API_KEY        = stringPreferencesKey("lastfm_api_key")
         val FAVORITE_HEADPHONES   = stringPreferencesKey("favorite_headphones")
     }
@@ -130,6 +132,19 @@ class UserPreferencesRepository(private val context: Context) {
         prefs[Keys.LAST_PRESET] ?: "Hip-Hop"
     }
 
+    val processingSnapshot: Flow<EqProcessingSnapshot> = context.dataStore.data.map { prefs ->
+        val requestedEnabled = prefs[Keys.IS_EQ_ENABLED] ?: true
+        EqProcessingSnapshot(
+            requestedEnabled = requestedEnabled,
+            status = EqProcessingStatus.fromStorageValue(prefs[Keys.PROCESSING_STATUS])
+                ?: if (requestedEnabled) EqProcessingStatus.UNAVAILABLE
+                else EqProcessingStatus.PAUSED,
+            activeProfile = prefs[Keys.PROCESSING_PROFILE]
+                ?: prefs[Keys.LAST_PRESET]
+                ?: "Hip-Hop"
+        )
+    }
+
     val lastFmApiKey: Flow<String> = context.dataStore.data.map { prefs ->
         prefs[Keys.LASTFM_API_KEY] ?: ""
     }
@@ -177,6 +192,15 @@ class UserPreferencesRepository(private val context: Context) {
 
     suspend fun setLastPreset(name: String) {
         context.dataStore.edit { it[Keys.LAST_PRESET] = name }
+    }
+
+    suspend fun setProcessingSnapshot(status: EqProcessingStatus, activeProfile: String) {
+        context.dataStore.edit { prefs ->
+            prefs[Keys.PROCESSING_STATUS] = status.name
+            prefs[Keys.PROCESSING_PROFILE] = activeProfile.ifBlank {
+                prefs[Keys.LAST_PRESET] ?: "Flat"
+            }
+        }
     }
 
     suspend fun setLastFmApiKey(apiKey: String) {

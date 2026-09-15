@@ -15,8 +15,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.abs
@@ -66,6 +68,7 @@ class EqProcessingService : Service() {
         observeAutoEqPipeline()     // PATH A: genre/preset driven (may hit network)
         observeManualAdjustments()  // PATH B: slider driven (instant, no network)
         EqState.setServiceRunning(true)
+        observeProcessingSnapshot()
         Log.d(TAG, "Service created")
     }
 
@@ -75,6 +78,7 @@ class EqProcessingService : Service() {
             ACTION_TOGGLE -> {
                 val enabled = !EqState.isEqEnabled.value
                 EqState.setEnabled(enabled)
+                if (enabled && EqEngine.equalizer == null) EqEngine.initSessionZero()
                 serviceScope.launch {
                     (application as EqifyApplication).repository.setEqEnabled(enabled)
                 }
@@ -82,6 +86,7 @@ class EqProcessingService : Service() {
             ACTION_SET_ENABLED -> {
                 val enabled = intent.getBooleanExtra(EXTRA_ENABLED, true)
                 EqState.setEnabled(enabled)
+                if (enabled && EqEngine.equalizer == null) EqEngine.initSessionZero()
                 serviceScope.launch {
                     (application as EqifyApplication).repository.setEqEnabled(enabled)
                 }
@@ -100,6 +105,32 @@ class EqProcessingService : Service() {
         serviceScope.cancel()
         EqState.setServiceRunning(false)
         Log.d(TAG, "Service destroyed")
+    }
+
+    /**
+     * Persists only the small, user-visible processing state. External controls can read this
+     * without polling the audio engine or relying on process-local state for the profile name.
+     */
+    private fun observeProcessingSnapshot() {
+        val repository = (application as EqifyApplication).repository
+        serviceScope.launch {
+            combine(
+                EqState.isEqEnabled,
+                EqState.isBypassed,
+                EqState.activePresetName,
+                EqEngine.isEqualizerAttached
+            ) { enabled, bypassed, activeProfile, attached ->
+                val status = when {
+                    !enabled -> EqProcessingStatus.PAUSED
+                    bypassed -> EqProcessingStatus.BYPASSED
+                    attached -> EqProcessingStatus.ACTIVE
+                    else -> EqProcessingStatus.UNAVAILABLE
+                }
+                status to activeProfile
+            }.distinctUntilChanged().collect { (status, activeProfile) ->
+                repository.setProcessingSnapshot(status, activeProfile)
+            }
+        }
     }
 
     // ── PATH A: Auto-EQ pipeline ──────────────────────────────────────
