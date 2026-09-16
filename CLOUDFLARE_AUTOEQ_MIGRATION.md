@@ -4,6 +4,56 @@ This document is a future implementation guide for moving EQify's headphone-corr
 
 Explicit user instructions and the current repository state take priority over this plan. Before acting, inspect the branch, remote, working tree, installed package versions, current Cloudflare documentation, and the target Cloudflare account/environment.
 
+## Handoff snapshot (2026-09-16; re-check before acting)
+
+This plan was drafted before an intermediate GitHub Pages export was built.
+The current source repository is
+`https://github.com/parthsharma365628/EQIFY` (`main` included converter commit
+`fe3310f` at this checkpoint). Its present files relevant to this migration are:
+
+```text
+EQIFY/
+├─ AI.md                           # Project-wide architecture and file map
+├─ GITHUB_PAGES_AUTOEQ.md          # Static export contract and resume checklist
+├─ CLOUDFLARE_AUTOEQ_MIGRATION.md  # This deferred D1/Worker plan
+├─ app/
+│  ├─ build.gradle.kts              # One configurable EQIFY_BASE_URL
+│  └─ src/main/java/com/example/eqify/
+│     ├─ EqifyApi.kt                # Retrofit paths and JSON models
+│     ├─ EqProcessingService.kt     # Fetch/compose/apply headphone correction
+│     ├─ HeadphoneEqDiskCache.kt    # Last successful correction on device
+│     └─ screens/HeadphonesScreen.kt # Search/favorites/selection UI
+└─ eqify-backend/
+   ├─ index.js                      # Current Express routes; reads raw files
+   ├─ lib/autoeq-converter.js       # Current shared parser and DSP conversion
+   ├─ scripts/build-headphone-db.js # Current offline JSON exporter
+   ├─ test/{index,autoeq-converter}.test.js
+   ├─ autoeq-results/               # Raw local input; ignored, not in Git
+   └─ generated/pages-v2/          # Ignored local JSON export, not in Git
+```
+
+**Implemented:** The live Node API now calls the shared converter in
+`lib/autoeq-converter.js`; the CLI produces a deterministic, sharded static
+JSON export for a prospective GitHub Pages host. A local run used
+`D:\eqify\eqify-backend\autoeq-results` and converted 6,028 unique profiles
+from 8,850 candidate files, removing 2,822 duplicate names. Its canonical
+record SHA-256 is
+`ed32807426fdeba7866b88b31205c4f1f5961cfb465a9bc1fca3ba30de40b1cc`.
+The label `local-autoeq-snapshot` is **not** a known upstream AutoEq revision.
+The ignored export may be absent from another clone.
+
+**Not implemented:** No GitHub Pages deployment is confirmed; Android still
+calls the Node API. There is no D1 schema/import, Worker code/configuration,
+Cloudflare resource, production cutover, or SQL dump. Do not interpret the
+later proposed `cloudflare-worker/` tree or SQL example as existing files.
+The separate intended static repository is
+`https://github.com/parthsharma365628/eqify-data`; inspect its actual state.
+
+**Current next decision:** Complete the GitHub Pages licensing and publishing
+checkpoint in `GITHUB_PAGES_AUTOEQ.md` if requested. Begin the Worker + D1
+phases only if the user later chooses that migration. No Cloudflare deployment
+is needed merely to preserve the current app behavior.
+
 ## Decision summary
 
 Recommended initial architecture:
@@ -74,7 +124,8 @@ The backend lives in `eqify-backend/` and currently uses:
 3. A module-level, 24-hour in-memory artist genre cache.
 4. Recursive AutoEQ directory scanning.
 5. Headphone-name deduplication.
-6. ParametricEQ parsing and eight-band conversion.
+6. ParametricEQ parsing and eight-band conversion, now delegated to
+   `lib/autoeq-converter.js`.
 7. All Express route handlers and server startup.
 
 The current AutoEQ root is:
@@ -151,7 +202,9 @@ The API base URL comes from `BuildConfig.BASE_URL`; the Gradle property is `EQIF
 
 ## Existing conversion algorithm
 
-The current algorithm lives in `eqify-backend/index.js`. Refactor and reuse it; do not silently replace it with a different DSP interpretation during infrastructure migration.
+The current algorithm lives in `eqify-backend/lib/autoeq-converter.js` and is
+imported by `index.js` and the offline generator. Reuse it; do not silently
+replace it with a different DSP interpretation during infrastructure migration.
 
 The target frequencies are:
 
@@ -167,7 +220,9 @@ For each `ParametricEQ.txt`:
 2. Find filter lines containing both `Filter` and `Fc`.
 3. Read filter type, center frequency (`Fc`), gain, and Q.
 4. Default Q to `1.0` if it is absent.
-5. Skip filters without finite frequency or gain.
+5. The live parser retains the legacy behavior for malformed filters; the
+   offline exporter additionally rejects malformed/non-finite data before
+   publishing. Re-check both code paths before changing this contract.
 
 Current recognized types:
 
@@ -175,7 +230,8 @@ Current recognized types:
 - low shelf: `LS`, `LSC`, `LOW_SHELF`;
 - high shelf: `HS`, `HSC`, `HIGH_SHELF`.
 
-Unknown filter types currently contribute nothing. The generator should count and report them rather than silently expanding behavior.
+Unknown filter types currently contribute nothing. The existing generator
+counts them in `conversion-report.json` instead of expanding DSP behavior.
 
 ### Converting to eight bands
 
@@ -198,9 +254,10 @@ After summing all filters for a target band:
 
 This is an approximation designed around EQify's eight logical bands, not a general parametric-EQ engine.
 
-## Proposed committed structure
+## Present and proposed structure
 
-Keep the existing Node service operational while adding the migration tooling:
+The Node service and `lib/`, `scripts/`, and `test/` files already exist.
+Everything under `cloudflare-worker/` below is proposed, not present:
 
 ```text
 eqify-backend/
@@ -209,6 +266,9 @@ eqify-backend/
 |   `-- autoeq-converter.js
 |-- scripts/
 |   `-- build-headphone-db.js
+|-- test/
+|   |-- index.test.js
+|   `-- autoeq-converter.test.js
 |-- cloudflare-worker/
 |   |-- package.json
 |   |-- package-lock.json
@@ -221,9 +281,9 @@ eqify-backend/
 |   |   `-- index.ts
 |   `-- test/
 |       `-- index.test.ts
-`-- generated/                       # ignored; never commit bulk data
-    |-- headphones.sql
-    `-- conversion-report.json
+`-- generated/                       # ignored; local only
+    |-- pages-v2/                    # existing static JSON export when local
+    `-- headphones.sql               # proposed D1 import artifact, not built
 ```
 
 Commit source code, migration files, lockfiles, small test fixtures, and documentation. Do not commit:
@@ -234,7 +294,9 @@ Commit source code, migration files, lockfiles, small test fixtures, and documen
 - `.dev.vars`, `.env`, credentials, tokens, or account IDs that should remain private;
 - `node_modules/`.
 
-Update `.gitignore` before generating data.
+`.gitignore` already excludes `eqify-backend/autoeq-results/` and
+`eqify-backend/generated/`. A future Worker project must also exclude its
+local state and secrets.
 
 ## Proposed D1 schema
 
@@ -296,21 +358,27 @@ Before editing:
 
 Do not assume a successful Cloudflare account login means the intended account or environment is selected.
 
-## Phase 1: extract conversion logic without behavior changes
+## Phase 1: shared conversion logic (implemented; audit before D1 work)
 
-Create `eqify-backend/lib/autoeq-converter.js` and move only reusable pure logic into it:
+`eqify-backend/lib/autoeq-converter.js` already contains reusable logic:
 
 - target frequencies;
 - ParametricEQ text parsing;
 - eight-band conversion;
-- record validation;
-- name normalization used by the importer.
+- the CLI performs export validation and uses lowercase names for stable
+  deduplication and filenames. A future D1 importer still needs explicit
+  record validation and normalized-name handling.
 
-Prefer parsing text as an input to the pure function and leave filesystem reading to the caller. This allows small committed fixtures and deterministic unit tests.
+The shared parser accepts text; filesystem reading remains in callers. This
+allows small committed fixtures and deterministic unit tests.
 
-Keep compatibility exports from `index.js` if existing tests import them there. The current Node server must continue to return the same results after the refactor.
+`index.js` retains compatibility exports for existing tests. The Node service
+must continue to return the same gains; compare representative API outputs
+before any further parser changes.
 
-Add tests for:
+The committed tests cover basic conversion, deterministic selection, output
+shape, and refusal to overwrite an existing output. Before D1 import, extend
+tests for:
 
 - preamp parsing;
 - PK, low-shelf, and high-shelf filters;
@@ -324,11 +392,15 @@ Add tests for:
 
 Stop if the refactor changes existing outputs. Infrastructure migration must not hide a DSP change.
 
-## Phase 2: build the offline generator
+## Phase 2: offline JSON generator (implemented); future D1 importer
 
-Create `eqify-backend/scripts/build-headphone-db.js`.
+`eqify-backend/scripts/build-headphone-db.js` already accepts `--input`,
+`--output`, and `--version` and writes `index.json`, a per-model JSON file
+under `profiles/<hash-prefix>/`, a report, and `index.html`. See
+`GITHUB_PAGES_AUTOEQ.md` for the exact schema and local checkpoint. It does
+**not** generate SQL, `generatedAt`, or an import-ready D1 dump.
 
-Required workflow:
+Existing JSON workflow:
 
 1. Accept the AutoEQ root as an explicit CLI argument or documented environment variable.
 2. Refuse broad or missing filesystem paths.
@@ -337,8 +409,12 @@ Required workflow:
 5. Deduplicate case-insensitively, preserving the current first-result rule.
 6. Parse and convert each selected record.
 7. Validate every output.
-8. Generate deterministic SQL and a machine-readable report.
-9. Exit nonzero on unexpected parse failures, collisions, invalid gains, or incomplete metadata.
+8. Generate deterministic JSON and a machine-readable report. A future D1
+   phase must convert these validated records into bounded SQL batches or
+   another explicit importer; do not assume SQL exists now.
+9. Exit nonzero on malformed filters, invalid gains, missing input, unsafe
+   paths, or incomplete metadata. Add collision detection appropriate to the
+   chosen D1 key before import.
 10. Print a concise summary without dumping the dataset into logs.
 
 Each generated record must have:
@@ -348,28 +424,32 @@ Each generated record must have:
 - type and source;
 - eight finite gains in the correct order;
 - every gain within `[-12, 12]`;
-- dataset version and timestamp.
+- dataset version; generation timestamps are **not** in schema version 1, so
+  the future importer must record an import timestamp separately if needed.
 
-Use one prepared/import-safe insert per row or reasonably sized batches. Do not generate a single unbounded SQL statement. Escape data correctly and keep generated statements within current D1 import limits.
+Future D1 importer: use one prepared/import-safe insert per row or reasonably
+sized batches. Do not generate one unbounded SQL statement. Escape data
+correctly and check then-current D1 import limits.
 
-Example report shape:
+Current JSON report shape (the local checkpoint has concrete counts in
+`GITHUB_PAGES_AUTOEQ.md`):
 
 ```json
 {
   "datasetVersion": "autoeq-commit-or-release",
-  "generatedAt": "ISO-8601 timestamp",
+  "schemaVersion": 1,
   "filesScanned": 0,
   "profilesSelected": 0,
   "profilesConverted": 0,
   "duplicatesRemoved": 0,
   "unknownFilterTypes": {},
-  "parseFailures": [],
-  "sqlBytes": 0,
   "checksum": "sha256"
 }
 ```
 
-The report may be committed only if it is small, contains no raw dataset payload, and is intentionally useful for provenance. The SQL dump remains ignored.
+The report is ignored with the generated output in the app repository. A
+future SQL dump must also remain ignored. The report's checksum covers
+ordered canonical records, not a publish timestamp.
 
 ## Phase 3: local acceptance gate
 
@@ -383,7 +463,8 @@ Required checks:
 4. Every row has exactly eight valid gains.
 5. Case-insensitive names are unique.
 6. Counts reconcile: selected = converted + failed.
-7. Generated SQL size is comfortably below current D1 free-plan and import limits.
+7. Before D1 work, generate and measure SQL/import batches against the
+   then-current D1 free-plan and import limits; the current exporter has no SQL.
 8. Re-running against unchanged inputs produces the same canonical record checksum.
 9. Spot-check known headphones, including Sony WH-1000XM5.
 10. Compare generated output with the current `/api/eq/:headphoneName` result for representative PK/shelf/preamp profiles.
@@ -735,8 +816,9 @@ When implementation is requested:
 1. Do not execute the entire plan blindly.
 2. Inspect current code, Git state, installed tool versions, and Cloudflare resources first.
 3. Re-read current Cloudflare Workers, D1, Wrangler, and pricing documentation.
-4. Start with Phase 1 and stop at every acceptance gate.
+4. Audit the completed Phase 1/2 implementation, then start at the first
+   outstanding acceptance gate; do not recreate the converter or assume the
+   proposed D1 artifacts already exist.
 5. Preserve the Node backend until staging and Android parity are demonstrated.
 6. Never upload, deploy, migrate, delete, or switch production without confirming the exact target and that the user requested that action.
 7. Report actual measurements and validation results, not estimates.
-

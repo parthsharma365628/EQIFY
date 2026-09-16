@@ -2,13 +2,55 @@
 
 This file gives AI coding assistants durable context for working in the EQify repository. Explicit user instructions always take priority over this document.
 
-## What this is.
+## What this is
 
 EQify is an Android equalizer that combines genre profiles, headphone-specific AutoEQ corrections, bass boost, and manual EQ adjustments. The Android client is written in Kotlin with Jetpack Compose. A small Node.js/Express backend supplies genre detection and converts the AutoEQ dataset into EQify's eight logical frequency bands.
 
 The Android app supports API 26 and newer. `DynamicsProcessing.Limiter` is only available from API 28 (Android 9), so older or incompatible devices must use the Safe output-protection fallback.
 
 ## Repository layout
+
+Representative tree (tracked files and important ignored directories; not every icon
+or Gradle-generated file is shown):
+
+```text
+EQIFY/
+├─ AI.md                         # Start here for architecture and guardrails
+├─ GITHUB_PAGES_AUTOEQ.md        # Static export checkpoint and publishing steps
+├─ CLOUDFLARE_AUTOEQ_MIGRATION.md # Deferred Worker + D1 migration plan
+├─ README.md                     # Human-facing project overview
+├─ settings.gradle.kts, build.gradle.kts, gradle/, gradlew.bat
+├─ app/
+│  ├─ build.gradle.kts            # Android SDK, Compose, dependencies, BASE_URL
+│  └─ src/
+│     ├─ main/AndroidManifest.xml # Activity, foreground service, tile, permissions
+│     ├─ main/java/com/example/eqify/
+│     │  ├─ MainActivity.kt, EqifyApplication.kt
+│     │  ├─ EqEngine.kt, EqProcessingService.kt, EqState.kt
+│     │  ├─ EqProcessingSnapshot.kt, EqQuickSettingsTileService.kt
+│     │  ├─ OutputProtectionMode.kt, LimiterDiagnostics.kt
+│     │  ├─ EqProfileManager.kt, UserPreferencesRepository.kt
+│     │  ├─ EqifyApi.kt, HeadphoneEqDiskCache.kt
+│     │  ├─ MediaListenerService.kt, NowPlayingState.kt
+│     │  ├─ Bluetoothheadphonedetector.kt, Localgenredetector.kt
+│     │  ├─ HomeViewModel.kt, SettingsViewModel.kt, EqTestTonePlayer.kt
+│     │  ├─ screens/{HomeScreen,EqScreen,HeadphonesScreen,SettingsScreen}.kt
+│     │  └─ ui/theme/{Color,Theme,Type}.kt
+│     ├─ test/java/com/example/eqify/ # JVM unit tests
+│     └─ androidTest/java/com/example/eqify/ # Device test
+└─ eqify-backend/
+   ├─ index.js                    # Express API and live dataset scanner
+   ├─ lib/autoeq-converter.js     # Shared pure parser and 8-band formulas
+   ├─ scripts/build-headphone-db.js # Offline static export generator
+   ├─ test/{index,autoeq-converter}.test.js
+   ├─ package.json, package-lock.json
+   ├─ autoeq-results/             # Ignored, large raw data; often absent
+   └─ generated/                  # Ignored static output; often absent
+```
+
+This is a file map, not an assertion that every ignored directory is present in
+every clone. In particular, GitHub does not contain `autoeq-results/` or
+`generated/`.
 
 - `app/` - Android application.
 - `app/src/main/java/com/example/eqify/` - state, audio engine, services, API clients, persistence, and view models.
@@ -41,6 +83,15 @@ npm test
 ```
 
 The backend listens on `PORT`, defaulting to `3000`. `LASTFM_API_KEY` is optional and must be supplied through the environment or a local untracked `.env` file. Never commit API keys or other secrets.
+
+On Windows PowerShell, `npm.ps1` may be blocked by execution policy; use
+`npm.cmd install`, `npm.cmd start`, and `npm.cmd test` instead. The offline
+converter itself requires only Node built-ins and can run without `npm install`.
+
+The Gradle config uses `minSdk 26`, `targetSdk 36`, and a configurable
+`EQIFY_BASE_URL` with emulator default `http://10.0.2.2:3000/`. A physical phone
+cannot use the emulator-only `10.0.2.2` address; it needs a reachable backend
+URL. The `BASE_URL` applies to all three Retrofit API calls, including genre.
 
 Run verification in proportion to the change and follow any current user instruction to skip builds or tests.
 
@@ -108,6 +159,20 @@ The former `limit_output_gain` Boolean is a migration-only preference. Existing 
 
 Reuse the colors and typography in `ui/theme` and match the existing card-based dark interface. Keep explanations close to unfamiliar audio controls, especially where a mode has compatibility limits or clipping risk.
 
+### Where to make a change
+
+| Concern | Source of truth / edit location | Important dependency |
+| --- | --- | --- |
+| Audio effect/session attachment | `EqEngine.kt` | Application-lifetime audio-session receiver; limiter must share session |
+| Composed EQ output | `EqProfileManager.kt`, `EqProcessingService.kt` | Preserve separate automatic and immediate manual paths |
+| Runtime UI state | `EqState.kt`, `NowPlayingState.kt` | In-memory state is not durable across process death |
+| Durable preferences/presets | `UserPreferencesRepository.kt` | Preferences DataStore, plus legacy output-protection migration |
+| Headphone lookup/correction | `HeadphonesScreen.kt`, `EqifyApi.kt`, `EqProcessingService.kt`, `HeadphoneEqDiskCache.kt` | Network failure uses favorites/flat correction and cached gains where available |
+| Quick Settings control | `EqQuickSettingsTileService.kt`, `EqProcessingSnapshot.kt` | Snapshot in DataStore plus live service-running flag; no home-screen widget exists |
+| Settings and output protection | `SettingsScreen.kt`, `SettingsViewModel.kt`, `OutputProtectionMode.kt` | Balanced falls back to Safe on unsupported/failed limiter |
+| Backend API | `eqify-backend/index.js` | Keep JSON responses compatible with Retrofit |
+| Offline static export | `eqify-backend/lib/autoeq-converter.js`, `scripts/build-headphone-db.js` | Does not by itself change Android networking |
+
 ## Backend
 
 `eqify-backend/index.js` is the backend entry point. Its public routes are:
@@ -118,6 +183,39 @@ Reuse the colors and typography in `ui/theme` and match the existing card-based 
 - `GET /api/cache/stats` - reports the in-memory genre cache state.
 
 AutoEQ parsing and band conversion are intentionally server-side. Do not copy the full dataset into the Android app or commit it to Git.
+
+Backend input layout is `autoeq-results/<source>/<type>/<model>/<model>
+ParametricEQ.txt`. The server sorts candidates by model, source, type and keeps
+the first case-insensitive model match. The same shared converter is used by
+`index.js` and the offline exporter. Target frequencies, in order, are
+`[60, 170, 310, 600, 1000, 3000, 6000, 12000]` Hz; output is rounded to
+0.1 dB and clamped to `[-12, 12]` dB.
+
+`GET /api/headphones?search=` returns at most 50 `{name,type}` objects; lookup
+is case-insensitive substring matching. `GET /api/eq/:headphoneName` returns
+`{headphone,bands:[{frequencyHz,gainDb},...]}` or 404. `POST /api/v1/genre`
+accepts `{track,artist}` and returns `{genre,source}`. `GET /api/cache/stats`
+is a diagnostic endpoint. `EqifyApi.kt` defines these Android-side models.
+
+### Data-hosting status (do not confuse plans with deployed infrastructure)
+
+- The original EQIFY code repository is
+  `https://github.com/parthsharma365628/EQIFY`. The converter/tooling commit
+  `fe3310f` is on `main` as of 2026-09-16; inspect Git before relying on this
+  historical checkpoint.
+- `https://github.com/parthsharma365628/eqify-data` is the separate intended
+  static-data repository. The publishing instructions and the last known export
+  report are in `GITHUB_PAGES_AUTOEQ.md`; **do not infer that Pages is deployed**.
+- One local export at `eqify-backend/generated/pages-v2/` had 6,028 selected
+  profiles and checksum
+  `ed32807426fdeba7866b88b31205c4f1f5961cfb465a9bc1fca3ba30de40b1cc`.
+  It is ignored and may not exist in another clone. The local input was
+  `D:\eqify\eqify-backend\autoeq-results`, outside this working clone; its
+  exact upstream revision was not recorded.
+- No GitHub Pages client integration, Cloudflare Worker, D1 database, import,
+  or production endpoint switch has been implemented by this work. The app
+  still calls the configured Node API. Future static hosting and Cloudflare
+  migration are alternative/sequence plans, not current runtime dependencies.
 
 ## Tests and diagnostics
 

@@ -5,6 +5,43 @@ This is a static-data prototype. It does **not** change the Android app's existi
 serve the separate genre-detection POST endpoint. Keep the Node backend running
 until a client migration is explicitly implemented.
 
+## Project map for a docs-only AI
+
+EQify's main repository is
+`https://github.com/parthsharma365628/EQIFY` (Kotlin/Jetpack Compose Android
+client, `app/`, plus an Express backend, `eqify-backend/`). The separate
+`https://github.com/parthsharma365628/eqify-data` repository is intended only
+for static converted profile files. AutoEq is the upstream source:
+`https://github.com/jaakkopasanen/AutoEq`.
+
+```text
+EQIFY/
+├─ AI.md                           # Full project architecture and rules
+├─ CLOUDFLARE_AUTOEQ_MIGRATION.md  # Deferred Worker + D1 alternative
+├─ GITHUB_PAGES_AUTOEQ.md          # This checkpoint and static-data contract
+├─ app/src/main/java/com/example/eqify/
+│  ├─ EqifyApi.kt                  # Existing Retrofit API paths/models
+│  ├─ EqProcessingService.kt       # Downloads selected correction, applies EQ
+│  ├─ HeadphoneEqDiskCache.kt      # Caches downloaded eight-gain curves
+│  └─ screens/HeadphonesScreen.kt  # Debounced search and favorites
+└─ eqify-backend/
+   ├─ index.js                     # Existing live Node/Express API
+   ├─ lib/autoeq-converter.js      # Shared parser and eight-band formula
+   ├─ scripts/build-headphone-db.js # Offline, dependency-free Node exporter
+   ├─ test/autoeq-converter.test.js
+   ├─ autoeq-results/              # Raw source; ignored, not committed
+   └─ generated/pages-v2/          # Local export; ignored, not committed
+```
+
+The live API currently returns at most 50 `{name,type}` headphone search
+results for `GET /api/headphones?search=...`, and
+`{headphone,bands:[{frequencyHz,gainDb},...]}` from
+`GET /api/eq/:headphoneName`. Android uses one `BuildConfig.BASE_URL` for those
+routes **and** `POST /api/v1/genre`. Static Pages files do not implement these
+endpoints or server-side search. A future Android change must search a cached
+`index.json` locally, fetch each selected profile by its `profilePath`, and
+preserve the separate genre API. Do not infer that such a change is present.
+
 ## Resume here — checkpoint (2026-09-16)
 
 - Source: [jaakkopasanen/AutoEq](https://github.com/jaakkopasanen/AutoEq).
@@ -116,6 +153,34 @@ The checksum is over ordered canonical records, independent of generation time.
 The names, source/type metadata, and gains make each profile directly
 importable into a future D1 table; the index supports on-device search. Do not
 guess filenames from display names—use `profilePath` from the index.
+
+Concrete example from the local checkpoint (the first selected model; the
+actual `index.json` contains 6,028 `headphones` entries):
+
+```json
+{
+  "schemaVersion": 1,
+  "datasetVersion": "local-autoeq-snapshot",
+  "frequenciesHz": [60, 170, 310, 600, 1000, 3000, 6000, 12000],
+  "checksum": "ed32807426fdeba7866b88b31205c4f1f5961cfb465a9bc1fca3ba30de40b1cc",
+  "headphones": [{
+    "name": "1Custom SA02",
+    "normalizedName": "1custom sa02",
+    "source": "crinacle",
+    "type": "711 in-ear",
+    "profilePath": "profiles/35/350a54565bd769c67e4bb83a9b93cefb7142dc30a085caf72e7d05cbba49135c.json"
+  }]
+}
+```
+
+The JSON at that `profilePath` contains the same schema/version/frequencies
+and model metadata, plus `"gains": [-3.1, -7.3, -8.9, -7.7, -6.5, -5.8,
+-6.2, -4]`. Gain positions correspond exactly to `frequenciesHz`; do not
+sort gains independently. The hash is SHA-256 of the lowercase model name;
+the first two hex characters select the shard. `profilePath` is relative to
+the Pages site root and must be taken from the index, not reconstructed by a
+client. The report checksum hashes the ordered canonical records, so the same
+source and conversion behavior should reproduce it.
 
 ## Publish manually to a separate GitHub Pages repository
 
