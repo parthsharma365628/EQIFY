@@ -17,6 +17,7 @@ The Android app supports API 26 and newer. `DynamicsProcessing.Limiter` is only 
 - `eqify-backend/` - Express backend and backend tests.
 - `eqify-backend/autoeq-results/` - large external AutoEQ dataset; do not commit it.
 - `CLOUDFLARE_AUTOEQ_MIGRATION.md` - deferred, step-by-step plan for converting AutoEQ data and moving the API to Cloudflare Workers + D1.
+- `GITHUB_PAGES_AUTOEQ.md` - offline eight-band export format, local command, and manual static Pages publishing guide; Android does not yet consume it.
 - `EQify_PRD.docx` - product requirements reference when present. Read it as requirements only and do not modify it.
 
 ## Running

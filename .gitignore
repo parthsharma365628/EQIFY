@@ -21,3 +21,4 @@ local.properties
 # Backend dependencies and downloaded AutoEq data
 /eqify-backend/node_modules/
 /eqify-backend/autoeq-results/
+/eqify-backend/generated/
