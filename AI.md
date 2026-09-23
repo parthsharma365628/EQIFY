@@ -4,7 +4,7 @@ This file gives AI coding assistants durable context for working in the EQify re
 
 ## What this is
 
-EQify is an Android equalizer that combines genre profiles, headphone-specific AutoEQ corrections, bass boost, and manual EQ adjustments. The Android client is written in Kotlin with Jetpack Compose. A small Node.js/Express backend supplies genre detection and converts the AutoEQ dataset into EQify's eight logical frequency bands.
+EQify is an Android equalizer that combines genre profiles, headphone-specific AutoEQ corrections, bass boost, and manual EQ adjustments. The Android client is written in Kotlin with Jetpack Compose. A small Node.js/Express backend serves headphone corrections and provides the last step of the client's genre-detection fallback chain. Shared backend tooling converts the AutoEQ dataset into EQify's eight logical frequency bands.
 
 The Android app supports API 26 and newer. `DynamicsProcessing.Limiter` is only available from API 28 (Android 9), so older or incompatible devices must use the Safe output-protection fallback.
 
@@ -16,6 +16,7 @@ or Gradle-generated file is shown):
 ```text
 EQIFY/
 ├─ AI.md                         # Start here for architecture and guardrails
+├─ FEATURE_GENRE_INSIGHTS_AND_CORRECTION.md # Deferred, source-checked feature plan
 ├─ GITHUB_PAGES_AUTOEQ.md        # Static export checkpoint and publishing steps
 ├─ CLOUDFLARE_AUTOEQ_MIGRATION.md # Deferred Worker + D1 migration plan
 ├─ README.md                     # Human-facing project overview
@@ -58,6 +59,7 @@ every clone. In particular, GitHub does not contain `autoeq-results/` or
 - `app/src/main/java/com/example/eqify/ui/theme/` - Compose theme tokens.
 - `eqify-backend/` - Express backend and backend tests.
 - `eqify-backend/autoeq-results/` - large external AutoEQ dataset; do not commit it.
+- `FEATURE_GENRE_INSIGHTS_AND_CORRECTION.md` - deferred, documentation-only plan for local genre corrections and observation-based insights; it is not implemented.
 - `CLOUDFLARE_AUTOEQ_MIGRATION.md` - deferred, step-by-step plan for converting AutoEQ data and moving the API to Cloudflare Workers + D1.
 - `GITHUB_PAGES_AUTOEQ.md` - offline eight-band export format, local command, and manual static Pages publishing guide; Android does not yet consume it.
 - `EQify_PRD.docx` - product requirements reference when present. Read it as requirements only and do not modify it.
@@ -82,7 +84,7 @@ npm start
 npm test
 ```
 
-The backend listens on `PORT`, defaulting to `3000`. `LASTFM_API_KEY` is optional and must be supplied through the environment or a local untracked `.env` file. Never commit API keys or other secrets.
+The backend listens on `PORT`, defaulting to `3000`. `LASTFM_API_KEY` is optional. `index.js` loads `.env`, but the repository's current `.gitignore` does not exclude `.env`; prefer a process/session environment variable, or add an ignore rule in a separately reviewed configuration change before creating that file. Never commit API keys or other secrets.
 
 On Windows PowerShell, `npm.ps1` may be blocked by execution policy; use
 `npm.cmd install`, `npm.cmd start`, and `npm.cmd test` instead. The offline
@@ -144,7 +146,9 @@ The former `limit_output_gain` Boolean is a migration-only preference. Existing 
 
 ### Media and headphone detection
 
-`MediaListenerService` reads active media notifications and updates `NowPlayingState`. Notification-listener permission is user-controlled and must be handled gracefully when absent.
+`MediaListenerService` reads supported apps' media notifications and updates process-local `NowPlayingState`. It currently requires both title and artist, and deduplicates an unchanged pair. Notification-listener permission is user-controlled and must be handled gracefully when absent.
+
+`HomeViewModel`, not `EqProcessingService`, owns genre resolution. It publishes an immediate `LocalGenreDetector` result, then tries the optional direct Last.fm lookup, direct iTunes lookup, and finally `POST /api/v1/genre`. `EqProcessingService` only consumes `NowPlayingState.currentGenre`. Genre detection is therefore tied to the Home view model/activity lifetime today; do not claim background listening history without addressing that lifecycle. See `FEATURE_GENRE_INSIGHTS_AND_CORRECTION.md` for the deferred design analysis.
 
 `Bluetoothheadphonedetector` updates the selected device for Bluetooth and wired connections. Headphone corrections are fetched through `EqifyApi`, cached on disk by `HeadphoneEqDiskCache`, and cached in memory by the processing service. A backend failure must leave the app usable with a flat headphone correction and allow a later retry.
 
@@ -166,6 +170,8 @@ Reuse the colors and typography in `ui/theme` and match the existing card-based 
 | Audio effect/session attachment | `EqEngine.kt` | Application-lifetime audio-session receiver; limiter must share session |
 | Composed EQ output | `EqProfileManager.kt`, `EqProcessingService.kt` | Preserve separate automatic and immediate manual paths |
 | Runtime UI state | `EqState.kt`, `NowPlayingState.kt` | In-memory state is not durable across process death |
+| Genre resolution | `HomeViewModel.kt`, `Localgenredetector.kt`, `EqProfileManager.kt`, `NowPlayingState.kt` | Current order is local → optional Last.fm → iTunes → EQify backend; currently view-model scoped |
+| Deferred genre history/corrections | `FEATURE_GENRE_INSIGHTS_AND_CORRECTION.md` | Planning only; no Room/history implementation exists |
 | Durable preferences/presets | `UserPreferencesRepository.kt` | Preferences DataStore, plus legacy output-protection migration |
 | Headphone lookup/correction | `HeadphonesScreen.kt`, `EqifyApi.kt`, `EqProcessingService.kt`, `HeadphoneEqDiskCache.kt` | Network failure uses favorites/flat correction and cached gains where available |
 | Quick Settings control | `EqQuickSettingsTileService.kt`, `EqProcessingSnapshot.kt` | Snapshot in DataStore plus live service-running flag; no home-screen widget exists |
@@ -180,7 +186,7 @@ Reuse the colors and typography in `ui/theme` and match the existing card-based 
 - `GET /api/headphones` - searches and deduplicates AutoEQ headphone entries.
 - `GET /api/eq/:headphoneName` - parses a parametric AutoEQ file and returns the nearest eight logical bands.
 - `POST /api/v1/genre` - detects genre using cache, Last.fm, iTunes metadata, keyword rules, and a default fallback.
-- `GET /api/cache/stats` - reports the in-memory genre cache state.
+- `GET /api/cache/stats` - reports the in-memory genre cache state, including cached artist names; treat it as a local diagnostic endpoint and do not expose it unchanged in a public deployment.
 
 AutoEQ parsing and band conversion are intentionally server-side. Do not copy the full dataset into the Android app or commit it to Git.
 

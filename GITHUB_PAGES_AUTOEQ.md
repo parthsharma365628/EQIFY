@@ -56,6 +56,9 @@ preserve the separate genre API. Do not infer that such a change is present.
   2,822 duplicate names removed; no unknown filter types. There are 6,028
   profile JSON files in 256 hash-prefix subdirectories. Canonical checksum:
   `ed32807426fdeba7866b88b31205c4f1f5961cfb465a9bc1fca3ba30de40b1cc`.
+  The local checkpoint contains 6,031 files total (profiles plus the three
+  top-level files), about 2.97 MB; `index.json` is about 1.30 MB. These sizes
+  are observations from this export, not permanent limits or guarantees.
 - Target data repository: [parthsharma365628/eqify-data](https://github.com/parthsharma365628/eqify-data).
   Its contents were not verified here. No generated files have been copied,
   committed, pushed, or published by this workflow; check the remote repository

@@ -660,7 +660,9 @@ The Android client currently uses one EQify API base URL for both headphone and 
 - Store `LASTFM_API_KEY` as a Wrangler secret, never a `vars` value or committed file.
 - Replace the module-level genre `Map` with Workers Cache or another justified persistent cache.
 - Preserve Last.fm -> iTunes -> keyword -> Pop priority and response shape.
-- Decide what `/api/cache/stats` should mean after the cache changes.
+- Do not copy the current `/api/cache/stats` response to a public Worker: the
+  Node diagnostic includes cached artist names. Remove it, protect it, or return
+  aggregate counts only after making an explicit observability/privacy decision.
 
 ### Temporary transition: proxy genre requests to the existing Node origin
 
@@ -732,13 +734,13 @@ Never assume a Worker deployment rollback restores connected resource data.
 
 Cloudflare limits and pricing change. Future agents must verify current official documentation before provisioning or promising zero cost.
 
-At the time this plan was written, the relevant free-plan figures included:
+Do not preserve numeric quotas in this plan as if they were durable requirements.
+Before creating resources, verify request, CPU, database-count, per-database
+size, account-storage, rows-read, rows-written, and import limits from the
+official pages below. Confirm that the current Free plan can support separate
+staging and production databases; do not infer that from an old quota.
 
-- Workers: 100,000 requests per day and a 10 ms CPU allowance per invocation.
-- D1: 500 MB maximum per Free database, 5 GB total account storage, 5 million rows read per day, and 100,000 rows written per day.
-- The free account supported enough databases to keep separate staging and production databases.
-
-Current sources to re-check:
+Current sources:
 
 - <https://developers.cloudflare.com/workers/platform/limits/>
 - <https://developers.cloudflare.com/workers/platform/pricing/>
