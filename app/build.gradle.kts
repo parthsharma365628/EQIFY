@@ -6,6 +6,9 @@ plugins {
 val eqifyBaseUrl = providers.gradleProperty("EQIFY_BASE_URL")
     .orElse("http://10.0.2.2:3000/")
     .get()
+val headphoneDataBaseUrl = providers.gradleProperty("EQIFY_HEADPHONE_DATA_BASE_URL")
+    .orElse("https://parthsharma365628.github.io/eqify-data/")
+    .get()
 
 android {
     namespace = "com.example.eqify"
@@ -24,14 +27,17 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        // Emulator: http://10.0.2.2:3000/ — Physical device: use your PC LAN IP, e.g. http://192.168.1.5:3000/
-        buildConfigField("String", "BASE_URL", "\"http://10.0.2.2:3000/\"")
     }
 
     defaultConfig.buildConfigField(
         "String",
         "BASE_URL",
         34.toChar() + eqifyBaseUrl + 34.toChar()
+    )
+    defaultConfig.buildConfigField(
+        "String",
+        "HEADPHONE_DATA_BASE_URL",
+        34.toChar() + headphoneDataBaseUrl + 34.toChar()
     )
 
     buildTypes {

@@ -60,11 +60,15 @@ class HeadphonesViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
-    private suspend fun searchHeadphones(query: String) {
+    private suspend fun searchHeadphones(query: String, forceRefresh: Boolean = false) {
         _isLoading.value = true
         _errorMessage.value = null
         try {
-            val response = RetrofitClient.apiService.getHeadphones(query)
+            val response = HeadphoneDataRepository.search(
+                getApplication(),
+                query,
+                forceRefresh
+            )
             val saved = favorites.value
                 .filter { query.isBlank() || it.contains(query, ignoreCase = true) }
                 .map { HeadphoneResult(it, "favorite") }
@@ -72,18 +76,22 @@ class HeadphonesViewModel(application: Application) : AndroidViewModel(applicati
                 .distinctBy { it.name.lowercase() }
         } catch (e: CancellationException) {
             throw e
-        } catch (_: Exception) {
+        } catch (e: Exception) {
             _results.value = favorites.value
                 .filter { query.isBlank() || it.contains(query, ignoreCase = true) }
                 .map { HeadphoneResult(it, "favorite") }
-            _errorMessage.value = if (_results.value.isEmpty()) "Server unavailable" else "Offline favorites"
+            _errorMessage.value = if (_results.value.isEmpty()) {
+                e.message ?: "Headphone database unavailable"
+            } else {
+                "Offline favorites"
+            }
         } finally {
             _isLoading.value = false
         }
     }
 
     fun retry() {
-        viewModelScope.launch { searchHeadphones(searchQuery.value) }
+        viewModelScope.launch { searchHeadphones(searchQuery.value, forceRefresh = true) }
     }
 
     fun selectHeadphoneLocally(name: String) { _localSelectedHeadphone.value = name }
@@ -131,13 +139,13 @@ fun HeadphonesScreen(
             if (status.headphoneName == localSelectedHeadphone) "Downloading correction..."
             else null
         is HeadphoneCorrectionStatus.Downloaded ->
-            if (status.headphoneName == localSelectedHeadphone) "Correction downloaded and saved"
+            if (status.headphoneName == localSelectedHeadphone) "Gain values downloaded successfully"
             else null
         is HeadphoneCorrectionStatus.Cached ->
             if (status.headphoneName == localSelectedHeadphone) "Using cached correction"
             else null
-        is HeadphoneCorrectionStatus.Unavailable ->
-            if (status.headphoneName == localSelectedHeadphone) "Correction unavailable - using flat EQ"
+        is HeadphoneCorrectionStatus.Failed ->
+            if (status.headphoneName == localSelectedHeadphone) "Error: ${status.message}"
             else null
         HeadphoneCorrectionStatus.Idle -> null
     }
@@ -236,7 +244,7 @@ fun HeadphonesScreen(
         ) {
             Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
                 Text(
-                    "8,850+ models from AutoEQ database",
+                    "6,028 models from AutoEQ database",
                     fontSize = 11.sp,
                     color = TextSecondary
                 )
@@ -292,8 +300,13 @@ fun HeadphonesScreen(
                                 Text(
                                     statusText,
                                     fontSize = 10.sp,
-                                    color = if (statusText == "Using cached correction")
-                                        NeonCyan else TextSecondary
+                                    color = when (correctionStatus) {
+                                        is HeadphoneCorrectionStatus.Failed ->
+                                            MaterialTheme.colorScheme.error
+                                        is HeadphoneCorrectionStatus.Downloaded,
+                                        is HeadphoneCorrectionStatus.Cached -> NeonCyan
+                                        else -> TextSecondary
+                                    }
                                 )
                             }
                         }

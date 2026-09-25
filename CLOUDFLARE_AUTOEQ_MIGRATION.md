@@ -4,12 +4,12 @@ This document is a future implementation guide for moving EQify's headphone-corr
 
 Explicit user instructions and the current repository state take priority over this plan. Before acting, inspect the branch, remote, working tree, installed package versions, current Cloudflare documentation, and the target Cloudflare account/environment.
 
-## Handoff snapshot (2026-09-16; re-check before acting)
+## Handoff snapshot (2026-09-25; re-check before acting)
 
-This plan was drafted before an intermediate GitHub Pages export was built.
+This plan predates the GitHub Pages deployment and was updated after publication.
 The current source repository is
-`https://github.com/parthsharma365628/EQIFY` (`main` included converter commit
-`fe3310f` at this checkpoint). Its present files relevant to this migration are:
+`https://github.com/parthsharma365628/EQIFY`; converter tooling was introduced
+in commit `fe3310f`. Its files relevant to this migration are:
 
 ```text
 EQIFY/
@@ -29,30 +29,29 @@ EQIFY/
    ├─ scripts/build-headphone-db.js # Current offline JSON exporter
    ├─ test/{index,autoeq-converter}.test.js
    ├─ autoeq-results/               # Raw local input; ignored, not in Git
-   └─ generated/pages-v2/          # Ignored local JSON export, not in Git
+   └─ generated/pages-autoeq-7ae0f56d5307/ # Published JSON build; ignored here
 ```
 
 **Implemented:** The live Node API now calls the shared converter in
 `lib/autoeq-converter.js`; the CLI produces a deterministic, sharded static
-JSON export for a prospective GitHub Pages host. A local run used
-`D:\eqify\eqify-backend\autoeq-results` and converted 6,028 unique profiles
-from 8,850 candidate files, removing 2,822 duplicate names. Its canonical
-record SHA-256 is
+JSON export. The published run used `D:\AutoEq\results` from AutoEq commit
+`7ae0f56d53074872b028649617a22bbb4232feb7` and converted 6,028 unique
+profiles from 8,850 candidate files, removing 2,822 duplicate names. Its
+canonical record SHA-256 is
 `ed32807426fdeba7866b88b31205c4f1f5961cfb465a9bc1fca3ba30de40b1cc`.
-The label `local-autoeq-snapshot` is **not** a known upstream AutoEq revision.
-The ignored export may be absent from another clone.
+The ignored local export may be absent from another clone.
 
-**Not implemented:** No GitHub Pages deployment is confirmed; Android still
-calls the Node API. There is no D1 schema/import, Worker code/configuration,
+**Published:** `parthsharma365628/eqify-data` commit `5e84681` is live at
+`https://parthsharma365628.github.io/eqify-data/`. Android still calls the Node
+API and does not consume the static site. There is no D1 schema/import, Worker
+code/configuration,
 Cloudflare resource, production cutover, or SQL dump. Do not interpret the
 later proposed `cloudflare-worker/` tree or SQL example as existing files.
-The separate intended static repository is
-`https://github.com/parthsharma365628/eqify-data`; inspect its actual state.
+The static repository is `https://github.com/parthsharma365628/eqify-data`.
 
-**Current next decision:** Complete the GitHub Pages licensing and publishing
-checkpoint in `GITHUB_PAGES_AUTOEQ.md` if requested. Begin the Worker + D1
-phases only if the user later chooses that migration. No Cloudflare deployment
-is needed merely to preserve the current app behavior.
+**Current next decision:** Implement the separately scoped Android static-data
+client only when requested, or begin Worker + D1 phases only if later chosen.
+No Cloudflare deployment is needed merely to preserve current app behavior.
 
 ## Decision summary
 
@@ -282,7 +281,7 @@ eqify-backend/
 |   `-- test/
 |       `-- index.test.ts
 `-- generated/                       # ignored; local only
-    |-- pages-v2/                    # existing static JSON export when local
+    |-- pages-autoeq-7ae0f56d5307/   # published static JSON export when local
     `-- headphones.sql               # proposed D1 import artifact, not built
 ```
 

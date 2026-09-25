@@ -6,17 +6,40 @@ import retrofit2.converter.gson.GsonConverterFactory
 import retrofit2.http.Body
 import retrofit2.http.GET
 import retrofit2.http.POST
-import retrofit2.http.Path
 import retrofit2.http.Query
+import retrofit2.http.Url
 import java.util.concurrent.TimeUnit
 
 // ── Request / Response models ──────────────────────────────────────
 
 data class GenreRequest(val track: String, val artist: String)
 data class GenreResponse(val genre: String, val source: String)
-data class HeadphoneResponse(val name: String, val type: String)
-data class EqBandResponse(val frequencyHz: Int, val gainDb: Float)
-data class HeadphoneEqResponse(val headphone: String, val bands: List<EqBandResponse>)
+data class StaticHeadphoneSummary(
+    val name: String = "",
+    val normalizedName: String = "",
+    val source: String = "",
+    val type: String = "",
+    val profilePath: String = ""
+)
+
+data class StaticHeadphoneIndex(
+    val schemaVersion: Int = 0,
+    val datasetVersion: String = "",
+    val frequenciesHz: List<Int> = emptyList(),
+    val checksum: String = "",
+    val headphones: List<StaticHeadphoneSummary> = emptyList()
+)
+
+data class StaticHeadphoneProfile(
+    val schemaVersion: Int = 0,
+    val datasetVersion: String = "",
+    val frequenciesHz: List<Int> = emptyList(),
+    val name: String = "",
+    val normalizedName: String = "",
+    val source: String = "",
+    val type: String = "",
+    val gains: List<Float> = emptyList()
+)
 
 // ── API interface ──────────────────────────────────────────────────
 
@@ -25,13 +48,14 @@ interface EqifyApiService {
     @POST("api/v1/genre")
     suspend fun resolveGenre(@Body request: GenreRequest): GenreResponse
 
-    @GET("api/headphones")
-    suspend fun getHeadphones(@Query("search") query: String): List<HeadphoneResponse>
+}
 
-    @GET("api/eq/{headphoneName}")
-    suspend fun getHeadphoneEq(
-        @Path("headphoneName", encoded = false) headphoneName: String
-    ): HeadphoneEqResponse
+interface HeadphoneDataApiService {
+    @GET("index.json")
+    suspend fun getIndex(): StaticHeadphoneIndex
+
+    @GET
+    suspend fun getProfile(@Url profilePath: String): StaticHeadphoneProfile
 }
 
 data class LastFmTag(val name: String)
@@ -92,6 +116,23 @@ object RetrofitClient {
             .addConverterFactory(GsonConverterFactory.create())
             .build()
             .create(EqifyApiService::class.java)
+    }
+}
+
+object HeadphoneDataClient {
+    private val httpClient = OkHttpClient.Builder()
+        .connectTimeout(5, TimeUnit.SECONDS)
+        .readTimeout(15, TimeUnit.SECONDS)
+        .callTimeout(20, TimeUnit.SECONDS)
+        .build()
+
+    val apiService: HeadphoneDataApiService by lazy {
+        Retrofit.Builder()
+            .baseUrl(BuildConfig.HEADPHONE_DATA_BASE_URL)
+            .client(httpClient)
+            .addConverterFactory(GsonConverterFactory.create())
+            .build()
+            .create(HeadphoneDataApiService::class.java)
     }
 }
 

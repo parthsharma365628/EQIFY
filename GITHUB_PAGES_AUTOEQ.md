@@ -1,9 +1,9 @@
-# Offline AutoEQ export for GitHub Pages
+# AutoEQ export and GitHub Pages deployment
 
-This is a static-data prototype. It does **not** change the Android app's existing
-`/api/headphones` and `/api/eq/:headphoneName` API calls, and GitHub Pages cannot
-serve the separate genre-detection POST endpoint. Keep the Node backend running
-until a client migration is explicitly implemented.
+The static headphone database is deployed and the Android app now uses it for
+headphone search and correction profiles. GitHub Pages cannot serve the separate
+genre-detection POST endpoint, so `BuildConfig.BASE_URL` and the Node backend
+remain available for that fallback.
 
 ## Project map for a docs-only AI
 
@@ -20,7 +20,8 @@ EQIFY/
 ├─ CLOUDFLARE_AUTOEQ_MIGRATION.md  # Deferred Worker + D1 alternative
 ├─ GITHUB_PAGES_AUTOEQ.md          # This checkpoint and static-data contract
 ├─ app/src/main/java/com/example/eqify/
-│  ├─ EqifyApi.kt                  # Existing Retrofit API paths/models
+│  ├─ EqifyApi.kt                  # Genre and static Pages Retrofit APIs/models
+│  ├─ HeadphoneDataRepository.kt   # Cached local search and profile validation
 │  ├─ EqProcessingService.kt       # Downloads selected correction, applies EQ
 │  ├─ HeadphoneEqDiskCache.kt      # Caches downloaded eight-gain curves
 │  └─ screens/HeadphonesScreen.kt  # Debounced search and favorites
@@ -30,83 +31,45 @@ EQIFY/
    ├─ scripts/build-headphone-db.js # Offline, dependency-free Node exporter
    ├─ test/autoeq-converter.test.js
    ├─ autoeq-results/              # Raw source; ignored, not committed
-   └─ generated/pages-v2/          # Local export; ignored, not committed
+   └─ generated/pages-autoeq-7ae0f56d5307/ # Published build; ignored locally
 ```
 
-The live API currently returns at most 50 `{name,type}` headphone search
-results for `GET /api/headphones?search=...`, and
-`{headphone,bands:[{frequencyHz,gainDb},...]}` from
-`GET /api/eq/:headphoneName`. Android uses one `BuildConfig.BASE_URL` for those
-routes **and** `POST /api/v1/genre`. Static Pages files do not implement these
-endpoints or server-side search. A future Android change must search a cached
-`index.json` locally, fetch each selected profile by its `profilePath`, and
-preserve the separate genre API. Do not infer that such a change is present.
+Android uses `BuildConfig.HEADPHONE_DATA_BASE_URL` for the static database and
+`BuildConfig.BASE_URL` for `POST /api/v1/genre`. It downloads and caches
+`index.json`, searches at most 50 matches locally, then downloads only the
+selected profile from its `profilePath`. `HeadphoneEqDiskCache` retains selected
+gain arrays for offline reuse. Download success and failure are exposed through
+`HeadphoneCorrectionStatus` and shown on the headphone and Home screens.
 
-## Resume here — checkpoint (2026-09-16)
+## Deployment checkpoint (2026-09-25)
 
-- Source: [jaakkopasanen/AutoEq](https://github.com/jaakkopasanen/AutoEq).
-  The local input used was `D:\eqify\eqify-backend\autoeq-results`. Its exact
-  upstream revision has **not** been recorded; `local-autoeq-snapshot` is only
-  a temporary label, not a commit ID.
-- The corrected, sharded export exists at
-  `eqify-backend/generated/pages-v2/` in the EQify workspace. **Publish this
-  directory's contents**, not the earlier flat `pages/` output. Both the raw
-  input and generated output are Git-ignored in the app repository.
+- Source: [jaakkopasanen/AutoEq](https://github.com/jaakkopasanen/AutoEq),
+  commit `7ae0f56d53074872b028649617a22bbb4232feb7`.
+- Local reproducible export:
+  `eqify-backend/generated/pages-autoeq-7ae0f56d5307/`. Generated output is
+  ignored in the EQIFY application repository and may be absent in another clone.
 - Verified report: 8,850 files scanned; 6,028 unique profiles converted;
-  2,822 duplicate names removed; no unknown filter types. There are 6,028
-  profile JSON files in 256 hash-prefix subdirectories. Canonical checksum:
+  2,822 duplicates removed; no unknown filter types. Canonical checksum:
   `ed32807426fdeba7866b88b31205c4f1f5961cfb465a9bc1fca3ba30de40b1cc`.
-  The local checkpoint contains 6,031 files total (profiles plus the three
-  top-level files), about 2.97 MB; `index.json` is about 1.30 MB. These sizes
-  are observations from this export, not permanent limits or guarantees.
-- Target data repository: [parthsharma365628/eqify-data](https://github.com/parthsharma365628/eqify-data).
-  Its contents were not verified here. No generated files have been copied,
-  committed, pushed, or published by this workflow; check the remote repository
-  before assuming it is empty or unpublished.
-- The Android app has **not** been changed to fetch from GitHub Pages. The Node
-  backend remains necessary, including for genre detection.
+- Published repository:
+  [parthsharma365628/eqify-data](https://github.com/parthsharma365628/eqify-data),
+  commit `5e84681`. It includes `README.md`, `LICENSE-AUTOEQ`, and
+  `THIRD_PARTY_NOTICES.md` with the generated files.
+- Live site: <https://parthsharma365628.github.io/eqify-data/>. GitHub Pages is
+  configured from `main` and `/(root)`. The landing page, `index.json`, and a
+  referenced profile returned HTTP 200 after deployment.
+- The published tree contains 6,028 profile files and six top-level files,
+  approximately 3.09 MB total. `index.json` is approximately 1.30 MB.
+- Android now fetches headphone data from GitHub Pages. The Node backend remains
+  necessary only for the final genre-detection fallback.
 
-### Remaining steps, in order
+### Remaining work
 
-1. Review AutoEq's license/attribution and the terms of the underlying
-   third-party measurement sources before public redistribution. Add required
-   notices to `eqify-data`. Do not assume AutoEq's software MIT license settles
-   the rights for every measurement source. If possible, identify the exact
-   AutoEq source revision; otherwise keep the snapshot label honest.
-2. Confirm `pages-v2/conversion-report.json` still has the counts and checksum
-   above. Spot-check `index.json` and several `profilePath` targets. Do not
-   regenerate unless the input or exporter changes; if regenerating, choose a
-   new empty output directory and compare reports before replacing anything.
-3. Clone `eqify-data` **outside** the EQify app repository. Inspect its existing
-   files and branch. If it is empty, copy only the contents of `pages-v2` to its
-   root. If it is not empty, reconcile changes first; do not overwrite blindly.
-4. Review `git status` in `eqify-data`. Commit/push only `index.html`,
-   `index.json`, `conversion-report.json`, `profiles/`, and required notices.
-   Do **not** upload `autoeq-results`, `node_modules`, secrets, or the whole
-   EQify repository. GitHub's browser uploader is unsuitable for 6,028 files.
-5. In `eqify-data` on GitHub, configure **Settings → Pages → Deploy from a
-   branch**, using the pushed branch (usually `main`) and `/(root)`. Wait for
-   deployment and check `https://parthsharma365628.github.io/eqify-data/index.json`
-   plus at least one profile URL referenced by `profilePath`.
-6. Only in a separately requested app change, implement local index caching,
-   search, profile download, error/offline behavior, and a retained genre API.
-
-PowerShell commands for step 3-4 **if the new repository is empty**, run one
-line at a time from any directory:
-
-```powershell
-git clone https://github.com/parthsharma365628/eqify-data.git D:\eqify-data
-Copy-Item -Path 'D:\EQIFY GITHUB\EQIFY\eqify-backend\generated\pages-v2\*' -Destination 'D:\eqify-data' -Recurse
-git -C D:\eqify-data status --short
-git -C D:\eqify-data add -- index.html index.json conversion-report.json profiles
-git -C D:\eqify-data commit -m "Publish converted AutoEq headphone profiles"
-git -C D:\eqify-data push origin main
-```
-
-Before `git add`, include and review any required attribution files, and stage
-those explicitly too. If `D:\eqify-data` already exists or the remote branch
-is not `main`, adapt the commands after inspecting that repository. Do not
-repeat `git clone` into an existing directory.
+1. Continue reviewing source-specific measurement redistribution terms. AutoEq's
+   MIT software license does not automatically settle every measurement source's
+   terms; retain attribution with every dataset update.
+2. Validate first-run download, cached offline search, selected-profile download,
+   cached correction reuse, and failure messages on a device.
 
 ## Generate locally (PowerShell, from the EQify repository root)
 
@@ -163,7 +126,7 @@ actual `index.json` contains 6,028 `headphones` entries):
 ```json
 {
   "schemaVersion": 1,
-  "datasetVersion": "local-autoeq-snapshot",
+  "datasetVersion": "7ae0f56d53074872b028649617a22bbb4232feb7",
   "frequenciesHz": [60, 170, 310, 600, 1000, 3000, 6000, 12000],
   "checksum": "ed32807426fdeba7866b88b31205c4f1f5961cfb465a9bc1fca3ba30de40b1cc",
   "headphones": [{
@@ -192,8 +155,8 @@ source and conversion behavior should reproduce it.
    attribution and redistribution terms before publishing. Include the
    required notices in that repository.
 2. Clone that repository into a directory **outside** this EQify repository.
-   Copy the **contents** of the selected generated output (`pages-v2` for the
-   checkpoint above) into its root:
+   Copy the **contents** of the selected generated output
+   (`pages-autoeq-7ae0f56d5307` for the published checkpoint) into its root:
    `index.html`, `index.json`, `conversion-report.json`, and `profiles/`.
    Review `git status` and the file sizes, then commit and push only the
    generated static files and required notices. Avoid broad `git add` in EQify.
@@ -209,7 +172,5 @@ report and checksum, then publish the new files to the data repository.
 Remove stale profile files there only after reviewing exactly which generated
 paths changed. Never push the source AutoEQ tree or secrets.
 
-This does **not** yet make the Android app read Pages. A later, separately
-requested client change must download/cache `index.json`, search locally, fetch
-selected profiles by `profilePath`, retain offline/error behavior, and keep a
-working genre API. See `CLOUDFLARE_AUTOEQ_MIGRATION.md` for the deferred D1 path.
+The Android integration is implemented in `HeadphoneDataRepository.kt`.
+See `CLOUDFLARE_AUTOEQ_MIGRATION.md` for the deferred D1 path.

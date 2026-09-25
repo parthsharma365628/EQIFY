@@ -8,7 +8,7 @@ sealed class HeadphoneCorrectionStatus {
     data class Loading(val headphoneName: String) : HeadphoneCorrectionStatus()
     data class Downloaded(val headphoneName: String) : HeadphoneCorrectionStatus()
     data class Cached(val headphoneName: String) : HeadphoneCorrectionStatus()
-    data class Unavailable(val headphoneName: String) : HeadphoneCorrectionStatus()
+    data class Failed(val headphoneName: String, val message: String) : HeadphoneCorrectionStatus()
 }
 
 /**

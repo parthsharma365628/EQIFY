@@ -41,6 +41,7 @@ fun HomeScreen(
     val isEqEnabled          by EqState.isEqEnabled.collectAsState()
     val activePreset         by EqState.activePresetName.collectAsState()
     val serviceRunning       by EqState.isServiceRunning.collectAsState()
+    val correctionStatus     by EqState.headphoneCorrectionStatus.collectAsState()
     val wiredConnected       by BluetoothHeadphoneDetector.wiredConnected.collectAsState()
     val testToneMessage      by viewModel.testToneMessage.collectAsState()
 
@@ -81,6 +82,7 @@ fun HomeScreen(
 
         HeadphoneCard(
             headphoneName = selectedHeadphone,
+            correctionStatus = correctionStatus,
             onClick       = onNavigateToHeadphones
         )
 
@@ -405,7 +407,27 @@ fun EqStatusCard(
 // ── Headphone card ────────────────────────────────────────────────────
 
 @Composable
-fun HeadphoneCard(headphoneName: String, onClick: () -> Unit) {
+fun HeadphoneCard(
+    headphoneName: String,
+    correctionStatus: HeadphoneCorrectionStatus,
+    onClick: () -> Unit
+) {
+    val statusText = when (correctionStatus) {
+        is HeadphoneCorrectionStatus.Loading -> "Downloading gain values..."
+        is HeadphoneCorrectionStatus.Downloaded -> "Gain values downloaded successfully"
+        is HeadphoneCorrectionStatus.Cached -> "Using saved gain values"
+        is HeadphoneCorrectionStatus.Failed -> "Error: ${correctionStatus.message}"
+        HeadphoneCorrectionStatus.Idle -> null
+    }.takeIf {
+        when (correctionStatus) {
+            is HeadphoneCorrectionStatus.Loading -> correctionStatus.headphoneName == headphoneName
+            is HeadphoneCorrectionStatus.Downloaded -> correctionStatus.headphoneName == headphoneName
+            is HeadphoneCorrectionStatus.Cached -> correctionStatus.headphoneName == headphoneName
+            is HeadphoneCorrectionStatus.Failed -> correctionStatus.headphoneName == headphoneName
+            HeadphoneCorrectionStatus.Idle -> false
+        }
+    }
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -428,6 +450,14 @@ fun HeadphoneCard(headphoneName: String, onClick: () -> Unit) {
                     color      = TextPrimary
                 )
                 Text(text = "Manage headphone correction", fontSize = 12.sp, color = TextSecondary)
+                statusText?.let {
+                    Text(
+                        text = it,
+                        fontSize = 10.sp,
+                        color = if (correctionStatus is HeadphoneCorrectionStatus.Failed)
+                            MaterialTheme.colorScheme.error else NeonCyan
+                    )
+                }
             }
             Text(
                 text       = "Change",

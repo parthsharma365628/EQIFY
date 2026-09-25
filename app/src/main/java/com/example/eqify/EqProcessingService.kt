@@ -11,6 +11,7 @@ import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
@@ -20,8 +21,6 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import kotlin.math.abs
 
 class EqProcessingService : Service() {
 
@@ -357,37 +356,26 @@ class EqProcessingService : Service() {
             return it
         }
 
-        val apiResult = fetchHeadphoneEqFromApi(headphoneName)
-        if (apiResult == null) {
-            Log.w(TAG, "HP EQ not found for '$headphoneName' — using flat until retry")
+        val downloadedGains = try {
+            HeadphoneDataRepository.getProfileGains(this, headphoneName)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            val message = e.message ?: "Gain values could not be downloaded. Flat correction is active."
+            Log.w(TAG, "HP EQ download failed for '$headphoneName': $message", e)
             EqState.updateHeadphoneCorrectionStatus(
-                HeadphoneCorrectionStatus.Unavailable(headphoneName)
+                HeadphoneCorrectionStatus.Failed(headphoneName, message)
             )
             return FloatArray(8)
         }
 
-        headphoneEqCache[headphoneName] = apiResult
-        HeadphoneEqDiskCache.save(this, headphoneName, apiResult)
+        headphoneEqCache[headphoneName] = downloadedGains
+        HeadphoneEqDiskCache.save(this, headphoneName, downloadedGains)
         EqState.updateHeadphoneCorrectionStatus(
             HeadphoneCorrectionStatus.Downloaded(headphoneName)
         )
-        Log.d(TAG, "HP EQ cached: $headphoneName → ${apiResult.map { "%.1f".format(it) }}")
-        return apiResult
-    }
-
-    private suspend fun fetchHeadphoneEqFromApi(headphoneName: String): FloatArray? {
-        return try {
-            withContext(Dispatchers.IO) {
-                val response = RetrofitClient.apiService.getHeadphoneEq(headphoneName)
-                FloatArray(8) { i ->
-                    val targetHz = EqProfileManager.BAND_CENTERS_HZ[i]
-                    response.bands.minByOrNull { abs(it.frequencyHz - targetHz) }?.gainDb ?: 0f
-                }
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "HP EQ API failed for '$headphoneName': ${e.message}")
-            null
-        }
+        Log.d(TAG, "HP EQ cached: $headphoneName → ${downloadedGains.map { "%.1f".format(it) }}")
+        return downloadedGains
     }
 
     // ── Notification ──────────────────────────────────────────────────

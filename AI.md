@@ -31,7 +31,7 @@ EQIFY/
 │     │  ├─ EqProcessingSnapshot.kt, EqQuickSettingsTileService.kt
 │     │  ├─ OutputProtectionMode.kt, LimiterDiagnostics.kt
 │     │  ├─ EqProfileManager.kt, UserPreferencesRepository.kt
-│     │  ├─ EqifyApi.kt, HeadphoneEqDiskCache.kt
+│     │  ├─ EqifyApi.kt, HeadphoneDataRepository.kt, HeadphoneEqDiskCache.kt
 │     │  ├─ MediaListenerService.kt, NowPlayingState.kt
 │     │  ├─ Bluetoothheadphonedetector.kt, Localgenredetector.kt
 │     │  ├─ HomeViewModel.kt, SettingsViewModel.kt, EqTestTonePlayer.kt
@@ -61,7 +61,7 @@ every clone. In particular, GitHub does not contain `autoeq-results/` or
 - `eqify-backend/autoeq-results/` - large external AutoEQ dataset; do not commit it.
 - `FEATURE_GENRE_INSIGHTS_AND_CORRECTION.md` - deferred, documentation-only plan for local genre corrections and observation-based insights; it is not implemented.
 - `CLOUDFLARE_AUTOEQ_MIGRATION.md` - deferred, step-by-step plan for converting AutoEQ data and moving the API to Cloudflare Workers + D1.
-- `GITHUB_PAGES_AUTOEQ.md` - offline eight-band export format, local command, and manual static Pages publishing guide; Android does not yet consume it.
+- `GITHUB_PAGES_AUTOEQ.md` - offline eight-band export format, Pages deployment, and Android static-data integration.
 - `EQify_PRD.docx` - product requirements reference when present. Read it as requirements only and do not modify it.
 
 ## Running
@@ -90,10 +90,12 @@ On Windows PowerShell, `npm.ps1` may be blocked by execution policy; use
 `npm.cmd install`, `npm.cmd start`, and `npm.cmd test` instead. The offline
 converter itself requires only Node built-ins and can run without `npm install`.
 
-The Gradle config uses `minSdk 26`, `targetSdk 36`, and a configurable
-`EQIFY_BASE_URL` with emulator default `http://10.0.2.2:3000/`. A physical phone
-cannot use the emulator-only `10.0.2.2` address; it needs a reachable backend
-URL. The `BASE_URL` applies to all three Retrofit API calls, including genre.
+The Gradle config uses `minSdk 26`, `targetSdk 36`, a configurable
+`EQIFY_BASE_URL` with emulator default `http://10.0.2.2:3000/`, and
+`EQIFY_HEADPHONE_DATA_BASE_URL` defaulting to the deployed GitHub Pages site.
+A physical phone cannot use the emulator-only `10.0.2.2` address for the genre
+fallback; it needs a reachable backend URL. Both Retrofit base URLs need a
+trailing slash.
 
 Run verification in proportion to the change and follow any current user instruction to skip builds or tests.
 
@@ -109,7 +111,7 @@ Run verification in proportion to the change and follow any current user instruc
 
 `EqState` is the shared in-memory state. `EqProcessingService` deliberately uses two separate paths:
 
-1. `observeAutoEqPipeline()` handles genre, selected headphone, presets, bass boost, enabled/bypass state, and persisted audio settings. It may perform a backend request for headphone correction.
+1. `observeAutoEqPipeline()` handles genre, selected headphone, presets, bass boost, enabled/bypass state, and persisted audio settings. It may download a selected static headphone profile from GitHub Pages.
 2. `observeManualAdjustments()` handles slider movement immediately using the correction already cached in `EqState`; it must not wait for the network.
 
 This separation is load-bearing. A slider movement must not update `baseToneGains` in a way that retriggers the automatic pipeline and overwrites the user's new value. Preserve the stale-emission checks around manual override state when editing either path.
@@ -150,7 +152,7 @@ The former `limit_output_gain` Boolean is a migration-only preference. Existing 
 
 `HomeViewModel`, not `EqProcessingService`, owns genre resolution. It publishes an immediate `LocalGenreDetector` result, then tries the optional direct Last.fm lookup, direct iTunes lookup, and finally `POST /api/v1/genre`. `EqProcessingService` only consumes `NowPlayingState.currentGenre`. Genre detection is therefore tied to the Home view model/activity lifetime today; do not claim background listening history without addressing that lifecycle. See `FEATURE_GENRE_INSIGHTS_AND_CORRECTION.md` for the deferred design analysis.
 
-`Bluetoothheadphonedetector` updates the selected device for Bluetooth and wired connections. Headphone corrections are fetched through `EqifyApi`, cached on disk by `HeadphoneEqDiskCache`, and cached in memory by the processing service. A backend failure must leave the app usable with a flat headphone correction and allow a later retry.
+`Bluetoothheadphonedetector` updates the selected device for Bluetooth and wired connections. `HeadphoneDataRepository` caches the GitHub Pages `index.json`, searches it locally, validates selected profile files, and returns eight gains. `HeadphoneEqDiskCache` caches selected gains on disk; the processing service also keeps them in memory. A download failure leaves the app usable with flat correction and exposes an error message.
 
 ### UI composition
 
@@ -173,7 +175,7 @@ Reuse the colors and typography in `ui/theme` and match the existing card-based 
 | Genre resolution | `HomeViewModel.kt`, `Localgenredetector.kt`, `EqProfileManager.kt`, `NowPlayingState.kt` | Current order is local → optional Last.fm → iTunes → EQify backend; currently view-model scoped |
 | Deferred genre history/corrections | `FEATURE_GENRE_INSIGHTS_AND_CORRECTION.md` | Planning only; no Room/history implementation exists |
 | Durable preferences/presets | `UserPreferencesRepository.kt` | Preferences DataStore, plus legacy output-protection migration |
-| Headphone lookup/correction | `HeadphonesScreen.kt`, `EqifyApi.kt`, `EqProcessingService.kt`, `HeadphoneEqDiskCache.kt` | Network failure uses favorites/flat correction and cached gains where available |
+| Headphone lookup/correction | `HeadphonesScreen.kt`, `HeadphoneDataRepository.kt`, `EqifyApi.kt`, `EqProcessingService.kt`, `HeadphoneEqDiskCache.kt` | Pages index is cached; only selected gains are downloaded; failure uses favorites/flat correction or cached gains |
 | Quick Settings control | `EqQuickSettingsTileService.kt`, `EqProcessingSnapshot.kt` | Snapshot in DataStore plus live service-running flag; no home-screen widget exists |
 | Settings and output protection | `SettingsScreen.kt`, `SettingsViewModel.kt`, `OutputProtectionMode.kt` | Balanced falls back to Safe on unsupported/failed limiter |
 | Backend API | `eqify-backend/index.js` | Keep JSON responses compatible with Retrofit |
@@ -188,7 +190,7 @@ Reuse the colors and typography in `ui/theme` and match the existing card-based 
 - `POST /api/v1/genre` - detects genre using cache, Last.fm, iTunes metadata, keyword rules, and a default fallback.
 - `GET /api/cache/stats` - reports the in-memory genre cache state, including cached artist names; treat it as a local diagnostic endpoint and do not expose it unchanged in a public deployment.
 
-AutoEQ parsing and band conversion are intentionally server-side. Do not copy the full dataset into the Android app or commit it to Git.
+AutoEQ parsing and band conversion happen in backend/offline tooling. Android consumes only the converted static index and selected profile; do not copy the full dataset into the app or commit it to Git.
 
 Backend input layout is `autoeq-results/<source>/<type>/<model>/<model>
 ParametricEQ.txt`. The server sorts candidates by model, source, type and keeps
@@ -201,7 +203,9 @@ the first case-insensitive model match. The same shared converter is used by
 is case-insensitive substring matching. `GET /api/eq/:headphoneName` returns
 `{headphone,bands:[{frequencyHz,gainDb},...]}` or 404. `POST /api/v1/genre`
 accepts `{track,artist}` and returns `{genre,source}`. `GET /api/cache/stats`
-is a diagnostic endpoint. `EqifyApi.kt` defines these Android-side models.
+is a diagnostic endpoint. The headphone routes remain available to backend
+tools but Android no longer calls them; `EqifyApi.kt` defines the active genre
+and static Pages models.
 
 ### Data-hosting status (do not confuse plans with deployed infrastructure)
 
@@ -209,19 +213,20 @@ is a diagnostic endpoint. `EqifyApi.kt` defines these Android-side models.
   `https://github.com/parthsharma365628/EQIFY`. The converter/tooling commit
   `fe3310f` is on `main` as of 2026-09-16; inspect Git before relying on this
   historical checkpoint.
-- `https://github.com/parthsharma365628/eqify-data` is the separate intended
-  static-data repository. The publishing instructions and the last known export
-  report are in `GITHUB_PAGES_AUTOEQ.md`; **do not infer that Pages is deployed**.
-- One local export at `eqify-backend/generated/pages-v2/` had 6,028 selected
-  profiles and checksum
+- `https://github.com/parthsharma365628/eqify-data` is the separate published
+  static-data repository. GitHub Pages serves it from `main` and `/(root)` at
+  `https://parthsharma365628.github.io/eqify-data/`; publication commit was
+  `5e84681` on 2026-09-25.
+- The published export was regenerated from AutoEq commit
+  `7ae0f56d53074872b028649617a22bbb4232feb7`, contains 6,028 profiles, and has
+  checksum
   `ed32807426fdeba7866b88b31205c4f1f5961cfb465a9bc1fca3ba30de40b1cc`.
-  It is ignored and may not exist in another clone. The local input was
-  `D:\eqify\eqify-backend\autoeq-results`, outside this working clone; its
-  exact upstream revision was not recorded.
-- No GitHub Pages client integration, Cloudflare Worker, D1 database, import,
-  or production endpoint switch has been implemented by this work. The app
-  still calls the configured Node API. Future static hosting and Cloudflare
-  migration are alternative/sequence plans, not current runtime dependencies.
+  Its ignored local build path is
+  `eqify-backend/generated/pages-autoeq-7ae0f56d5307/` and may not exist in
+  another clone.
+- GitHub Pages Android client integration is implemented. No Cloudflare Worker,
+  D1 database, or import has been implemented. The Node API remains configured
+  for the final genre-resolution fallback, not headphone lookup.
 
 ## Tests and diagnostics
 

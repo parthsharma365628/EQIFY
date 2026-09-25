@@ -15,7 +15,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 /**
  * Detects Bluetooth and wired headphone connections.
@@ -117,7 +116,7 @@ object BluetoothHeadphoneDetector {
             matchCache[cacheKey]
         } else {
             val searchName = deviceName.replace(Regex("(?i)^LE[_\\s-]*"), "").trim()
-            val candidates = fetchHeadphoneNames(searchName)
+            val candidates = fetchHeadphoneNames(context, searchName)
             val resolved = findBestMatch(searchName, candidates)
             matchCache[cacheKey] = resolved
             resolved
@@ -153,11 +152,9 @@ object BluetoothHeadphoneDetector {
     private fun normalise(name: String): String =
         name.lowercase().replace(Regex("[\\s\\-_]"), "")
 
-    private suspend fun fetchHeadphoneNames(query: String): List<String> {
+    private suspend fun fetchHeadphoneNames(context: Context, query: String): List<String> {
         return try {
-            withContext(Dispatchers.IO) {
-                RetrofitClient.apiService.getHeadphones(query).map { it.name }
-            }
+            HeadphoneDataRepository.search(context, query).map { it.name }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to fetch headphone list: ${e.message}")
             emptyList()
