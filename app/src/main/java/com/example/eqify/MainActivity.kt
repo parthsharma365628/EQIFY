@@ -17,6 +17,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
@@ -177,6 +179,20 @@ fun EqifyApp() {
     val navController     = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute      = navBackStackEntry?.destination?.route
+    // Keep one resolver for the activity. A destination-scoped HomeViewModel can
+    // remain alive in each back-stack entry and make the same track oscillate
+    // between provisional and network-resolved genres.
+    val homeViewModel: HomeViewModel = viewModel()
+
+    fun navigateToTopLevel(route: String) {
+        navController.navigate(route) {
+            popUpTo(navController.graph.findStartDestination().id) {
+                saveState = true
+            }
+            launchSingleTop = true
+            restoreState = true
+        }
+    }
 
     Scaffold(
         bottomBar = {
@@ -186,13 +202,13 @@ fun EqifyApp() {
                         icon     = { AppGlyph("Home", if (currentRoute == "home") TextPrimary else TextSecondary) },
                         label    = { Text("Home") },
                         selected = currentRoute == "home",
-                        onClick  = { navController.navigate("home") { launchSingleTop = true } }
+                        onClick  = { navigateToTopLevel("home") }
                     )
                     NavigationBarItem(
                         icon     = { AppGlyph("Equalizer", if (currentRoute == "eq") TextPrimary else TextSecondary) },
                         label    = { Text("EQ") },
                         selected = currentRoute == "eq",
-                        onClick  = { navController.navigate("eq") { launchSingleTop = true } }
+                        onClick  = { navigateToTopLevel("eq") }
                     )
                 }
             }
@@ -206,7 +222,8 @@ fun EqifyApp() {
             composable("home") {
                 HomeScreen(
                     onNavigateToHeadphones = { navController.navigate("headphones") },
-                    onNavigateToSettings   = { navController.navigate("settings") }
+                    onNavigateToSettings   = { navController.navigate("settings") },
+                    viewModel = homeViewModel
                 )
             }
             composable("eq") { EqScreen() }
