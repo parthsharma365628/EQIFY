@@ -4,7 +4,7 @@ This file gives AI coding assistants durable context for working in the EQify re
 
 ## What this is
 
-EQify is an Android equalizer that combines genre profiles, headphone-specific AutoEQ corrections, bass boost, and manual EQ adjustments. The Android client is written in Kotlin with Jetpack Compose. A small Node.js/Express backend serves headphone corrections and provides the last step of the client's genre-detection fallback chain. Shared backend tooling converts the AutoEQ dataset into EQify's eight logical frequency bands.
+EQify is an Android equalizer that combines genre profiles, headphone-specific AutoEQ corrections, bass boost, and manual EQ adjustments. The Android client is written in Kotlin with Jetpack Compose. The app downloads headphone data from GitHub Pages; a small Node.js/Express backend retains headphone routes for tooling and provides the last step of the client's genre-detection fallback chain. Shared backend tooling converts the AutoEQ dataset into EQify's eight logical frequency bands.
 
 The Android app supports API 26 and newer. `DynamicsProcessing.Limiter` is only available from API 28 (Android 9), so older or incompatible devices must use the Safe output-protection fallback.
 
@@ -164,6 +164,52 @@ The former `limit_output_gain` Boolean is a migration-only preference. Existing 
 - `SettingsScreen` - persisted behavior, integrations, output protection, cache, and privacy information.
 
 Reuse the colors and typography in `ui/theme` and match the existing card-based dark interface. Keep explanations close to unfamiliar audio controls, especially where a mode has compatibility limits or clipping risk.
+
+### Kotlin file reference
+
+Paths are relative to `app/src/main/java/com/example/eqify/`. “Owns” means logic/state in that file, not necessarily durable storage.
+
+| File (lifecycle) | Purpose / responsibilities | Dependencies and invariants | Modify when |
+| --- | --- | --- | --- |
+| `EqifyApplication.kt` (Application) | Registers global audio/headphone receivers; restores persisted EQ, preset, bass, headphone, listener state. | `EqEngine`, detector, preferences, runtime states; receivers outlive Activity. | Changing process startup or state restoration. |
+| `MainActivity.kt` (Activity / Compose host) | Starts processing service; permissions and navigation; creates shared `HomeViewModel`. | Service, screens; preserve single-top/save-restore navigation to avoid competing genre collectors. | Changing entry, permissions, navigation. |
+| `EqProcessingService.kt` (foreground Service) | Combines tone/genre, correction, bass, protection; owns auto/manual collectors, correction memory cache, notification and tile snapshot writes. | Runtime states, repositories, `EqProfileManager`, `EqEngine`; manual updates must neither wait for network nor lose to stale auto work. | Changing audio orchestration, correction fallback, mono, notification. |
+| `EqEngine.kt` (process singleton / audio effects) | Attaches/releases Equalizer and limiter; session selection, hardware gain application, diagnostics. | `EqProfileManager`, limiter status; EQ and limiter share session; do not release on Activity teardown. | Changing effect/session or device-band behavior. |
+| `EqState.kt` (process singleton / StateFlows) | Live EQ request/bypass, base tone, manual override/update, output, headphone correction/status, bass, service flag, protection. | UI/view models and service; tone-only and composed gains differ; copy arrays and preserve immediate manual path. | Changing shared processing state or override transitions. |
+| `NowPlayingState.kt` (process singleton / StateFlows) | Current track/artist/genre, selected headphone and listener state. | Media listener, Home VM, detector, service; track changes clear stale genre/manual override; not durable. | Changing live media/headphone propagation. |
+| `EqProfileManager.kt` (pure singleton) | Eight bands, genre presets, genre labels, gain composition and device-band mapping. | Service, engine, VMs; preserve `[60,170,310,600,1000,3000,6000,12000]` Hz order. | Changing curves, genre mappings, arithmetic or interpolation. |
+| `OutputProtectionMode.kt` (enum) | Balanced/Safe/Off values and parser. | Preferences, service, settings; preserve stored-value migration. | Changing mode identity/parsing. |
+| `LimiterDiagnostics.kt` (status model) | Availability, attachment, enabled/unsupported/failure details. | Engine publishes, Settings reads; report actual effect state, not just intent. | Changing limiter diagnostics. |
+| `EqProcessingSnapshot.kt` (persisted status model) | Processing status and compact tile snapshot. | Service writes through preferences, tile reads; requested enable is not actual activity. | Changing external status contract. |
+| `EqQuickSettingsTileService.kt` (TileService) | Renders/toggles tile from persisted snapshot and live service flag. | Preferences, `EqState`, service; stale ACTIVE snapshot cannot prove service runs. | Changing tile action, label or lifecycle. |
+| `UserPreferencesRepository.kt` (DataStore repository) | Durable settings, selected/favorite headphones, global custom tone presets, key and snapshot; migrations. | Application, service, VMs, tile; preserve legacy limiter and preset-name migrations; not downloaded-gain cache. | Changing preferences, preset CRUD or migration. |
+| `EqifyApi.kt` (Retrofit contracts/clients) | Pages index/profile, Last.fm/iTunes and Node genre DTOs/endpoints. | Headphone repo, Home VM; keep JSON/base-URL contract; Android does not call Node headphone routes. | Changing network contracts/configuration. |
+| `HeadphoneDataRepository.kt` (process singleton / Pages repository) | Caches Pages index, searches locally, validates/fetches one selected eight-gain profile. | Retrofit client, index file cache, screens/detector/service; do not download all profiles or accept malformed gains. | Changing catalog search, index cache or profile retrieval. |
+| `HeadphoneEqDiskCache.kt` (process singleton / app-private cache) | Stores selected downloaded eight-gain corrections by name; load/save/count/clear. | Service and Settings; separate from index and favorites; clear must not erase choices. | Changing offline correction cache. |
+| `Bluetoothheadphonedetector.kt` (application-registered receiver) | Detects Bluetooth/wired devices, matches catalog names, updates selection/banner. | Headphone repo, preferences, `NowPlayingState`; respect auto-detect setting/manual choice. | Changing device discovery or auto-selection. |
+| `MediaListenerService.kt` (NotificationListenerService) | Extracts/deduplicates supported players' track and artist. | `NowPlayingState`; user permission required; ignore incomplete notifications. | Changing supported players or metadata extraction. |
+| `Localgenredetector.kt` (pure singleton) | Immediate ordered keyword/artist genre heuristic. | Home VM; first match wins, Pop fallback; align with supported profiles. | Changing local genre rules. |
+| `HomeViewModel.kt` (Activity-scoped AndroidViewModel) | Resolves genre local → Last.fm → iTunes → Node; exposes source/confidence; Home EQ/bass/test actions. | Runtime states, detector, APIs, preferences, test player; genre work is not a background history service. | Changing genre order or Home actions/state. |
+| `SettingsViewModel.kt` (screen AndroidViewModel) | Adapts persisted settings; syncs immediate state; clears downloaded corrections. | Preferences, runtime states, disk cache; persist choices via repository. | Adding settings action or cache operation. |
+| `EqTestTonePlayer.kt` (singleton / short-lived AudioTrack) | Generates test tones with overlap guard and cleanup. | Home VM; playback off main thread, always release audio resources. | Changing test playback. |
+| `screens/HomeScreen.kt` (Compose screen) | Displays playback/genre, EQ/headphone status, bass/test controls. | Home VM and runtime states; no second genre resolver. | Changing Home UI. |
+| `screens/EqScreen.kt` (Compose screen + screen AndroidViewModel) | Preset picker/CRUD/rename, eight sliders, EQ controls. | `EqState`, profile manager, preferences; preserve immediate manual path; global tone presets differ from headphone corrections. | Changing EQ UI, presets or sliders. |
+| `screens/HeadphonesScreen.kt` (Compose screen + screen AndroidViewModel) | Catalog search, favorites, selected/custom headphone and correction feedback. | Headphone repo, preferences, runtime states; persist selection; unmatched custom names use flat correction. | Changing headphone picker/selection UI. |
+| `screens/SettingsScreen.kt` (Compose screen) | Settings, protection explanation/diagnostics, permissions, cache/privacy controls. | Settings VM, limiter diagnostics; describe Safe fallback accurately. | Changing Settings UI/copy. |
+| `AppGlyph.kt`, `ui/theme/{Color,Theme,Type}.kt` (Compose helpers) | App glyph and shared visual tokens; no processing state. | Screens; keep behavior out of theme files. | Changing icons or visual system. |
+
+### State ownership
+
+| State | Owner / lifetime | Consumers |
+| --- | --- | --- |
+| Preferences, selected/favorite headphone, custom **tone** presets | `UserPreferencesRepository` / durable | View models, service, detector, tile |
+| Live EQ request, override, computed gains/correction | `EqState` / process | Service, screens, tile |
+| Track, resolved genre, detected headphone | `NowPlayingState` / process | Home VM, service, screens |
+| Actual Equalizer/limiter attachment and diagnostics | `EqEngine` / audio session | Service, Settings |
+| Processing collectors, correction memory cache, notification | `EqProcessingService` / service | Engine, runtime state, preferences |
+| Pages index vs selected correction cache | `HeadphoneDataRepository` vs `HeadphoneEqDiskCache` / local files | Search/detector vs service/Settings |
+| Screen interaction | Screen ViewModels / navigation or Activity | Compose screens |
+| Last tile-visible processing snapshot | `EqProcessingSnapshot` in DataStore / durable | Tile; cross-check live service flag |
 
 ### Where to make a change
 

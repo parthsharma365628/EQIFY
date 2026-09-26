@@ -4,9 +4,13 @@ This document is a future implementation guide for moving EQify's headphone-corr
 
 Explicit user instructions and the current repository state take priority over this plan. Before acting, inspect the branch, remote, working tree, installed package versions, current Cloudflare documentation, and the target Cloudflare account/environment.
 
-## Handoff snapshot (2026-09-25; re-check before acting)
+## Handoff snapshot (2026-09-26; re-check before acting)
 
-This plan predates the GitHub Pages deployment and was updated after publication.
+This plan predates the GitHub Pages deployment and was updated after
+publication. Treat `AI.md` and `GITHUB_PAGES_AUTOEQ.md` as the current
+Android/headphone-data architecture. This file remains a deferred Worker + D1
+guide; do not read the proposed Cloudflare tree or SQL as existing files.
+
 The current source repository is
 `https://github.com/parthsharma365628/EQIFY`; converter tooling was introduced
 in commit `fe3310f`. Its files relevant to this migration are:
@@ -14,15 +18,16 @@ in commit `fe3310f`. Its files relevant to this migration are:
 ```text
 EQIFY/
 ├─ AI.md                           # Project-wide architecture and file map
-├─ GITHUB_PAGES_AUTOEQ.md          # Static export contract and resume checklist
+├─ GITHUB_PAGES_AUTOEQ.md          # Current static export and Android Pages client
 ├─ CLOUDFLARE_AUTOEQ_MIGRATION.md  # This deferred D1/Worker plan
 ├─ app/
-│  ├─ build.gradle.kts              # One configurable EQIFY_BASE_URL
+│  ├─ build.gradle.kts              # EQIFY_BASE_URL (genre) and EQIFY_HEADPHONE_DATA_BASE_URL (Pages)
 │  └─ src/main/java/com/example/eqify/
-│     ├─ EqifyApi.kt                # Retrofit paths and JSON models
-│     ├─ EqProcessingService.kt     # Fetch/compose/apply headphone correction
-│     ├─ HeadphoneEqDiskCache.kt    # Last successful correction on device
-│     └─ screens/HeadphonesScreen.kt # Search/favorites/selection UI
+│     ├─ EqifyApi.kt                # Pages index/profile plus Last.fm/iTunes/Node genre models
+│     ├─ HeadphoneDataRepository.kt # Cached Pages index, local search, selected-profile fetch
+│     ├─ EqProcessingService.kt     # Compose/apply correction; may download selected Pages profile
+│     ├─ HeadphoneEqDiskCache.kt    # Last successful eight-gain correction on device
+│     └─ screens/HeadphonesScreen.kt # Debounced local catalog search and favorites
 └─ eqify-backend/
    ├─ index.js                      # Current Express routes; reads raw files
    ├─ lib/autoeq-converter.js       # Current shared parser and DSP conversion
@@ -41,21 +46,26 @@ canonical record SHA-256 is
 `ed32807426fdeba7866b88b31205c4f1f5961cfb465a9bc1fca3ba30de40b1cc`.
 The ignored local export may be absent from another clone.
 
-**Published:** `parthsharma365628/eqify-data` commit `5e84681` is live at
-`https://parthsharma365628.github.io/eqify-data/`. Android still calls the Node
-API and does not consume the static site. There is no D1 schema/import, Worker
-code/configuration,
-Cloudflare resource, production cutover, or SQL dump. Do not interpret the
-later proposed `cloudflare-worker/` tree or SQL example as existing files.
-The static repository is `https://github.com/parthsharma365628/eqify-data`.
+**Published and consumed by Android:** `parthsharma365628/eqify-data` commit
+`5e84681` is live at `https://parthsharma365628.github.io/eqify-data/`. The
+Android client caches `index.json`, searches locally, and downloads only the
+selected profile. It does not call Node `GET /api/headphones` or
+`GET /api/eq/:headphoneName`. Those Node headphone routes remain for backend
+tooling. Android uses `BuildConfig.HEADPHONE_DATA_BASE_URL` for Pages and
+`BuildConfig.BASE_URL` only for `POST /api/v1/genre`. There is no D1
+schema/import, Worker code/configuration, Cloudflare resource, production
+cutover, or SQL dump. Do not interpret the later proposed `cloudflare-worker/`
+tree or SQL example as existing files.
 
-**Current next decision:** Implement the separately scoped Android static-data
-client only when requested, or begin Worker + D1 phases only if later chosen.
-No Cloudflare deployment is needed merely to preserve current app behavior.
+**Current next decision:** Begin Worker + D1 phases only if later chosen as an
+alternative or successor to GitHub Pages. No Cloudflare deployment is needed
+to preserve current app behavior. The Pages Android client is already
+implemented; remaining Pages work is device validation, not a missing client.
 
 ## Decision summary
 
-Recommended initial architecture:
+The live headphone path is GitHub Pages plus on-device caches. The diagram
+below is the proposed Cloudflare replacement, not current production.
 
 ```text
 Local AutoEQ results (never committed)
@@ -86,7 +96,7 @@ Use one Worker and D1 first. Do not add R2, KV, Queues, Durable Objects, or a pa
 
 ## Goals
 
-1. Preserve the Android API contract and existing user-visible behavior.
+1. Preserve existing user-visible headphone behavior (eight-band gains, local catalog search, selected-profile download, disk/memory cache, flat-correction failure). Do not silently revert Android to live Node headphone lookups.
 2. Convert each selected AutoEQ profile into EQify's eight logical band gains before upload.
 3. Keep the raw AutoEQ dataset and generated bulk import files out of Git.
 4. Make imports reproducible, validated, versioned, and safe to repeat.
@@ -100,7 +110,7 @@ Use one Worker and D1 first. Do not add R2, KV, Queues, Durable Objects, or a pa
 - Do not parse ParametricEQ files at request time.
 - Do not change EQ curves, target frequencies, duplicate-selection behavior, or clamping rules during migration.
 - Do not redesign the Android headphone UI.
-- Do not migrate genre detection in the same first change unless required to test a single production base URL.
+- Do not migrate genre detection in the same first change. Headphone data and genre already use separate Android base URLs.
 - Do not add R2 merely because it is available.
 
 ## Current repository findings
@@ -145,7 +155,7 @@ The module-level `headphoneCache` avoids rescanning after the first request, but
 
 ### Existing routes
 
-The current public contract is:
+The current Node public contract is:
 
 ```text
 GET  /api/headphones?search=<text>
@@ -153,6 +163,10 @@ GET  /api/eq/:headphoneName
 POST /api/v1/genre
 GET  /api/cache/stats
 ```
+
+Android calls only `POST /api/v1/genre`. Preserve the headphone JSON shapes
+below if a future Worker re-exposes those routes; they are the Node tooling
+contract, not the live Android Pages contract (`index.json` + `profilePath`).
 
 Current headphone-route behavior:
 
@@ -177,7 +191,30 @@ The module-level genre cache cannot be treated as durable or globally consistent
 
 ### Android contract and caching
 
-`app/src/main/java/com/example/eqify/EqifyApi.kt` defines the Retrofit models and paths. Do not change their JSON shape during the initial migration:
+`EqifyApi.kt` currently defines GitHub Pages index/profile models, Last.fm and
+iTunes lookups, and the Node genre POST. Android headphone search and profile
+fetch go through `HeadphoneDataRepository` against
+`BuildConfig.HEADPHONE_DATA_BASE_URL` (Gradle `EQIFY_HEADPHONE_DATA_BASE_URL`,
+defaulting to the deployed Pages site). Genre fallback uses
+`BuildConfig.BASE_URL` (Gradle `EQIFY_BASE_URL`). Both Retrofit base URLs need
+a trailing `/`.
+
+The app caches the Pages `index.json`, searches it locally (at most 50
+matches), and downloads only the selected profile. HeadphonesScreen debounce
+and `collectLatest` apply to that local catalog search, then combine results
+with favorites and deduplicate names case-insensitively.
+
+Fetched corrections are cached twice:
+
+- in memory inside `EqProcessingService`;
+- on disk through `HeadphoneEqDiskCache`.
+
+On a Pages download failure, EQify keeps working with a flat headphone
+correction and exposes an error. Preserve this graceful failure behavior.
+
+Node still exposes these headphone JSON shapes for tooling. If a Worker later
+reimplements those routes, keep the shapes unless Android is explicitly
+changed to a new contract:
 
 ```kotlin
 data class HeadphoneResponse(val name: String, val type: String)
@@ -188,16 +225,8 @@ data class HeadphoneEqResponse(
 )
 ```
 
-The app searches after a 300 ms debounce and cancels stale requests with `collectLatest`. It combines API results with local favorites and deduplicates names case-insensitively.
-
-Fetched corrections are cached twice:
-
-- in memory inside `EqProcessingService`;
-- on disk through `HeadphoneEqDiskCache`.
-
-On a backend failure, EQify keeps working with a flat headphone correction and retries later. Preserve this graceful failure behavior.
-
-The API base URL comes from `BuildConfig.BASE_URL`; the Gradle property is `EQIFY_BASE_URL`. Retrofit requires a trailing `/`.
+A headphone cutover to Cloudflare is a client change away from Pages (or a
+deliberate dual-source period), not flipping a single shared API base URL.
 
 ## Existing conversion algorithm
 
@@ -649,9 +678,21 @@ Validation sequence:
 
 A successful build or dry run does not prove that remote bindings or imported data are correct.
 
-## Phase 10: handle the single Android base URL
+## Phase 10: Android URLs and optional genre migration
 
-The Android client currently uses one EQify API base URL for both headphone and genre routes. Before pointing production at the Worker, choose one explicit approach:
+Android already splits hosts: Pages for headphone data, Node for
+`POST /api/v1/genre`. Headphone traffic can move to a Worker without moving
+genre, and genre can stay on Node while Pages remains the catalog. Do not
+assume one production `EQIFY_BASE_URL` still serves both jobs.
+
+Before pointing headphone traffic at a Worker, choose how Android will fetch
+profiles (Worker `GET /api/headphones` + `GET /api/eq/:headphoneName`, a
+static-like export, or a documented dual-source period). Device-test search,
+selected-profile download, cache reuse, and flat-correction failure on that
+path. Change `EQIFY_HEADPHONE_DATA_BASE_URL` / Worker URL only after approval;
+leave `EQIFY_BASE_URL` on Node until genre is migrated.
+
+If genre should also run on Cloudflare, choose one explicit approach:
 
 ### Preferred eventual free architecture: port genre route to the Worker
 
@@ -667,7 +708,8 @@ The Android client currently uses one EQify API base URL for both headphone and 
 
 This preserves behavior but still requires the Node service to be hosted somewhere. Store the origin URL as non-secret configuration and avoid recursive routing. This is not the desired final free architecture if the old origin costs money.
 
-Do not change the Android production URL until all routes used by that URL are operational.
+Do not change a given Android production URL until every route that URL is
+configured to call is operational on the new host.
 
 ## Phase 11: production preparation
 
@@ -681,10 +723,10 @@ Do not change the Android production URL until all routes used by that URL are o
 8. Deploy the production Worker to its free `workers.dev` address first.
 9. Smoke-test every route from outside local development.
 10. Update only a debug Android build initially.
-11. Perform device tests for search, selection, correction download, offline cached reuse, and backend failure fallback.
-12. Change the production Android `EQIFY_BASE_URL` only after approval.
+11. Perform device tests for search, selection, correction download, offline cached reuse, and failure fallback.
+12. Change the production headphone data URL (`EQIFY_HEADPHONE_DATA_BASE_URL` or the Worker URL chosen in Phase 10) only after approval. Do not retarget `EQIFY_BASE_URL` unless genre has also been migrated.
 
-Keep the trailing slash in the Retrofit base URL.
+Keep the trailing slash on whichever Retrofit base URLs Android still uses.
 
 ## Dataset update workflow
 
@@ -799,11 +841,11 @@ The migration is complete only when all applicable items are true:
 - [ ] Staging and production resources are unambiguously separated.
 - [ ] Wrangler is pinned locally and binding types are generated.
 - [ ] Worker queries use prepared statements.
-- [ ] Existing headphone API paths and JSON shapes are preserved.
+- [ ] Existing headphone API paths and JSON shapes are preserved, or Android is explicitly switched from Pages to a documented Worker contract.
 - [ ] Search behavior, including substring matching and the 50-result cap, is preserved or explicitly versioned.
 - [ ] Known headphone gains match the Node backend.
-- [ ] Android debug testing succeeds against staging.
-- [ ] Genre routing works before changing the single production base URL.
+- [ ] Android debug testing succeeds against staging (or against the chosen Worker/Pages cutover).
+- [ ] Genre continues to use `EQIFY_BASE_URL` / Node until that route is migrated; do not retarget it as a side effect of a headphone cutover.
 - [ ] Logs and traces are enabled without leaking sensitive data.
 - [ ] Free-tier usage and current limits were verified.
 - [ ] Licensing and attribution were reviewed.
