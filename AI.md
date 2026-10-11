@@ -32,6 +32,7 @@ EQIFY/
 │     │  ├─ OutputProtectionMode.kt, LimiterDiagnostics.kt
 │     │  ├─ EqProfileManager.kt, UserPreferencesRepository.kt
 │     │  ├─ EqifyApi.kt, HeadphoneDataRepository.kt, HeadphoneEqDiskCache.kt
+│     │  ├─ GraphicEqImporter.kt, CustomEqProfileRepository.kt, HeadphoneCorrectionSelection.kt
 │     │  ├─ MediaListenerService.kt, NowPlayingState.kt
 │     │  ├─ GenreCoordinator.kt, GenreHistoryRepository.kt
 │     │  ├─ Bluetoothheadphonedetector.kt, Localgenredetector.kt
@@ -153,7 +154,7 @@ The former `limit_output_gain` Boolean is a migration-only preference. Existing 
 
 `GenreCoordinator`, not `EqProcessingService` or `HomeViewModel`, owns genre resolution at application scope. It checks the local Room correction first, then publishes an immediate `LocalGenreDetector` result before optional Last.fm, iTunes, and `POST /api/v1/genre`. `EqProcessingService` only consumes `NowPlayingState.currentGenre`. The coordinator logs one final observation per accepted event while Auto-Genre is enabled; it cannot recover tracks missed when the process, notification listener, or Auto-Genre is inactive. See `FEATURE_GENRE_INSIGHTS_AND_CORRECTION.md` for semantics and limits.
 
-`Bluetoothheadphonedetector` updates the selected device for Bluetooth and wired connections. `HeadphoneDataRepository` caches the GitHub Pages `index.json`, searches it locally, validates selected profile files, and returns eight gains. `HeadphoneEqDiskCache` caches selected gains on disk; the processing service also keeps them in memory. A download failure leaves the app usable with flat correction and exposes an error message.
+`Bluetoothheadphonedetector` updates the selected device for Bluetooth and wired connections. `HeadphoneDataRepository` caches the GitHub Pages `index.json`, searches it locally, validates selected profile files, and returns eight gains. `HeadphoneEqDiskCache` caches selected gains on disk; the processing service also keeps them in memory. A download failure leaves the app usable with flat correction and exposes an error message. GraphicEQ file or pasted ten-row imports use `GraphicEqImporter` and a separate local `CustomEqProfileRepository`; selection is tagged (Dataset/Custom/None) in preferences and resolved by the service, never by writing gains directly from UI. Bluetooth auto-selection switches to Dataset. ParametricEQ import is not implemented.
 
 ### UI composition
 
@@ -187,6 +188,9 @@ Paths are relative to `app/src/main/java/com/example/eqify/`. “Owns” means l
 | `EqifyApi.kt` (Retrofit contracts/clients) | Pages index/profile, Last.fm/iTunes and Node genre DTOs/endpoints. | Headphone repo, genre coordinator; keep JSON/base-URL contract; Android does not call Node headphone routes. | Changing network contracts/configuration. |
 | `HeadphoneDataRepository.kt` (process singleton / Pages repository) | Caches Pages index, searches locally, validates/fetches one selected eight-gain profile. | Retrofit client, index file cache, screens/detector/service; do not download all profiles or accept malformed gains. | Changing catalog search, index cache or profile retrieval. |
 | `HeadphoneEqDiskCache.kt` (process singleton / app-private cache) | Stores selected downloaded eight-gain corrections by name; load/save/count/clear. | Service and Settings; separate from index and favorites; clear must not erase choices. | Changing offline correction cache. |
+| `GraphicEqImporter.kt` (pure converter) | Validates standalone GraphicEQ text or pasted ten-row table, log-frequency resamples to eight bands, reports ±12 dB limiting. | `EqProfileManager.BAND_CENTERS_HZ`; reject extra directives and malformed points rather than partially importing. | Changing file/table parsing or conversion math. |
+| `CustomEqProfileRepository.kt` (app-private repository) | Atomically stores imported eight-band profiles, exposes list and CRUD. | Application, headphone/settings VMs, service; distinct from Pages cache and global tone presets. | Changing imported-profile schema or persistence. |
+| `HeadphoneCorrectionSelection.kt` (selection model) | Tags active source as Dataset, Custom, or None. | DataStore and processing service; never treat a custom UUID as a Pages name. | Changing source-selection contract. |
 | `Bluetoothheadphonedetector.kt` (application-registered receiver) | Detects Bluetooth/wired devices, matches catalog names, updates selection/banner. | Headphone repo, preferences, `NowPlayingState`; respect auto-detect setting/manual choice. | Changing device discovery or auto-selection. |
 | `MediaListenerService.kt` (NotificationListenerService) | Extracts/deduplicates supported players' track and artist. | `NowPlayingState`; user permission required; ignore incomplete notifications. | Changing supported players or metadata extraction. |
 | `Localgenredetector.kt` (pure singleton) | Immediate ordered keyword/artist genre heuristic. | Genre coordinator; first match wins, Pop fallback; align with supported profiles. | Changing local genre rules. |
@@ -197,7 +201,7 @@ Paths are relative to `app/src/main/java/com/example/eqify/`. “Owns” means l
 | `EqTestTonePlayer.kt` (singleton / short-lived AudioTrack) | Generates test tones with overlap guard and cleanup. | Home VM; playback off main thread, always release audio resources. | Changing test playback. |
 | `screens/HomeScreen.kt` (Compose screen) | Displays playback/genre, weekly observation mix, recent tracks/correction picker, EQ/headphone/bass/test controls. | Home VM and runtime states; no second genre resolver; mix is track counts, not listening time. | Changing Home UI. |
 | `screens/EqScreen.kt` (Compose screen + screen AndroidViewModel) | Preset picker/CRUD/rename, eight sliders, EQ controls. | `EqState`, profile manager, preferences; preserve immediate manual path; global tone presets differ from headphone corrections. | Changing EQ UI, presets or sliders. |
-| `screens/HeadphonesScreen.kt` (Compose screen + screen AndroidViewModel) | Catalog search, favorites, selected/custom headphone and correction feedback. | Headphone repo, preferences, runtime states; persist selection; unmatched custom names use flat correction. | Changing headphone picker/selection UI. |
+| `screens/HeadphonesScreen.kt` (Compose screen + screen AndroidViewModel) | Catalog search, favorites, selected headphone, GraphicEQ file/paste import and imported-profile selection/rename/delete. | Headphone repo, custom store, preferences, runtime states; typed custom headphone names differ from imported gain profiles. | Changing headphone picker or import UI. |
 | `screens/SettingsScreen.kt` (Compose screen) | Settings, protection explanation/diagnostics, permissions, cache/privacy controls. | Settings VM, limiter diagnostics; describe Safe fallback accurately. | Changing Settings UI/copy. |
 | `AppGlyph.kt`, `ui/theme/{Color,Theme,Type}.kt` (Compose helpers) | App glyph and shared visual tokens; no processing state. | Screens; keep behavior out of theme files. | Changing icons or visual system. |
 
@@ -213,6 +217,7 @@ Paths are relative to `app/src/main/java/com/example/eqify/`. “Owns” means l
 | Actual Equalizer/limiter attachment and diagnostics | `EqEngine` / audio session | Service, Settings |
 | Processing collectors, correction memory cache, notification | `EqProcessingService` / service | Engine, runtime state, preferences |
 | Pages index vs selected correction cache | `HeadphoneDataRepository` vs `HeadphoneEqDiskCache` / local files | Search/detector vs service/Settings |
+| Imported profiles vs active source | `CustomEqProfileRepository` / local JSON; `UserPreferencesRepository` / DataStore | Headphone/Settings VMs and processing service |
 | Screen interaction | Screen ViewModels / navigation or Activity | Compose screens |
 | Last tile-visible processing snapshot | `EqProcessingSnapshot` in DataStore / durable | Tile; cross-check live service flag |
 
@@ -227,6 +232,7 @@ Paths are relative to `app/src/main/java/com/example/eqify/`. “Owns” means l
 | Recent tracks / weekly mix | `GenreHistoryRepository.kt`, `screens/HomeScreen.kt` | 14-day distinct recents, 7-day observation counts, 16-day retention; not listening duration |
 | Durable preferences/presets | `UserPreferencesRepository.kt` | Preferences DataStore, plus legacy output-protection migration |
 | Headphone lookup/correction | `HeadphonesScreen.kt`, `HeadphoneDataRepository.kt`, `EqifyApi.kt`, `EqProcessingService.kt`, `HeadphoneEqDiskCache.kt` | Pages index is cached; only selected gains are downloaded; failure uses favorites/flat correction or cached gains |
+| GraphicEQ import and selection | `GraphicEqImporter.kt`, `CustomEqProfileRepository.kt`, `HeadphoneCorrectionSelection.kt`, `UserPreferencesRepository.kt`, `screens/HeadphonesScreen.kt`, `EqProcessingService.kt` | Imported gains stay local; service owns automatic correction resolution; ParametricEQ remains planned |
 | Quick Settings control | `EqQuickSettingsTileService.kt`, `EqProcessingSnapshot.kt` | Snapshot in DataStore plus live service-running flag; no home-screen widget exists |
 | Settings and output protection | `SettingsScreen.kt`, `SettingsViewModel.kt`, `OutputProtectionMode.kt` | Balanced falls back to Safe on unsupported/failed limiter |
 | Backend API | `eqify-backend/index.js` | Keep JSON responses compatible with Retrofit |

@@ -57,6 +57,8 @@ fun SettingsScreen(
     val savedLastFmApiKey     by vm.lastFmApiKey.collectAsState(initial = "")
     val cacheMessage          by vm.cacheMessage.collectAsState()
     val historyMessage        by vm.historyMessage.collectAsState()
+    val customProfiles by vm.customEqProfiles.collectAsState()
+    val customProfilesMessage by vm.customProfilesMessage.collectAsState()
     var lastFmApiKeyDraft by remember(savedLastFmApiKey) {
         mutableStateOf(savedLastFmApiKey)
     }
@@ -66,6 +68,7 @@ fun SettingsScreen(
     var showPermissionDialog by remember { mutableStateOf(false) }
     var showClearCacheDialog by remember { mutableStateOf(false) }
     var showClearHistoryDialog by remember { mutableStateOf(false) }
+    var showClearCustomProfilesDialog by remember { mutableStateOf(false) }
     var showOutputProtectionDialog by remember { mutableStateOf(false) }
 
     // Refresh permission state when user returns from the system settings screen
@@ -151,6 +154,20 @@ fun SettingsScreen(
         )
     }
 
+    if (showClearCustomProfilesDialog) {
+        AlertDialog(
+            onDismissRequest = { showClearCustomProfilesDialog = false },
+            title = { Text("Clear imported profiles?", color = TextPrimary) },
+            text = { Text("Deletes all imported GraphicEQ profiles. If one is active, flat headphone correction will be used.", color = TextSecondary) },
+            confirmButton = { TextButton(onClick = {
+                showClearCustomProfilesDialog = false
+                vm.clearCustomProfiles()
+            }) { Text("Clear") } },
+            dismissButton = { TextButton(onClick = { showClearCustomProfilesDialog = false }) { Text("Cancel") } },
+            containerColor = Surface2Dark
+        )
+    }
+
     if (showOutputProtectionDialog) {
         OutputProtectionDialog(
             selectedMode = outputProtectionMode,
@@ -184,6 +201,11 @@ fun SettingsScreen(
             confirmButton = { TextButton(onClick = vm::dismissHistoryMessage) { Text("OK") } },
             containerColor = Surface2Dark
         )
+    }
+    customProfilesMessage?.let { message ->
+        AlertDialog(onDismissRequest = vm::dismissCustomProfilesMessage,
+            title = { Text("Imported EQ profiles") }, text = { Text(message) },
+            confirmButton = { TextButton(onClick = vm::dismissCustomProfilesMessage) { Text("OK") } })
     }
 
     // ── UI ────────────────────────────────────────────────────────────
@@ -344,6 +366,16 @@ fun SettingsScreen(
                     onClick = { showClearCacheDialog = true }
                 )
                 SimpleSettingsItem(
+                    title = "Imported EQ profiles: ${customProfiles.size}",
+                    subtitle = "GraphicEQ imports are stored on this device",
+                    onClick = {}
+                )
+                SimpleSettingsItem(
+                    title = "Clear imported EQ profiles",
+                    subtitle = "Delete local imports without clearing downloaded corrections",
+                    onClick = { showClearCustomProfilesDialog = true }
+                )
+                SimpleSettingsItem(
                     title    = "Version",
                     subtitle = "1.0.0 (Beta)",
                     onClick  = {}
@@ -357,7 +389,8 @@ fun SettingsScreen(
                     title = "Privacy",
                     subtitle = "Song title and artist may be sent to iTunes, optional Last.fm, and the configured EQify genre service. " +
                         "Title, artist, timestamp and detected/chosen genre are stored locally for recent tracks and genre mix. " +
-                        "Headphone correction is fetched only after a headphone is selected.",
+                        "Headphone correction is fetched only after a headphone is selected. " +
+                        "Imported GraphicEQ files are converted and stored locally; they are not uploaded.",
                     onClick = {}
                 )
             }

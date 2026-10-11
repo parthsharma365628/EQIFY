@@ -9,6 +9,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
 
 /**
  * ViewModel for [com.example.eqify.screens.SettingsScreen].
@@ -28,6 +30,8 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     private val repository = (application as EqifyApplication).repository
     private val genreCoordinator = (application as EqifyApplication).genreCoordinator
+    private val customProfiles = (application as EqifyApplication).customEqProfiles
+    val customEqProfiles = customProfiles.profiles
 
     // ── Exposed flows (SettingsScreen collects these) ─────────────────
 
@@ -44,6 +48,23 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     val cacheMessage = _cacheMessage.asStateFlow()
     private val _historyMessage = MutableStateFlow<String?>(null)
     val historyMessage = _historyMessage.asStateFlow()
+    private val _customProfilesMessage = MutableStateFlow<String?>(null)
+    val customProfilesMessage = _customProfilesMessage.asStateFlow()
+
+    fun clearCustomProfiles() {
+        viewModelScope.launch {
+            try {
+                val count = customProfiles.profiles.value.size
+                if (repository.headphoneCorrectionSelection.first() is HeadphoneCorrectionSelection.Custom)
+                    repository.selectNoCorrection()
+                withContext(Dispatchers.IO) { customProfiles.clear() }
+                _customProfilesMessage.value = "Cleared $count imported profile${if (count == 1) "" else "s"}."
+            } catch (e: CancellationException) { throw e }
+            catch (e: Exception) { _customProfilesMessage.value = "Could not clear imported profiles: ${e.message}" }
+        }
+    }
+
+    fun dismissCustomProfilesMessage() { _customProfilesMessage.value = null }
 
     fun clearGenreHistory() {
         viewModelScope.launch {

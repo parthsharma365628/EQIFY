@@ -9,6 +9,8 @@ sealed class HeadphoneCorrectionStatus {
     data class Downloaded(val headphoneName: String) : HeadphoneCorrectionStatus()
     data class Cached(val headphoneName: String) : HeadphoneCorrectionStatus()
     data class Failed(val headphoneName: String, val message: String) : HeadphoneCorrectionStatus()
+    data class Imported(val displayName: String) : HeadphoneCorrectionStatus()
+    data class ImportFailed(val message: String) : HeadphoneCorrectionStatus()
 }
 
 /**

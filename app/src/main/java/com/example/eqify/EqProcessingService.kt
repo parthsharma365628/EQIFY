@@ -148,8 +148,9 @@ class EqProcessingService : Service() {
                     NowPlayingState.currentGenre,
                     NowPlayingState.selectedHeadphone,
                     EqState.isEqEnabled,
-                    EqState.isBypassed
-                ) { g, h, e, bypassed -> SourceState(g, h, e, bypassed) },
+                    EqState.isBypassed,
+                    repository.headphoneCorrectionSelection
+                ) { g, h, e, bypassed, correction -> SourceState(g, h, e, bypassed, correction) },
                 combine(
                     repository.outputProtectionMode,
                     repository.forceMono,
@@ -165,6 +166,7 @@ class EqProcessingService : Service() {
                 EqPipe(
                     genre         = t1.genre,
                     headphone     = t1.headphone,
+                    correctionSelection = t1.correctionSelection,
                     enabled       = t1.enabled,
                     bypassed      = t1.bypassed,
                     outputProtectionMode = t2.first,
@@ -200,7 +202,25 @@ class EqProcessingService : Service() {
                 }
 
                 // Fetch headphone correction (cached after first fetch — no repeated calls)
-                val hpCorrection = resolveHeadphoneCorrection(pipe.headphone)
+                val hpCorrection = when (val selection = pipe.correctionSelection) {
+                    is HeadphoneCorrectionSelection.Dataset -> resolveHeadphoneCorrection(selection.name)
+                    is HeadphoneCorrectionSelection.Custom -> {
+                        val profile = (application as EqifyApplication).customEqProfiles.find(selection.profileId)
+                        if (profile == null) {
+                            EqState.updateHeadphoneCorrectionStatus(
+                                HeadphoneCorrectionStatus.ImportFailed("Imported profile is missing or unreadable; flat correction is active.")
+                            )
+                            FloatArray(8)
+                        } else {
+                            EqState.updateHeadphoneCorrectionStatus(HeadphoneCorrectionStatus.Imported(profile.displayName))
+                            profile.gains.toFloatArray()
+                        }
+                    }
+                    HeadphoneCorrectionSelection.None -> {
+                        EqState.updateHeadphoneCorrectionStatus(HeadphoneCorrectionStatus.Idle)
+                        FloatArray(8)
+                    }
+                }
                 EqState.updateHeadphoneCorrection(hpCorrection)
 
                 val tonePart: FloatArray = when {
@@ -297,6 +317,7 @@ class EqProcessingService : Service() {
 
     private data class EqPipe(
         val genre: String, val headphone: String, val enabled: Boolean,
+        val correctionSelection: HeadphoneCorrectionSelection,
         val bypassed: Boolean,
         val outputProtectionMode: OutputProtectionMode,
         val mono: Boolean, val bassBoost: Float,
@@ -308,7 +329,8 @@ class EqProcessingService : Service() {
         val genre: String,
         val headphone: String,
         val enabled: Boolean,
-        val bypassed: Boolean
+        val bypassed: Boolean,
+        val correctionSelection: HeadphoneCorrectionSelection
     )
 
     private data class AutoToneState(

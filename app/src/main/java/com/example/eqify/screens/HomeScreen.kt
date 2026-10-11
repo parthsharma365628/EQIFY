@@ -534,6 +534,8 @@ fun HeadphoneCard(
         is HeadphoneCorrectionStatus.Downloaded -> "Gain values downloaded successfully"
         is HeadphoneCorrectionStatus.Cached -> "Using saved gain values"
         is HeadphoneCorrectionStatus.Failed -> "Error: ${correctionStatus.message}"
+        is HeadphoneCorrectionStatus.Imported -> "Using imported profile: ${correctionStatus.displayName}"
+        is HeadphoneCorrectionStatus.ImportFailed -> "Error: ${correctionStatus.message}"
         HeadphoneCorrectionStatus.Idle -> null
     }.takeIf {
         when (correctionStatus) {
@@ -541,6 +543,8 @@ fun HeadphoneCard(
             is HeadphoneCorrectionStatus.Downloaded -> correctionStatus.headphoneName == headphoneName
             is HeadphoneCorrectionStatus.Cached -> correctionStatus.headphoneName == headphoneName
             is HeadphoneCorrectionStatus.Failed -> correctionStatus.headphoneName == headphoneName
+            is HeadphoneCorrectionStatus.Imported,
+            is HeadphoneCorrectionStatus.ImportFailed -> true
             HeadphoneCorrectionStatus.Idle -> false
         }
     }
@@ -571,7 +575,8 @@ fun HeadphoneCard(
                     Text(
                         text = it,
                         fontSize = 10.sp,
-                        color = if (correctionStatus is HeadphoneCorrectionStatus.Failed)
+                        color = if (correctionStatus is HeadphoneCorrectionStatus.Failed ||
+                            correctionStatus is HeadphoneCorrectionStatus.ImportFailed)
                             MaterialTheme.colorScheme.error else NeonCyan
                     )
                 }

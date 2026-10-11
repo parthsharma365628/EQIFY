@@ -76,6 +76,8 @@ class UserPreferencesRepository(private val context: Context) {
         val FORCE_MONO            = booleanPreferencesKey("force_mono")
         val MEDIA_LISTENER        = booleanPreferencesKey("media_listener_enabled")
         val SELECTED_HEADPHONE    = stringPreferencesKey("selected_headphone")
+        val CORRECTION_SOURCE = stringPreferencesKey("headphone_correction_source")
+        val CUSTOM_CORRECTION_ID = stringPreferencesKey("custom_correction_id")
         val HEADPHONE_AUTO_DETECT = booleanPreferencesKey("headphone_auto_detect")
         val BASS_BOOST_LEVEL      = floatPreferencesKey("bass_boost_level")
         val CUSTOM_PRESET_NAMES   = stringPreferencesKey("custom_preset_names")
@@ -118,6 +120,17 @@ class UserPreferencesRepository(private val context: Context) {
 
     val selectedHeadphone: Flow<String> = context.dataStore.data.map { prefs ->
         prefs[Keys.SELECTED_HEADPHONE] ?: "Sony WH-1000XM5"
+    }
+
+    val headphoneCorrectionSelection: Flow<HeadphoneCorrectionSelection> = context.dataStore.data.map { prefs ->
+        when (prefs[Keys.CORRECTION_SOURCE]) {
+            "custom" -> prefs[Keys.CUSTOM_CORRECTION_ID]?.takeIf { it.isNotBlank() }
+                ?.let { HeadphoneCorrectionSelection.Custom(it) } ?: HeadphoneCorrectionSelection.None
+            "none" -> HeadphoneCorrectionSelection.None
+            else -> HeadphoneCorrectionSelection.Dataset(
+                prefs[Keys.SELECTED_HEADPHONE] ?: "Sony WH-1000XM5"
+            )
+        }
     }
 
     val headphoneAutoDetect: Flow<Boolean> = context.dataStore.data.map { prefs ->
@@ -179,7 +192,25 @@ class UserPreferencesRepository(private val context: Context) {
     }
 
     suspend fun setSelectedHeadphone(name: String) {
-        context.dataStore.edit { it[Keys.SELECTED_HEADPHONE] = name }
+        context.dataStore.edit {
+            it[Keys.SELECTED_HEADPHONE] = name
+            it[Keys.CORRECTION_SOURCE] = "dataset"
+            it.remove(Keys.CUSTOM_CORRECTION_ID)
+        }
+    }
+
+    suspend fun selectCustomCorrection(id: String) {
+        context.dataStore.edit {
+            it[Keys.CORRECTION_SOURCE] = "custom"
+            it[Keys.CUSTOM_CORRECTION_ID] = id
+        }
+    }
+
+    suspend fun selectNoCorrection() {
+        context.dataStore.edit {
+            it[Keys.CORRECTION_SOURCE] = "none"
+            it.remove(Keys.CUSTOM_CORRECTION_ID)
+        }
     }
 
     suspend fun setHeadphoneAutoDetect(enabled: Boolean) {

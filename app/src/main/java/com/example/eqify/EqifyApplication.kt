@@ -16,6 +16,7 @@ class EqifyApplication : Application() {
     val repository: UserPreferencesRepository by lazy {
         UserPreferencesRepository(this)
     }
+    val customEqProfiles: CustomEqProfileRepository by lazy { CustomEqProfileRepository(this) }
     val genreHistory: GenreHistoryRepository by lazy { GenreHistoryRepository(this) }
     val genreCoordinator: GenreCoordinator by lazy { GenreCoordinator(repository, genreHistory, appScope) }
 

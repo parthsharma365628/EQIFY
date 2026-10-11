@@ -1,9 +1,15 @@
 package com.example.eqify
 
 import android.app.Application
+import android.net.Uri
+import android.provider.OpenableColumns
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -23,6 +29,11 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.io.ByteArrayOutputStream
+import java.nio.ByteBuffer
+import java.nio.charset.CodingErrorAction
 
 data class HeadphoneResult(val name: String, val type: String)
 
@@ -30,6 +41,13 @@ data class HeadphoneResult(val name: String, val type: String)
 class HeadphonesViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repository = (application as EqifyApplication).repository
+    private val customProfilesRepository = (application as EqifyApplication).customEqProfiles
+    val customProfiles = customProfilesRepository.profiles
+    val correctionSelection = repository.headphoneCorrectionSelection
+        .stateIn(viewModelScope, SharingStarted.Eagerly,
+            HeadphoneCorrectionSelection.Dataset(NowPlayingState.selectedHeadphone.value))
+    private val _importMessage = MutableStateFlow<String?>(customProfilesRepository.loadError.value)
+    val importMessage = _importMessage.asStateFlow()
 
     private val _results = MutableStateFlow<List<HeadphoneResult>>(emptyList())
     val results: StateFlow<List<HeadphoneResult>> = _results.asStateFlow()
@@ -45,6 +63,7 @@ class HeadphonesViewModel(application: Application) : AndroidViewModel(applicati
 
     private val _localSelectedHeadphone = MutableStateFlow(NowPlayingState.selectedHeadphone.value)
     val localSelectedHeadphone: StateFlow<String> = _localSelectedHeadphone.asStateFlow()
+    private var pendingDatasetSelection = false
 
     val searchQuery = MutableStateFlow("")
 
@@ -94,16 +113,103 @@ class HeadphonesViewModel(application: Application) : AndroidViewModel(applicati
         viewModelScope.launch { searchHeadphones(searchQuery.value, forceRefresh = true) }
     }
 
-    fun selectHeadphoneLocally(name: String) { _localSelectedHeadphone.value = name }
+    fun selectHeadphoneLocally(name: String) {
+        _localSelectedHeadphone.value = name
+        pendingDatasetSelection = true
+    }
+
+    fun importGraphicEq(uri: Uri) {
+        viewModelScope.launch {
+            try {
+                val app = getApplication<Application>()
+                val profile = withContext(Dispatchers.IO) {
+                    val filename = app.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME),
+                        null, null, null)?.use { cursor ->
+                        if (cursor.moveToFirst()) cursor.getString(0) else null
+                    } ?: "GraphicEQ.txt"
+                    val bytes = ByteArrayOutputStream()
+                    app.contentResolver.openInputStream(uri)?.use { input ->
+                        val chunk = ByteArray(8192)
+                        while (true) {
+                            val count = input.read(chunk)
+                            if (count < 0) break
+                            if (count > 0) bytes.write(chunk, 0, count)
+                            require(bytes.size() <= 1_048_576) { "File exceeds 1 MiB limit." }
+                        }
+                    } ?: error("Could not open selected file.")
+                    val text = Charsets.UTF_8.newDecoder()
+                        .onMalformedInput(CodingErrorAction.REPORT)
+                        .onUnmappableCharacter(CodingErrorAction.REPORT)
+                        .decode(ByteBuffer.wrap(bytes.toByteArray())).toString()
+                    val result = GraphicEqImporter.convert(text)
+                    customProfilesRepository.importProfile(filename.substringBeforeLast('.').ifBlank { "Imported EQ" },
+                        filename, result.gains) to result.limited
+                }
+                _importMessage.value = "Imported ${profile.first.displayName}" +
+                    if (profile.second) " (some gains limited to ±12 dB)." else ". Select it to apply."
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _importMessage.value = "Import failed: ${e.message ?: "invalid file"}"
+            }
+        }
+    }
+
+    fun importPastedGraphicEq(name: String, table: String) {
+        viewModelScope.launch {
+            try {
+                require(table.length <= 32_000) { "Pasted text is too long." }
+                val result = GraphicEqImporter.convertPastedTable(table)
+                val profile = withContext(Dispatchers.IO) {
+                    customProfilesRepository.importProfile(name, "Pasted 10-band values", result.gains)
+                }
+                _importMessage.value = "Imported ${profile.displayName}" +
+                    if (result.limited) " (some gains limited to ±12 dB). Select it to apply."
+                    else ". Select it to apply."
+            } catch (e: CancellationException) { throw e }
+            catch (e: Exception) { _importMessage.value = "Import failed: ${e.message ?: "invalid table"}" }
+        }
+    }
+
+    fun selectCustomProfile(id: String) {
+        pendingDatasetSelection = false
+        viewModelScope.launch {
+            if (customProfilesRepository.find(id) == null) {
+                _importMessage.value = "Profile no longer exists."
+            } else {
+                repository.selectCustomCorrection(id)
+            }
+        }
+    }
+
+    fun renameCustomProfile(id: String, name: String) {
+        viewModelScope.launch {
+            try { withContext(Dispatchers.IO) { customProfilesRepository.rename(id, name) } }
+            catch (e: Exception) { _importMessage.value = "Rename failed: ${e.message}" }
+        }
+    }
+
+    fun deleteCustomProfile(id: String) {
+        viewModelScope.launch {
+            try {
+                if (correctionSelection.value == HeadphoneCorrectionSelection.Custom(id))
+                    repository.selectNoCorrection()
+                withContext(Dispatchers.IO) { customProfilesRepository.delete(id) }
+                _importMessage.value = "Profile deleted. Flat correction is active if it was selected."
+            } catch (e: Exception) { _importMessage.value = "Delete failed: ${e.message}" }
+        }
+    }
 
     fun toggleFavorite(name: String) {
         viewModelScope.launch { repository.toggleFavoriteHeadphone(name) }
     }
 
     fun confirmSelection() {
+        if (!pendingDatasetSelection) return
         val name = _localSelectedHeadphone.value
         NowPlayingState.updateSelectedHeadphone(name)
         viewModelScope.launch { repository.setSelectedHeadphone(name) }
+        pendingDatasetSelection = false
     }
 
     fun showCustomDialog() { _showCustomDialog.value = true }
@@ -114,7 +220,8 @@ class HeadphonesViewModel(application: Application) : AndroidViewModel(applicati
             val trimmedName = name.trim()
             repository.setSelectedHeadphone(trimmedName)
             NowPlayingState.updateSelectedHeadphone(trimmedName)
-            selectHeadphoneLocally(trimmedName)
+            _localSelectedHeadphone.value = trimmedName
+            pendingDatasetSelection = false
             _showCustomDialog.value = false
         }
     }
@@ -134,6 +241,18 @@ fun HeadphonesScreen(
     val showCustomDialog by vm.showCustomDialog.collectAsState()
     val correctionStatus by EqState.headphoneCorrectionStatus.collectAsState()
     val favorites by vm.favorites.collectAsState()
+    val customProfiles by vm.customProfiles.collectAsState()
+    val selection by vm.correctionSelection.collectAsState()
+    val importMessage by vm.importMessage.collectAsState()
+    var renameProfile by remember { mutableStateOf<CustomEqProfile?>(null) }
+    var deleteProfile by remember { mutableStateOf<CustomEqProfile?>(null) }
+    var showPasteDialog by remember { mutableStateOf(false) }
+    var pastedName by remember { mutableStateOf("") }
+    var pastedTable by remember { mutableStateOf("") }
+    var renameDraft by remember(renameProfile) { mutableStateOf(renameProfile?.displayName ?: "") }
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) vm.importGraphicEq(uri)
+    }
     val correctionStatusText = when (val status = correctionStatus) {
         is HeadphoneCorrectionStatus.Loading ->
             if (status.headphoneName == localSelectedHeadphone) "Downloading correction..."
@@ -147,7 +266,56 @@ fun HeadphonesScreen(
         is HeadphoneCorrectionStatus.Failed ->
             if (status.headphoneName == localSelectedHeadphone) "Error: ${status.message}"
             else null
+        is HeadphoneCorrectionStatus.Imported -> "Using imported profile: ${status.displayName}"
+        is HeadphoneCorrectionStatus.ImportFailed -> "Error: ${status.message}"
         HeadphoneCorrectionStatus.Idle -> null
+    }
+
+    if (showPasteDialog) {
+        AlertDialog(
+            onDismissRequest = { showPasteDialog = false },
+            title = { Text("Paste 10-band Graphic EQ") },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    Text("Paste the Frequency (Hz) / Gain (dB) table: one pair per line. It will be converted to EQify's eight bands.",
+                        color = TextSecondary, fontSize = 12.sp)
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(value = pastedName, onValueChange = { pastedName = it },
+                        label = { Text("Profile name") }, singleLine = true)
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(value = pastedTable, onValueChange = { pastedTable = it },
+                        label = { Text("10-band values") },
+                        placeholder = { Text("31  12.0\n63  1.1\n125  0.6\n…\n16000  -12.0") },
+                        minLines = 6, maxLines = 10)
+                }
+            },
+            confirmButton = { TextButton(
+                enabled = pastedName.isNotBlank() && pastedTable.isNotBlank(),
+                onClick = {
+                    vm.importPastedGraphicEq(pastedName, pastedTable)
+                    showPasteDialog = false
+                }) { Text("Import") } },
+            dismissButton = { TextButton(onClick = { showPasteDialog = false }) { Text("Cancel") } }
+        )
+    }
+
+    renameProfile?.let { profile ->
+        AlertDialog(onDismissRequest = { renameProfile = null },
+            title = { Text("Rename imported profile") },
+            text = { OutlinedTextField(renameDraft, onValueChange = { renameDraft = it }, singleLine = true) },
+            confirmButton = { TextButton(enabled = renameDraft.isNotBlank(), onClick = {
+                vm.renameCustomProfile(profile.id, renameDraft); renameProfile = null
+            }) { Text("Save") } },
+            dismissButton = { TextButton(onClick = { renameProfile = null }) { Text("Cancel") } })
+    }
+    deleteProfile?.let { profile ->
+        AlertDialog(onDismissRequest = { deleteProfile = null },
+            title = { Text("Delete imported profile?") },
+            text = { Text(profile.displayName) },
+            confirmButton = { TextButton(onClick = {
+                vm.deleteCustomProfile(profile.id); deleteProfile = null
+            }) { Text("Delete") } },
+            dismissButton = { TextButton(onClick = { deleteProfile = null }) { Text("Cancel") } })
     }
 
     if (showCustomDialog) {
@@ -270,6 +438,28 @@ fun HeadphonesScreen(
                     singleLine = true
                 )
                 Spacer(Modifier.height(12.dp))
+                TextButton(onClick = { picker.launch(arrayOf("text/plain")) }) {
+                    Text("Import GraphicEQ file", color = AccentPurpleLight)
+                }
+                TextButton(onClick = { showPasteDialog = true }) {
+                    Text("Paste 10-band values", color = AccentPurpleLight)
+                }
+                importMessage?.let { Text(it, color = TextSecondary, fontSize = 11.sp) }
+                if (customProfiles.isNotEmpty()) {
+                    Text("MY CUSTOM PROFILES", color = AccentPurpleLight, fontSize = 11.sp)
+                    Column(Modifier.heightIn(max = 220.dp).verticalScroll(rememberScrollState())) {
+                        customProfiles.sortedByDescending { it.importedAtEpochMillis }.forEach { profile ->
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                TextButton(onClick = { vm.selectCustomProfile(profile.id) }, modifier = Modifier.weight(1f)) {
+                                    Text((if (selection == HeadphoneCorrectionSelection.Custom(profile.id)) "✓ " else "") +
+                                        profile.displayName + " · GraphicEQ", color = TextPrimary)
+                                }
+                                TextButton(onClick = { renameProfile = profile }) { Text("Rename") }
+                                TextButton(onClick = { deleteProfile = profile }) { Text("Delete") }
+                            }
+                        }
+                    }
+                }
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp),
@@ -304,7 +494,9 @@ fun HeadphonesScreen(
                                         is HeadphoneCorrectionStatus.Failed ->
                                             MaterialTheme.colorScheme.error
                                         is HeadphoneCorrectionStatus.Downloaded,
-                                        is HeadphoneCorrectionStatus.Cached -> NeonCyan
+                                        is HeadphoneCorrectionStatus.Cached,
+                                        is HeadphoneCorrectionStatus.Imported -> NeonCyan
+                                        is HeadphoneCorrectionStatus.ImportFailed -> MaterialTheme.colorScheme.error
                                         else -> TextSecondary
                                     }
                                 )

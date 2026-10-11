@@ -1,11 +1,22 @@
 # Feature Plan: Custom AutoEQ Import (autoeq.app / Equalizer APO files)
 
-Status: planning only. Do not implement this feature until explicitly requested.
+Status: GraphicEQ Path 1 (file or pasted 10-band table) implemented in source
+(2026-10-11); Android build and manual validation pending. ParametricEQ Path 2 remains unimplemented pending
+its exact-vs-heuristic and offline-vs-backend decisions.
+
+Implementation: `GraphicEqImporter.kt` parses/resamples; `CustomEqProfileRepository.kt`
+stores local profiles; `HeadphoneCorrectionSelection.kt` and
+`UserPreferencesRepository.kt` persist the tagged selection; `EqProcessingService.kt`
+resolves it on the automatic path; `HeadphonesScreen.kt` imports files or pasted
+values, then selects/renames/
+deletes; `SettingsScreen.kt` clears imports separately. Bluetooth auto-selection
+switches back to the matched dataset profile. Unmatched devices keep the current
+selection. This section describes code state, not validation results.
 
 ## Note for AI assistants reading this file
 
 This document was re-checked against the current Kotlin and Node source at
-commit `6f589a4` (2026-09-25). Source-level claims below are marked
+commit `eb033c7` (2026-10-11). Source-level claims below are marked
 **[VERIFIED]** where confirmed. Re-check the source again before implementation
 if the repository has moved.
 
@@ -25,10 +36,13 @@ Confidence tags used throughout this doc:
 
 ## Scope
 
-Let a user take a file they exported from autoeq.app (or any Equalizer
-APO-compatible tool) and use it as a headphone correction profile inside
+Let a user take a standalone GraphicEQ or ParametricEQ export from autoeq.app
+(or another Equalizer APO-compatible tool) and use it as a correction inside
 EQify, without needing their exact headphone model to exist in the 6,028-entry
 AutoEQ dataset EQify already ships.
+Full Equalizer APO configurations with multiple processing directives, includes,
+or both graphic and parametric sections are outside v1 scope; reject them rather
+than silently applying only part of a file.
 
 This is the "Custom AutoEQ import" line item named in `EQify_Android_PRD_v2.md`
 (Section 6.3) — this document defines *how*, it does not add a new feature to
@@ -36,6 +50,7 @@ the roadmap. **[VERIFIED against the current workspace PRD.]**
 
 In scope:
 1. Import a `GraphicEQ.txt` file via the Android system file picker.
+   Alternatively, paste a 10-row frequency/gain table copied from autoeq.app.
 2. Import a `ParametricEQ.txt` file via the same picker (second path; can ship
    later than #1 — see **Path 2** below).
 3. Store imported profiles locally, list them, select one as the active
@@ -53,8 +68,8 @@ Non-goals for v1:
 - No support for CamillaDSP YAML, EasyEffects JSON, PipeWire `.conf`, or Roon
   presets — only the two Equalizer APO-family text formats autoeq.app itself
   exports for graphic/parametric use.
-- No pasted-text import in v1 (file only via SAF). Paste-from-clipboard is a
-  plausible fast-follow, not required for the core feature.
+- No arbitrary pasted Equalizer APO configuration. Pasted input is limited to
+  the ten-row frequency/gain table; standalone `GraphicEQ:` files use SAF.
 - No change to the existing GitHub Pages dataset, its 6,028 profiles, or the
   fixed genre profiles.
 
@@ -68,15 +83,16 @@ Non-goals for v1:
 | `eqify-backend/lib/autoeq-converter.js` | Parses ParametricEQ-like text and produces eight approximate gains using heuristic peak/shelf shapes plus preamp. **[VERIFIED]** | It is **not** an exact biquad response evaluator. Do not describe it as exact math or silently reuse it for a high-fidelity import without deciding whether approximation parity or true filter-response evaluation is the requirement. |
 | Two EQ update paths (`EqProcessingService`) | Automatic/network-driven changes vs. manual slider changes are deliberately kept independent so slider input is never blocked by network work. **[VERIFIED]** | Selecting or importing a custom profile is an *automatic*-path change (like picking a different headphone), never a manual-path one. It must not touch the manual slider code path. |
 | Persistence boundary | `UserPreferencesRepository` (Preferences DataStore) is the settings boundary; screens write through view models, not directly to processing objects. **[VERIFIED]** | Use a repository behind the UI. Do not add custom profile keys directly to a screen or overload the existing global preset-name namespace. |
-| Room / SQL | No Room or SQLDelight dependency exists in the current `app/build.gradle.kts`. **[VERIFIED]** | A small local profile store does not need Room, but it must use atomic writes and recover from partial/corrupt state. |
+| Room / SQL | Room is present in `app/build.gradle.kts` and used by `GenreHistoryRepository.kt`; custom import has no store yet. **[VERIFIED]** | A small local profile store can remain separate from the genre database, but it must use atomic writes and recover from partial/corrupt state. |
+| `HeadphonesScreen.saveCustomHeadphone` | Saves a typed headphone *name* as the selected headphone; it does not import or store EQ gains. **[VERIFIED]** | Keep name selection distinct from a custom correction profile and its stable ID. |
 
 ## Format research (primary sources)
 
 Both formats below are things autoeq.app generates by running the same
 AutoEq pipeline EQify's own dataset was built from, then exporting the result
 in an Equalizer APO-compatible text format. **[VERIFIED against Equalizer
-APO's own configuration reference and the AutoEq project's documented output
-formats — see citations inline.]**
+APO's [configuration reference](https://sourceforge.net/p/equalizerapo/wiki/Configuration%20reference/)
+and AutoEq's [export code](https://github.com/jaakkopasanen/AutoEq/blob/master/autoeq/frequency_response.py).]**
 
 ### `GraphicEQ.txt`
 
@@ -92,16 +108,14 @@ gain values are interpolated **linearly in the logarithmic frequency
 spectrum** between specified points, with a **flat** response outside the
 specified range.
 
-AutoEq's own generator produces these points at roughly 1/120-octave spacing
-across the audible range (dozens to ~120 points per file), which is why a
-GraphicEQ export from autoeq.app looks dense compared to a 5–15 point manual
-Equalizer APO config — but the interpolation rule that matters for resampling
-is the same either way.
+AutoEq's current default export is dense (its [default step](https://github.com/jaakkopasanen/AutoEq/blob/master/autoeq/constants.py)
+is a frequency ratio of `1.0563`, about 1/12.6 octave); point count and spacing
+can vary by version/configuration. The interpolation rule is the same either way.
 
-**GraphicEQ has no separate preamp line.** AutoEq's default generator applies
-normalization/headroom handling to its points, but an arbitrary Equalizer APO
-file may have been authored differently. Preserve supplied values and do not
-invent preamp subtraction or normalization during Path 1 conversion.
+AutoEq's standalone `GraphicEQ.txt` export has no separate preamp line; its
+generator accounts for headroom in the exported points. An arbitrary Equalizer
+APO file may have a separate `Preamp:` directive. Path 1 must reject such a
+file as outside scope, not ignore its preamp or invent another one.
 
 ### `ParametricEQ.txt`
 
@@ -131,19 +145,26 @@ partial-conversion warning; it must never silently under-convert a profile.
 
 ## Resampling design — Path 1 (GraphicEQ, client-side, ship first)
 
-**[DESIGN CHOICE]** Recommended first because it needs no backend call, no new
-network permission consideration, and covers the format most Android EQ apps
-(including Wavelet) already treat as their primary AutoEQ import target — so
-it's also the format most autoeq.app users already have sitting in a Downloads
-folder.
+The paste path accepts the website's optional `Frequency (Hz) Gain (dB)`
+header plus exactly ten whitespace-separated numeric rows. It validates each
+row, then uses the same log-frequency interpolation, rounding, and clamping as
+the file path. Pasting saves a profile but does not activate it automatically.
+
+**[DESIGN CHOICE]** Recommended first because it needs no backend call or new
+network dependency and has a directly specified interpolation rule.
 
 1. Launch Android's Storage Access Framework document picker
-   (`ActivityResultContracts.OpenDocument`, MIME `text/plain` with a
-   `*/*` fallback since `.txt` isn't always registered as `text/plain` on
-   every device/file manager).
+   (`ActivityResultContracts.OpenDocument`). Prefer `text/plain`; provide a
+   separate `*/*` retry if a provider mislabels `.txt` files. Validate content
+   regardless of the provider's MIME type.
 2. Read the file as UTF-8 text, accepting and removing a UTF-8 BOM. Reject
    empty files and anything without a `GraphicEQ:` line with a clear error.
-   Enforce a reasonable size limit before reading (for example, 1 MiB).
+   Enforce a reasonable size limit while streaming (for example, 1 MiB), even
+   if the provider omits or misreports file size. Reject invalid UTF-8/binary
+   content. Store the converted profile and metadata only; do not retain the URI
+   grant or raw file.
+   Reject extra processing directives (including `Preamp:`, `Filter`, and
+   `Include`) rather than silently discarding part of a configuration.
 3. Strip the `GraphicEQ:` prefix, split on `;`, trim each pair, split each on
    whitespace into `(frequencyHz: Double, gainDb: Double)`. Empty trailing
    tokens are allowed; malformed non-empty tokens must fail the import with a
@@ -205,14 +226,12 @@ or promising that a parametric import matches an existing dataset profile.
 
 ## Storage
 
-**[DESIGN CHOICE]** Do not use Room for this, even if the genre-correction
-feature has since added it. Custom profiles are a short, user-curated list
+**[DESIGN CHOICE]** Keep this store separate from the existing Room-backed
+genre history. Custom profiles are a short, user-curated list
 (realistically single digits to low tens of entries), not an append-only
 event log needing aggregation queries — Room's benefit for the genre feature
 (retention windows, distinct-track queries, weekly aggregation) doesn't apply
-here. Keeping this feature Room-independent also means it can ship whether or
-not the genre feature has been built yet, and neither feature blocks the
-other.
+here. This remains a design choice, not a claim that Room is absent.
 
 Use a dedicated repository with one versioned, atomically-written JSON file:
 
@@ -248,7 +267,7 @@ Profile fields:
 
 | Field | Type | Notes |
 | --- | --- | --- |
-| `id` | string (UUID) | Generated at import time; used as the filename and the selection key. |
+| `id` | string (UUID) | Generated at import time; selection key within the single JSON document. |
 | `displayName` | string | Defaults to the source filename minus extension; user-renamable. |
 | `sourceFileName` | string | Original picked file name, kept for display/debugging. |
 | `format` | string | `"graphic_eq"` or `"parametric_eq"`. |
@@ -277,22 +296,29 @@ HeadphoneCorrectionSelection
 
 **[DESIGN CHOICE — illustrative model, not a literal type to paste in.]**
 
-Selecting a custom profile from `HeadphonesScreen` should go through the exact
-same automatic-path update mechanism as selecting a downloaded headphone —
-`EqProcessingService` should not need to know or care whether the eight gains
-it just received came from GitHub Pages or a local import. This keeps the
-two-path separation intact: this feature only ever touches the automatic
-path.
+Selection must feed `EqProcessingService`'s automatic pipeline. Today that
+service observes `NowPlayingState.selectedHeadphone`, calls
+`resolveHeadphoneCorrection(name)`, then writes
+`EqState.currentHeadphoneCorrection`; a UI-only write to that array would be
+overwritten on the next recompute. Extend the pipeline (or a resolver it calls)
+to observe the tagged selection and resolve Dataset through Pages/cache,
+Custom through the local store, and None to flat. Keep the manual slider path
+unchanged and responsive; only the resolved eight gains are source-agnostic.
 
-Persist only the source and stable identifier. Load eight gains through the
-dataset repository or custom repository, then put the resulting array into the
-existing `EqState.currentHeadphoneCorrection` path. Do not persist raw gains in
-multiple competing state locations.
+Persist the source and stable identifier, separately from the selected headphone
+name. Do not persist raw gains in multiple competing state locations.
+The current `HeadphoneCorrectionStatus` is name-based and uses
+Loading/Downloaded/Cached/Failed; extend its identity and presentation so a
+local import reports "using imported profile," not "downloaded." Update both
+`HomeScreen` and `HeadphonesScreen` status rendering accordingly.
 
 If the active custom profile is deleted, select `None` (flat correction) and
 show an error/status message. Do not silently reselect an unrelated cached
-headphone profile. Automatic Bluetooth selection may later choose a dataset
-profile according to the existing setting.
+headphone profile. Define Bluetooth auto-selection behavior before coding:
+current detection updates/persists the selected headphone *name*. If auto-
+selection also switches the tagged correction to Dataset, make that visible;
+if a user-pinned Custom correction remains active, keep its identity and label
+clear. Never treat a custom UUID as a Pages headphone name.
 
 ## Settings page structure
 
@@ -323,6 +349,8 @@ custom profiles should get a clearly labeled section:
 
 - An **"Import from file"** button/chip alongside the search bar, opening the
   SAF picker.
+- A **"Paste 10-band values"** action opens a name/table dialog; accepts exactly
+  ten numeric frequency/gain rows with an optional column header.
 - A **"My custom profiles"** section (only shown when the list is non-empty),
   listed above or below search results, each row showing display name, a
   format badge (Graphic/Parametric), and select/rename/delete affordances.
@@ -346,6 +374,10 @@ custom profiles should get a clearly labeled section:
    profile as active — selection is a separate explicit action (consistent
    with how picking a downloaded headphone already works).
 
+The pasted 10-band route follows flow 1 from conversion onward, using the
+same local store and explicit-selection rule. It does not create a file or
+contact a server.
+
 ### 2. Import a ParametricEQ.txt file
 
 Same picker/UI entry point as flow 1; format is detected from file content
@@ -361,10 +393,11 @@ explicitly.
 ### 3. Select a custom profile as the active correction
 
 1. User taps a row in **My custom profiles**.
-2. The eight stored gains are read from the custom profile document and pushed through the
-   same automatic-path mechanism a downloaded-profile selection already uses.
-3. `EqProcessingService` applies it exactly as it would a downloaded profile;
-   manual sliders remain independently responsive.
+2. Persist the tagged selection; the automatic-path resolver reads the eight
+   gains from the custom profile document. Do not write the array from the
+   screen and expect it to survive a service recompute.
+3. `EqProcessingService` resolves and applies the local gains, with a local
+   status message; manual sliders remain independently responsive.
 
 ### 4. Manage custom profiles
 
@@ -378,8 +411,8 @@ explicitly.
 
 ## Privacy
 
-- Path 1 (GraphicEQ): fully on-device. The picked file's contents never leave
-  the phone.
+- Path 1 (GraphicEQ file or pasted table): fully on-device. Contents never
+  leave the phone.
 - Path 2 (ParametricEQ) **if Option A is chosen**: the raw filter text is sent
   to the configured backend URL (same `BuildConfig.BASE_URL` genre detection
   already uses) for conversion. This is a new use of an existing network
@@ -397,6 +430,8 @@ Unit tests (pure functions, no Android dependency needed for most of these):
 - GraphicEQ parser: well-formed file, trailing semicolon, extra whitespace,
   unsorted input points, single malformed pair among valid ones, empty file,
   file missing the `GraphicEQ:` prefix entirely.
+- Pasted table: optional header, tabs/spaces, ten rows, Unicode minus, malformed
+  row, duplicate frequency, and sample values from autoeq.app.
 - GraphicEQ resampling: target frequency exactly on a source point, between
   two points (log-interpolation correctness against a hand-computed
   example), below the lowest source point, above the highest source point
@@ -414,7 +449,8 @@ Unit tests (pure functions, no Android dependency needed for most of these):
   crashing the audio service.
 - Selection integration: selecting a custom profile updates the automatic
   path only; manual slider state and the manual update path are provably
-  untouched by a test that changes both in sequence.
+  untouched by a test that changes both in sequence. Recompute, service restart,
+  and Bluetooth selection must not reinterpret a custom ID as a Pages name.
 
 Manual checks:
 
@@ -423,6 +459,8 @@ Manual checks:
   check the interpolation, not just unit-test it.
 - Selected custom profile survives app restart and killed-and-restarted
   foreground service, same as a downloaded profile does today.
+- Local profile status says "imported" or equivalent, never "downloaded";
+  Bluetooth auto-selection behavior matches the documented source policy.
 - Deleting the active custom profile falls back cleanly, with audible/UI
   confirmation, not silent flat output.
 - Malformed/garbage file produces a clear in-app error, not a crash.
@@ -458,10 +496,11 @@ Manual checks:
 - [ ] Eight-band rounding (0.1 dB) and clamping (`[-12, 12]` dB) matches the
       existing dataset convention exactly, so custom and downloaded profiles
       are indistinguishable downstream.
-- [ ] Custom-profile storage does not depend on Room, regardless of whether
-      the genre-correction feature has added it.
+- [ ] Custom-profile storage remains independent of the existing Room-backed
+      genre-history database, as specified by the storage design.
 - [ ] Selecting/importing a custom profile only ever goes through the
-      automatic EQ path; manual slider priority is untouched.
+      automatic EQ path; manual slider priority is untouched, and service
+      recomputation cannot overwrite it with a dataset-name lookup.
 - [ ] `HeadphonesScreen` and `SettingsScreen` each get the UI described above,
       not a single screen doing both jobs.
 - [ ] Clearing custom profiles and clearing downloaded AutoEQ cache remain
@@ -479,7 +518,7 @@ Manual checks:
 
 | # | Item | Status |
 | --- | --- | --- |
-| 1 | Whether Room exists in the app yet | **[VERIFIED absent in current `app/build.gradle.kts`]** |
+| 1 | Whether Room exists in the app yet | **[VERIFIED present]** `app/build.gradle.kts` includes Room 2.8.5; `GenreHistoryRepository.kt` uses it. Custom-profile JSON remains a design choice. |
 | 2 | Exact current shape of active correction state | **[VERIFIED]** Current state is a headphone-name string plus `EqState.currentHeadphoneCorrection`; custom import needs a tagged selection extension. |
 | 3 | Whether `autoeq-converter.js` applies `Preamp:` | **[VERIFIED]** It parses `Preamp:` with a default of `0` and adds it to the heuristic eight-band output. This is not proof of exact biquad fidelity. |
 | 4 | Whether AutoEq exports shelf filters | **[VERIFIED from upstream source]** AutoEq emits `LSC`/`HSC` mappings in its parametric writer; retain shelf test coverage. |
@@ -487,6 +526,7 @@ Manual checks:
 | 6 | Default behavior for a `ParametricEQ.txt` file missing a `Preamp:` line | **[DESIGN CHOICE pending]** Prefer rejecting the file unless the selected parser specification explicitly defines a 0 dB default. |
 | 7 | Exact versus heuristic ParametricEQ conversion | **[DESIGN CHOICE pending]** Current Node code is heuristic. Choose exact biquad sampling or documented parity before Path 2. |
 | 8 | Custom-store format | **[DESIGN CHOICE]** One versioned atomic JSON document is preferred over an index plus per-profile files because profile count is small and it avoids partial-update/orphan states. |
+| 9 | Bluetooth auto-selection vs user-pinned Custom profile | **[DESIGN CHOICE pending]** Define whether auto-selection switches source to Dataset or preserves Custom; never leave the source ambiguous. |
 
 ## Correction log
 
@@ -496,3 +536,6 @@ should append here rather than silently rewriting sections above.
 | Date | Corrected by | What changed | Why |
 | --- | --- | --- | --- |
 | 2026-09-26 | Codex | Re-checked Kotlin/Node source. Corrected converter description from exact biquad math to heuristic approximation; added tagged custom-selection requirement; replaced split files with an atomic custom-store design; tightened malformed-input handling; corrected stale UI/storage assumptions; and clarified Path 2 security and parity decisions. | Prevent incorrect implementation and silent audio-profile selection failures. |
+| 2026-10-11 | Codex | Re-checked current source; corrected Room presence, GraphicEQ spacing/preamp scope, JSON ID wording, bounded file reading, service-owned correction resolution/status, and Bluetooth selection ambiguity. | Avoid partial imports and a custom selection being overwritten by the current name-based service pipeline. |
+| 2026-10-11 | Codex | Recorded Path 1 implementation locations and the chosen Bluetooth behavior; left Path 2 pending. | Keep this plan aligned with source without implying unrun Android validation. |
+| 2026-10-11 | Codex | Added ten-row pasted GraphicEQ input as an alternative to file import; reused eight-band conversion and local storage. | autoeq.app may show copyable values without a downloadable file. |
