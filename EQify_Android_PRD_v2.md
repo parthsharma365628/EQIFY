@@ -2,9 +2,9 @@
 
 Automatic Intelligent Equalizer
 
-Product Requirements Document | v2.0 September 2026 | Android-only scope
+Product Requirements Document | v2.1 October 2026 | Android-only scope
 
-> This document supersedes `EQify_PRD.docx` (v1.0, March 2026) **for the Android app only**. The original PRD's cross-platform vision (Windows, browser extension, cloud sync, ML genre model) is preserved and re-scoped under **Section 11 — Future Plans**, not discarded. This version reflects what has actually been built as of the `EQIFY` repository state on **2026-09-25**, cross-checked against `AI.md`, `GITHUB_PAGES_AUTOEQ.md`, `CLOUDFLARE_AUTOEQ_MIGRATION.md`, and `FEATURE_GENRE_INSIGHTS_AND_CORRECTION.md`. Where this document's architecture assumptions conflict with the live repository, the repository wins — treat this as a snapshot to re-verify, not a permanent spec.
+> This document supersedes `EQify_PRD.docx` (v1.0, March 2026) **for the Android app only**. The original PRD's cross-platform vision (Windows, browser extension, cloud sync, ML genre model) is preserved and re-scoped under **Section 11 — Future Plans**, not discarded. This version reflects what has actually been built as of the `EQIFY` repository state on **2026-10-11** (refreshed from the 2026-09-25 checkpoint; see the change log in Section 12), cross-checked against `AI.md`, `README.md`, `GITHUB_PAGES_AUTOEQ.md`, `CLOUDFLARE_AUTOEQ_MIGRATION.md`, `FEATURE_GENRE_INSIGHTS_AND_CORRECTION.md`, and `FEATURE_CUSTOM_AUTOEQ_IMPORT.md`. Where this document's architecture assumptions conflict with the live repository, the repository wins — treat this as a snapshot to re-verify, not a permanent spec.
 
 ---
 
@@ -15,9 +15,9 @@ EQify is an automatic, intelligent equalizer for Android that detects the genre 
 Since v1.0 of the PRD, the product has narrowed from a three-platform bet (Android + Windows + browser) to a **deliberately Android-first, bootstrapped build**, and a meaningful share of the v1.0 roadmap is now implemented and running, not just planned:
 
 - Genre detection is live, using on-device signals plus a small external-lookup chain — not the official Spotify/Apple Music APIs the original PRD assumed (see Section 5.3 for why that changed).
-- The full AutoEQ headphone correction database (6,028 profiles) is converted and published through GitHub Pages. Client integration is implemented but still needs device validation; it caches the catalog and downloads only the selected profile, with no SQLite bundling or per-request Node backend hit.
+- The full AutoEQ headphone correction database (6,028 profiles) is converted and published through GitHub Pages. The Android client integration was device-validated on 2026-10-11; it caches the catalog and downloads only the selected profile, with no SQLite bundling or per-request Node backend hit.
 - The core automatic EQ pipeline, manual override panel, bass boost, output protection (limiter-based and safe-scaling fallback), and Bluetooth/wired headphone detection are implemented. The Quick Settings tile is built but still needs explicit device validation.
-- A fully designed (not yet built) local data layer for genre correction, per-track history, and weekly listening insights exists as a source-verified plan, ready to implement.
+- Genre correction, a recent-tracks list, and a seven-day detected-track genre mix are implemented locally on top of a new Room data layer, with genre resolution moved to an application-scoped `GenreCoordinator` (2026-10-11). This passed debug compilation and JVM unit tests but still needs device validation. A source-checked plan for importing autoeq.app files as custom headphone corrections exists (`FEATURE_CUSTOM_AUTOEQ_IMPORT.md`) but is not built.
 
 This document re-prioritizes what's left to build for Android, adds a researched set of new feature candidates (validated in part against what competitors — chiefly Wavelet — actually ship in 2026), and rates each by implementation effort for a two-person team.
 
@@ -54,35 +54,28 @@ Unchanged from v1.0; still accurate for the Android-only build.
 
 ---
 
-## 4. Current Implementation Status (as of 2026-09-25)
+## 4. Current Implementation Status (as of 2026-10-11)
 
-Update (2026-10-11): The user validated the GitHub Pages headphone path on a
-device. Genre correction, recent tracks, and seven-day detected-track mix are
-now implemented locally, with `GenreCoordinator` owning background resolution
-and `GenreHistoryRepository` owning Room history/corrections. This new feature
-passed debug compilation and JVM unit tests but still needs device validation;
-the historical status
-table and architecture below describe the 2026-09-25 checkpoint, not this
-update. The mix counts observed tracks, never minutes listened, and cannot
-recover notifications missed while the process/listener or Auto-Genre is inactive.
+Changes since the 2026-09-25 checkpoint (2026-10-11): the GitHub Pages headphone path was validated on a device. Genre correction, recent tracks, and the seven-day detected-track mix are implemented locally, with `GenreCoordinator` owning application-scoped genre resolution and `GenreHistoryRepository` owning Room history and corrections. That new work passed debug compilation and JVM unit tests only; device validation is pending and the manual checklist in `FEATURE_GENRE_INSIGHTS_AND_CORRECTION.md` must not be treated as run. The mix counts observed tracks, never minutes listened, and cannot recover notifications missed while the process, notification listener, or Auto-Genre was inactive. Rows below were refreshed from the repository documentation, not from a new source audit.
 
 This is the section the v1.0 PRD didn't have, because nothing was built yet. Status values: **Implemented and device-validated**, **Built, not yet validated on device** (code exists, needs field testing), **Planned — documented** (a written, checked design exists but no code), **Not started**. Because EQify is pre-launch, “implemented” does not mean publicly shipped.
 
 | Capability | Status | Where it lives | Notes |
 |---|---|---|---|
-| Automatic genre detection | **Implemented and device-validated** | `HomeViewModel.kt`, `Localgenredetector.kt` | Chain: local detector → optional Last.fm → iTunes → backend `POST /api/v1/genre` (cache → Last.fm → iTunes → keyword → default). It currently runs only while `HomeViewModel` is alive. |
-| Genre source/confidence display | **Implemented** | `HomeViewModel.kt`, `HomeScreen.kt` | The Now Playing card already shows source plus Low/Medium/High confidence and marks fallback results. Confidence is heuristic, not a calibrated probability. |
-| Headphone correction database | **Built, not yet validated on device** | GitHub Pages (`eqify-data`), `HeadphoneDataRepository.kt` | The 6,028-profile Pages deployment is live and HTTP-verified. Android catalog caching, local search, and on-demand profile download are implemented but still need a device test. |
-| Automatic EQ application | **Implemented and device-validated** | `EqProcessingService.kt`, `EqProfileManager.kt` | Combines genre curve → headphone correction → bass boost into 8 logical bands, mapped to device band count. The new Pages input path remains part of the pending validation above. |
+| Automatic genre detection | **Implemented; coordinator move pending device validation** | `GenreCoordinator.kt`, `Localgenredetector.kt`, `NowPlayingState.kt` | Chain: Room correction check → local detector → optional Last.fm → iTunes → backend `POST /api/v1/genre` (cache → Last.fm → iTunes → keyword → default). Resolution moved from `HomeViewModel` to the application-scoped `GenreCoordinator`, so it no longer depends on the Home screen being open. The earlier `HomeViewModel` version was device-validated; the coordinator version has only passed compilation and JVM tests. Still limited to the four whitelisted apps. |
+| Genre source/confidence display | **Implemented** | `HomeViewModel.kt`, `HomeScreen.kt` | The Now Playing card shows source plus Low/Medium/High confidence and marks fallback results; `HomeViewModel` now exposes coordinator status. Confidence is heuristic, not a calibrated probability. |
+| Headphone correction database | **Implemented and device-validated** | GitHub Pages (`eqify-data`), `HeadphoneDataRepository.kt` | The 6,028-profile Pages deployment is live and HTTP-verified, and the Android path (catalog caching, local search, on-demand profile download) was validated on a device on 2026-10-11. The validation note does not itemize offline reuse or failure messaging; see the offline reuse row. |
+| Automatic EQ application | **Implemented and device-validated** | `EqProcessingService.kt`, `EqProfileManager.kt` | Combines genre curve → headphone correction → bass boost into 8 logical bands, mapped to device band count. The Pages input path was validated with the headphone database row above. |
 | Manual EQ override | **Implemented and device-validated** | `EqScreen.kt` | Sliders, built-in and global user-named presets, bass, A/B bypass comparison, save, and rename. Custom presets are not currently scoped per headphone or genre. |
 | Output protection | **Implemented and device-validated** | `OutputProtectionMode.kt`, `EqEngine.kt` | Balanced (API 28+ limiter) / Safe (static scaling, all API levels) / Off. Migrates old `limit_output_gain` boolean automatically. |
 | Bluetooth/wired headphone auto-detect | **Implemented and device-validated** | `Bluetoothheadphonedetector.kt` | Selects the matching headphone database entry; wired devices require user confirmation because Android exposes a generic name. |
 | Quick Settings tile | **Built, not yet validated on device** | `EqQuickSettingsTileService.kt`, `EqProcessingSnapshot.kt` | Designed to reflect service state rather than only a stored preference; device behavior still needs confirmation. |
-| Offline headphone-gain reuse | **Built, not yet validated with Pages client** | `HeadphoneEqDiskCache.kt` | Selected gains are cached on disk; the existing cache path is proven, but reuse after a Pages download still needs an end-to-end device check. |
-| Settings, privacy copy, cache controls | **Implemented** | `SettingsScreen.kt` | The AutoEQ database subtitle still says “EQify backend” and must be updated to GitHub Pages before release. “Clear downloaded corrections” clears selected gain curves, not the cached catalog index. |
-| Genre correction (user overrides a detected genre) | **Planned — documented** | `FEATURE_GENRE_INSIGHTS_AND_CORRECTION.md` | Full Room schema, flows, and edge cases specified and checked against source. Not implemented. |
-| Per-track listening history (supporting data only) | **Planned — documented** | same doc | Feeds the correction picker and weekly insights; not a browsable history screen by design. |
-| Weekly genre listening insights | **Planned — documented**, blocked | same doc | **Blocker**: genre resolution is currently scoped to `HomeViewModel`/activity lifetime, so it can't see background listening yet. Needs the coordinator-lifecycle fix described in that doc before the insight becomes trustworthy. |
+| Offline headphone-gain reuse | **Built, validation scope unconfirmed** | `HeadphoneEqDiskCache.kt` | Selected gains are cached on disk. The 2026-10-11 validation note covers the Pages headphone path generally but does not say that reuse after a Pages download was tested offline; treat as pending until confirmed. |
+| Settings, privacy copy, cache controls | **Implemented** | `SettingsScreen.kt` | As of 2026-09-25 the AutoEQ database subtitle still said “EQify backend” and had to be updated to GitHub Pages before release; re-check this. “Clear downloaded corrections” clears selected gain curves, not the cached catalog index. Genre history/corrections have their own explicit clear action per the genre plan. |
+| Genre correction (user overrides a detected genre) | **Implemented locally, pending device validation** | `GenreCoordinator.kt`, `GenreHistoryRepository.kt`, Home/Settings screens | Room-backed corrections take priority over automatic detection and are applied at read time to history and the mix. Passed debug compilation and JVM unit tests; manual device checklist not yet run. |
+| Per-track listening history (supporting data only) | **Implemented locally, pending device validation** | `GenreHistoryRepository.kt` | One final observation per accepted track while Auto-Genre is enabled, pruned at 16 days, feeding a 14-day recent-tracks list and the correction picker. Not a browsable history screen by design. |
+| Weekly genre listening insights | **Implemented locally, pending device validation** | `GenreHistoryRepository.kt`, Home screen | A seven-day genre mix of detected tracks. It counts observations, not listening time; percentages are whole-number rounded and need not sum to 100; tracks missed while the process, listener, or Auto-Genre was inactive cannot be recovered. Do not describe it as minutes listened. The earlier `HomeViewModel` lifecycle blocker is resolved by the application-scoped coordinator. |
+| Custom AutoEQ import (autoeq.app files) | **Planned — documented** | `FEATURE_CUSTOM_AUTOEQ_IMPORT.md` | Checked against source (commit `6f589a4`, 2026-09-25) and corrected by a second reviewer. Path 1 (GraphicEQ) is client-side; Path 2 (ParametricEQ) has an open exact-versus-heuristic and backend-versus-Kotlin decision. Not implemented. |
 | Built-in genre presets (EDM, Classical, Hip-Hop, Jazz, Pop, Rock, etc.) | **Implemented** | `EqProfileManager.kt` | Canonical genre set = `defaultProfiles.keys` minus `Flat`/`Bass Boost`. |
 | Custom genre profiles (user-defined tags) | **Not started** | — | Re-scoped in Section 6 below given what's now known about the canonical-genre-list constraint. |
 | Streaming-app deep API integration (official Spotify/Apple Music APIs) | **Not started, re-scoped** | — | See Section 5.3 — this was replaced by notification-metadata detection, not merely deferred. |
@@ -99,11 +92,11 @@ This is the section the v1.0 PRD didn't have, because nothing was built yet. Sta
 | Layer | v1.0 PRD assumption | What's actually running |
 |---|---|---|
 | Android app | Kotlin + Jetpack Compose, AudioEffect/Oboe | Kotlin + Jetpack Compose, Android `Equalizer` + `DynamicsProcessing` effects (not a native Oboe layer). `minSdk 26`, `targetSdk 36`. |
-| Genre detection | Spotify/YouTube Music API metadata, later on-device ML | Notification-metadata via `MediaListenerService` → local heuristic detector → Last.fm → iTunes → backend keyword/default fallback. No streaming-service API integration. |
+| Genre detection | Spotify/YouTube Music API metadata, later on-device ML | Notification-metadata via `MediaListenerService` → application-scoped `GenreCoordinator`: Room correction → local heuristic detector → Last.fm → iTunes → backend keyword/default fallback. No streaming-service API integration. |
 | Headphone database | AutoEQ dataset in local SQLite, periodic sync | AutoEQ dataset converted offline, published as static JSON on GitHub Pages, cached client-side. No SQLite; no periodic backend sync — a manual re-export/re-publish step. |
 | Backend | Node.js/FastAPI for account sync, headphone DB updates, analytics | Node/Express, now scoped to exactly one job: the last-resort step of genre detection (`POST /api/v1/genre`). Headphone routes still exist for backend tooling/tests but the app doesn't call them. |
 | Cloud infrastructure | Firebase (auth, Firestore, Crashlytics) | None implemented. Everything is local-only (DataStore + disk cache). |
-| Local persistence | SQLite | Jetpack DataStore (`UserPreferencesRepository`) for settings/presets/snapshot. No Room yet — the genre-correction plan would introduce it. |
+| Local persistence | SQLite | Jetpack DataStore (`UserPreferencesRepository`) for settings/presets/snapshot, and Room (`GenreHistoryRepository`) for genre corrections and the 16-day observation log. The planned custom AutoEQ import deliberately uses neither: a small atomic JSON store. |
 
 ### 5.2 Data flow (as-built)
 
@@ -114,7 +107,7 @@ Notification metadata (MediaListenerService)
 NowPlayingState (title, artist)
         │
         ▼
-HomeViewModel: local detector → Last.fm → iTunes → backend (POST /api/v1/genre)
+GenreCoordinator (app-scoped): Room correction → local detector → Last.fm → iTunes → backend (POST /api/v1/genre)
         │
         ▼
 NowPlayingState.currentGenre
@@ -128,7 +121,7 @@ Bluetoothheadphonedetector ──► HeadphoneDataRepository (GitHub Pages index
 EqEngine (Equalizer + DynamicsProcessing) ──► audio session
 ```
 
-Manual slider input goes through a **separate, always-fast path** in `EqProcessingService` that never waits on network calls — this separation is explicitly load-bearing and every future feature must preserve it.
+Manual slider input goes through a **separate, always-fast path** in `EqProcessingService` that never waits on network calls — this separation is explicitly load-bearing and every future feature must preserve it. Each accepted track is also logged as one observation to `GenreHistoryRepository` (Room), which feeds the recent-tracks list and seven-day mix; that logging is off the audio path and a failed write must not affect EQ.
 
 ### 5.3 Why genre detection isn't "Spotify API metadata" anymore
 
@@ -138,9 +131,9 @@ The v1.0 PRD assumed genre would come from official streaming-service APIs. That
 - Notification-listener metadata can support multiple apps without official service APIs, but the current implementation deliberately whitelists only Spotify, YouTube Music, YouTube, and Apple Music for Android. Local players and other media apps are not currently processed even if they post standard media notifications; broader support requires an explicit compatibility and metadata-quality change.
 - The trade-off: metadata is limited to title/artist text, so genre still has to be *inferred* (Last.fm/iTunes lookup, keyword fallback) rather than read directly off a `genre` field an API would provide. This is why genre confidence and user correction (Section 6) matter more here than they would in the original design.
 
-### 5.4 Known architectural constraint to resolve before insights ship
+### 5.4 Genre-resolution lifecycle (resolved 2026-10-11, pending device validation)
 
-Genre resolution lives in `HomeViewModel`, which is scoped to the Home screen/activity, not the always-alive `EqProcessingService`. Any feature promising "what you listened to today/this week" is only as honest as this constraint allows — right now it would really mean "what you listened to while the app was open." This is documented as the #1 open item in `FEATURE_GENRE_INSIGHTS_AND_CORRECTION.md` and should be treated as a prerequisite, not a nice-to-have, before that feature ships with unqualified "weekly insights" language.
+Genre resolution used to live in `HomeViewModel`, scoped to the Home screen/activity, so any “what you listened to” claim really meant “while the app was open.” It now lives in the application-scoped `GenreCoordinator`, which logs one observation per accepted track while the process, notification listener, and Auto-Genre are active, including when the Activity is closed. Remaining limits to keep in product copy: tracks missed while any of those is off cannot be recovered, and the mix counts detected tracks rather than listening time. The refactor has passed compilation and JVM tests but not device validation; do not promise “weekly insights” without qualification until it has.
 
 ---
 
@@ -160,8 +153,8 @@ Effort scale (two-person team, existing codebase, no new hires assumed):
 
 | Feature | Priority | Status | Effort (remaining) | Notes |
 |---|---|---|---|---|
-| Genre Detection | P0 | **Implemented, lifecycle limitation remains** | — | Notification-based for four whitelisted apps; resolution currently depends on `HomeViewModel` being alive (Sections 5.3–5.4). |
-| Headphone Database | P0 | **Deployment done; client validation pending** | **S** testing | GitHub Pages is live; validate first download, local search, selected-profile fetch, failure messaging, and offline cache reuse on device. |
+| Genre Detection | P0 | **Implemented; lifecycle limitation resolved, pending device validation** | — | Notification-based for four whitelisted apps; resolution now runs in the application-scoped `GenreCoordinator` (Sections 5.3–5.4). |
+| Headphone Database | P0 | **Done — device-validated (2026-10-11)** | — | GitHub Pages is live and the Android client was validated on a device. Remaining: confirm offline cache reuse and failure messaging if not already covered, and keep the measurement-source attribution review current. |
 | Auto Equalizer | P0 | **Done** | — | |
 | Built-in EQ Presets | P1 | **Done** | — | |
 | Headphone Auto-Detection | P1 | **Done** | — | Bluetooth + wired; no USB-descriptor parsing beyond what Android exposes. |
@@ -170,13 +163,13 @@ Effort scale (two-person team, existing codebase, no new hires assumed):
 | Streaming App Integration (official APIs) | P2 | **Dropped** | — | Superseded by notification-metadata approach; re-adding an official API would be a parallel detection path, not a replacement, and isn't worth the partner-approval risk for the accuracy gain. |
 | User Profile Sync (cloud) | P2 | Deferred | **XL** | Needs an account system and backend that doesn't exist yet. Moved to Future Plans. |
 
-### 6.2 Already fully specified, ready to build
+### 6.2 Implemented locally — pending device validation
 
-| Feature | Priority | Effort | Notes |
+| Feature | Priority | Status | Remaining work |
 |---|---|---|---|
-| Genre correction (fix a wrongly detected genre) | **P0** for trust in auto-detection | **L** | Full design in `FEATURE_GENRE_INSIGHTS_AND_CORRECTION.md`. Requires adding Room. Should ship *before or alongside* the lifecycle fix in 5.4, since correction has value even without insights. |
-| Recent-tracks list (supports correction UI) | P1 | **S**, once above lands | Bundled in the same doc; small once the data layer exists. |
-| Weekly genre listening insights | P2 | **M**, but **blocked** on 5.4 | Don't ship with "weekly" framing until the lifecycle question is resolved — ship as "this session" insights first if the coordinator refactor is deferred. |
+| Genre correction (fix a wrongly detected genre) | **P0** for trust in auto-detection | Implemented; Room added | Run the manual device checklist in `FEATURE_GENRE_INSIGHTS_AND_CORRECTION.md`. Verify stale-async-result handling and that a failed history write never breaks EQ. |
+| Recent-tracks list (supports correction UI) | P1 | Implemented | Device validation; 14-day window, 16-day pruning. |
+| Weekly genre listening insights | P2 | Implemented as a seven-day detected-track mix | Device validation. Keep the “detected tracks, not minutes” framing in all copy. |
 
 ### 6.3 New feature candidates (this pass's research + prior brainstorm)
 
@@ -185,10 +178,10 @@ Researched against Wavelet's current official feature documentation and Play lis
 | Feature | Description | Priority suggestion | Effort | Why |
 |---|---|---|---|---|
 | **Loudness-compensated EQ (ISO 226 equal-loudness)** | Adjust the applied curve based on system volume, boosting bass/treble more at low volumes to match how human hearing perception changes with loudness. | **P1** | **M** | Confirmed as a real, current Wavelet feature ("ISO 226-based equal loudness compensation"). Fits directly into the existing gain-composition pipeline as one more stage. Strong "why doesn't ours do this yet" gap versus the closest competitor. |
-| **Genre-correction affordance beside confidence** | Keep the existing source/confidence display, but add a correction action when confidence is low or a fallback was used. | **P1** | **S**, after genre correction exists | The indicator itself is already implemented. The remaining product work is connecting it to the planned correction flow and defining better-calibrated confidence semantics. |
+| **Genre-correction affordance beside confidence** | Keep the existing source/confidence display, but add a correction action when confidence is low or a fallback was used. | **P1** | **S** | Genre correction now exists. Remaining work is surfacing it beside the confidence display when confidence is low or a fallback was used, if the current Home correction actions do not already do so (verify in `HomeScreen.kt`), and defining better-calibrated confidence semantics. |
 | **Per-app profile pinning** | Let a user lock a specific profile to a specific app (e.g. always "Podcast" in a podcast app), overriding genre detection for that app. | **P1** | **M** | Solves cases where genre inference is structurally weak. `MediaListenerService` sees the source package today, but that package is not carried into `NowPlayingState`; the data flow and persistence model must be extended. |
 | **Shareable EQ profile export/import (string/QR/file, no cloud)** | Export a tuned headphone+genre combo as a shareable string or small file; import someone else's. | **P2** | **S** | Zero backend cost, fits the "zero external budget" constraint far better than the v1.0 cloud-sync plan, and is a community-building hook (power users share tunings on Reddit/Discord, per the original feedback-channel plan). |
-| **Custom AutoEQ import (autoeq.app / squig.link style)** | Let a user paste in their own parametric EQ correction rather than only picking from the bundled 6,028 profiles. | **P2** | **M** | This is a confirmed, marketed Wavelet feature ("Have your own data? Easily import..."). Matters for the audiophile persona whose exact headphone/measurement isn't in the AutoEQ dataset. |
+| **Custom AutoEQ import (autoeq.app export files)** | Let a user import an autoeq.app export file via the Android file picker (`GraphicEQ.txt` first, `ParametricEQ.txt` later) rather than only picking from the bundled 6,028 profiles. | **P2** | **S–M** (GraphicEQ) / **M** (ParametricEQ) | Confirmed, marketed Wavelet feature (“Have your own data? Easily import...”). Matters for the audiophile persona whose exact headphone/measurement isn't in the dataset. Full plan, including the open Path 2 decision, in `FEATURE_CUSTOM_AUTOEQ_IMPORT.md`. |
 | **Comfort / long-session mode** | Optional, gentle time-based treble taper after N continuous hours of listening in one session. | **P2** | **M**, blocked on reliable session tracking | Pure audio-engineering framing, not a health claim. It reuses the gain pipeline but first needs playback-session timing that survives UI lifecycle changes and handles pauses and route changes correctly. |
 | **Local settings backup/restore** | Export `UserPreferencesRepository` state to a file before uninstall/device swap; restore on a new install. | **P2** | **S** | Cheap, no backend, complements the existing disk-cache patterns. |
 | **Crowdsourced headphone-correction requests** | If a user's headphone model isn't in the AutoEQ dataset, let them flag it; aggregate requests to prioritize future data work. | **P2** | **M** | Aggregation requires a write-capable endpoint, storage, abuse controls, and privacy copy; GitHub Pages cannot receive requests. A local-only log would not provide useful crowd prioritization. |
@@ -238,14 +231,14 @@ Unchanged targets from v1.0 — they were never invalidated, just not yet reacha
 
 | Original phase (v1.0) | Status |
 |---|---|
-| Month 1–2: Foundation, headphone DB, manual EQ | **Mostly done**; the static Pages deployment is live, while the new Android Pages client still needs device validation |
-| Month 2–3: Genre metadata integration, auto EQ switching | **Done**, via notification metadata instead of the assumed streaming APIs |
+| Month 1–2: Foundation, headphone DB, manual EQ | **Done** — static Pages deployment live and the Android Pages client device-validated (2026-10-11) |
+| Month 2–3: Genre metadata integration, auto EQ switching | **Done**, via notification metadata instead of the assumed streaming APIs; genre correction, history, and the seven-day mix are now implemented locally, pending device validation |
 | Month 3–4: Android beta launch, crash reporting, closed beta | **Not started** — this is the actual next milestone |
 | Month 4–5: Browser extension | Deferred to Future Plans (Section 11) |
 | Month 5–6: Windows app | Deferred to Future Plans (Section 11) |
 | Month 6+: ML genre model, custom genres, cloud sync | Custom genres re-scoped smaller (6.1); ML and cloud sync in Future Plans |
 
-Recommended near-term order given everything above: **(1)** validate the GitHub Pages client and Quick Settings tile on device, **(2)** genre correction since it directly protects trust in the app's core promise, **(3)** pre-launch crash reporting and onboarding, **(4)** loudness compensation plus a correction affordance beside the already-existing confidence display, and **(5)** the `HomeViewModel` lifecycle fix before promising “weekly insights.”
+Recommended near-term order given everything above: **(1)** device-validate the new genre coordinator, correction, recent-tracks list, and seven-day mix, plus the Quick Settings tile and offline cache reuse, **(2)** pre-launch crash reporting, signing configuration, onboarding, and the stale Settings subtitle, **(3)** custom AutoEQ import Path 1 (GraphicEQ), **(4)** loudness compensation plus a correction affordance beside the existing confidence display, and **(5)** closed beta, using real retention and usage data to decide what to build next.
 
 ---
 
@@ -253,10 +246,11 @@ Recommended near-term order given everything above: **(1)** validate the GitHub 
 
 | Risk | Severity | Mitigation |
 |---|---|---|
-| Genre inference (metadata-based, not a true classifier) stays visibly wrong for some tracks | **High** | Ship genre correction (6.2), connect it to the existing confidence display, and improve the current heuristic confidence semantics. |
+| Genre inference (metadata-based, not a true classifier) stays visibly wrong for some tracks | **High** | Genre correction is now implemented locally (6.2); finish device validation, connect it to the existing confidence display (6.3), and improve the heuristic confidence semantics. |
+| New application-scoped genre coordinator and Room layer are untested on device | **Medium** | Run the genre plan's manual checklist. Watch for stale async results, history-write failures affecting EQ, and gaps when the process is killed. Frame the mix as detected tracks, not listening time. |
 | GitHub Pages dependency for headphone data (single external host, no SLA) | **Medium** | `HeadphoneEqDiskCache` already provides offline continuity; consider a documented manual mirror step if Pages has an extended outage. |
 | AutoEQ measurement-source redistribution rights | **Medium** | Already flagged in `GITHUB_PAGES_AUTOEQ.md` as ongoing review work — keep attribution current with every re-export, don't treat the MIT software license as covering the underlying measurement data. |
-| Notification-listener permission is sensitive and Play Store-scrutinized | **Medium** | Be explicit and narrow in the Play Store permission declaration; the privacy copy in `SettingsScreen` already exists — keep it current as new data (per-track history, Section 6.2) is added. |
+| Notification-listener permission is sensitive and Play Store-scrutinized | **Medium** | Be explicit and narrow in the Play Store permission declaration; the privacy copy in `SettingsScreen` already exists — keep it current now that on-device track history (Section 6.2) exists; that feature adds no network destination. |
 | Foreground service killed by aggressive OEM battery management | **Medium** | Test across major OEM skins (Samsung, Xiaomi, OnePlus) before beta; document any required user-facing battery-exemption guidance. |
 | Backend (Node) is a single point of failure for the last-resort genre-detection step | **Low–Medium** | If it is unreachable, Android retains the initial local heuristic result. Keep that client fallback tested; the backend's own keyword/default path helps only when the request reaches the server. |
 | Small team, growing feature surface | **High** (unchanged from v1.0) | Same mitigation as v1.0: ruthless prioritization, Android-first, don't start Future Plans items (Section 11) until the pre-launch gate (Section 9) is cleared. |
@@ -278,7 +272,14 @@ These are the v1.0 PRD items that remain valid product direction but are explici
 
 ## 12. Document Notes
 
-- This document was produced by reviewing `AI.md`, `GITHUB_PAGES_AUTOEQ.md`, `CLOUDFLARE_AUTOEQ_MIGRATION.md`, `FEATURE_GENRE_INSIGHTS_AND_CORRECTION.md`, and `EQify_PRD.docx` (v1.0), plus external research into current competitor and personalized-audio features.
+- This document was produced by reviewing `AI.md`, `GITHUB_PAGES_AUTOEQ.md`, `CLOUDFLARE_AUTOEQ_MIGRATION.md`, `FEATURE_GENRE_INSIGHTS_AND_CORRECTION.md`, `FEATURE_CUSTOM_AUTOEQ_IMPORT.md`, `README.md`, and `EQify_PRD.docx` (v1.0), plus external research into current competitor and personalized-audio features.
 - External claims were checked against [Wavelet's official feature documentation](https://pittvandewitt.github.io/Wavelet/Features/), [Wavelet's import documentation](https://pittvandewitt.github.io/Wavelet/Import/), [Wavelet's Google Play listing](https://play.google.com/store/apps/details?id=com.pittvandewitt.wavelet), [Poweramp's official product page](https://powerampapp.com/), [Apple's Headphone Accommodations documentation](https://support.apple.com/en-us/102663), and [Nissan's Personalized Sound description](https://www.nissanusa.com/owners/owner-experience.html). Re-check time-sensitive claims before publication.
 - Effort ratings (Section 6) are estimates for a two-person team working in the existing codebase; they are not commitments and should be re-checked against actual velocity once a few of these ship.
 - Per `AI.md`'s own guardrail, `EQify_PRD.docx` itself should not be modified — this is a new, separate document.
+
+### Change log
+
+| Version | Date | Changes |
+|---|---|---|
+| v2.0 | 2026-09-25 | Initial Android-only rewrite from the v1.0 PRD. |
+| v2.1 | 2026-10-11 | Pages headphone path marked device-validated. Genre correction, recent tracks, and seven-day mix marked implemented locally (pending device validation); genre resolution moved to `GenreCoordinator`, resolving the Section 5.4 lifecycle blocker; Room now present. Custom AutoEQ import linked to its plan. Near-term order, risks, and architecture/data-flow sections updated. Made from the repository docs, not a fresh source audit; the repository still wins on any conflict. |
