@@ -56,6 +56,16 @@ Unchanged from v1.0; still accurate for the Android-only build.
 
 ## 4. Current Implementation Status (as of 2026-09-25)
 
+Update (2026-10-11): The user validated the GitHub Pages headphone path on a
+device. Genre correction, recent tracks, and seven-day detected-track mix are
+now implemented locally, with `GenreCoordinator` owning background resolution
+and `GenreHistoryRepository` owning Room history/corrections. This new feature
+passed debug compilation and JVM unit tests but still needs device validation;
+the historical status
+table and architecture below describe the 2026-09-25 checkpoint, not this
+update. The mix counts observed tracks, never minutes listened, and cannot
+recover notifications missed while the process/listener or Auto-Genre is inactive.
+
 This is the section the v1.0 PRD didn't have, because nothing was built yet. Status values: **Implemented and device-validated**, **Built, not yet validated on device** (code exists, needs field testing), **Planned — documented** (a written, checked design exists but no code), **Not started**. Because EQify is pre-launch, “implemented” does not mean publicly shipped.
 
 | Capability | Status | Where it lives | Notes |

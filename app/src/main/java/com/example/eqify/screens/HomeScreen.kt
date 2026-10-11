@@ -44,6 +44,31 @@ fun HomeScreen(
     val correctionStatus     by EqState.headphoneCorrectionStatus.collectAsState()
     val wiredConnected       by BluetoothHeadphoneDetector.wiredConnected.collectAsState()
     val testToneMessage      by viewModel.testToneMessage.collectAsState()
+    val genreMix             by viewModel.genreMix.collectAsState()
+    val recentTracks         by viewModel.recentTracks.collectAsState()
+    val correctionMessage    by viewModel.correctionMessage.collectAsState()
+    var showRecent by remember { mutableStateOf(false) }
+    var correctionTarget by remember { mutableStateOf<Pair<String, String>?>(null) }
+
+    correctionTarget?.let { (title, artist) ->
+        GenreCorrectionDialog(title, artist, viewModel.correctionGenres,
+            onSelect = { genre -> viewModel.correctGenre(title, artist, genre); correctionTarget = null },
+            onDismiss = { correctionTarget = null })
+    }
+    if (showRecent) {
+        RecentTracksDialog(recentTracks, onCorrect = { title, artist ->
+            showRecent = false
+            correctionTarget = title to artist
+        }, onDismiss = { showRecent = false })
+    }
+    correctionMessage?.let { message ->
+        AlertDialog(
+            onDismissRequest = viewModel::dismissCorrectionMessage,
+            title = { Text("Genre correction") },
+            text = { Text(message) },
+            confirmButton = { TextButton(onClick = viewModel::dismissCorrectionMessage) { Text("OK") } }
+        )
+    }
 
     Column(
         modifier = Modifier
@@ -67,9 +92,12 @@ fun HomeScreen(
             NowPlayingCard(
                 trackName    = trackName,
                 artistName   = artistName,
-                genreUiState = genreUiState
+                genreUiState = genreUiState,
+                onCorrect = { correctionTarget = trackName to artistName }
             )
         }
+
+        GenreMixCard(genreMix, onRecent = { showRecent = true })
 
         EqStatusCard(
             enabled        = isEqEnabled,
@@ -236,7 +264,10 @@ fun TopBar(onSettingsClick: () -> Unit = {}) {
 // ── Now Playing card ──────────────────────────────────────────────────
 
 @Composable
-fun NowPlayingCard(trackName: String, artistName: String, genreUiState: GenreUiState) {
+fun NowPlayingCard(
+    trackName: String, artistName: String, genreUiState: GenreUiState,
+    onCorrect: () -> Unit = {}
+) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -269,8 +300,93 @@ fun NowPlayingCard(trackName: String, artistName: String, genreUiState: GenreUiS
                 is GenreUiState.Error        -> ErrorChip()
                 is GenreUiState.Idle         -> {}
             }
+            if (artistName.isNotBlank()) {
+                TextButton(onClick = onCorrect) { Text("Change genre", color = AccentPurpleLight) }
+            }
         }
     }
+}
+
+@Composable
+private fun GenreMixCard(mix: GenreMix, onRecent: () -> Unit) {
+    Card(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = Surface2Dark)
+    ) {
+        Column(Modifier.padding(16.dp)) {
+            Text("GENRE MIX FROM DETECTED TRACKS", fontSize = 10.sp, color = NeonCyan)
+            Text("Past 7 days • ${mix.total} track observations (not listening time)",
+                fontSize = 11.sp, color = TextSecondary)
+            Text("Only tracks detected while the listener and Auto-Genre were active are counted.",
+                fontSize = 10.sp, color = TextSecondary)
+            if (mix.total == 0) {
+                Text("No tracks observed yet. Enable notification access and Media Listener to start.",
+                    fontSize = 12.sp, color = TextSecondary, modifier = Modifier.padding(vertical = 12.dp))
+            } else {
+                mix.items.forEach { item ->
+                    Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text(item.genre, color = TextPrimary, fontSize = 12.sp)
+                        Text("${item.percent}% (${item.count})", color = AccentPurpleLight, fontSize = 12.sp)
+                    }
+                    LinearProgressIndicator(
+                        progress = { item.count.toFloat() / mix.total },
+                        modifier = Modifier.fillMaxWidth().padding(top = 3.dp),
+                        color = AccentPurple,
+                        trackColor = BgDark
+                    )
+                }
+            }
+            TextButton(onClick = onRecent) { Text("Recent tracks", color = AccentPurpleLight) }
+        }
+    }
+}
+
+@Composable
+private fun RecentTracksDialog(
+    tracks: List<RecentGenreTrack>, onCorrect: (String, String) -> Unit, onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Recent tracks") },
+        text = {
+            Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState())) {
+                Text("Last 14 days • up to 15 distinct tracks", fontSize = 11.sp)
+                if (tracks.isEmpty()) Text("No tracks observed yet.")
+                tracks.forEach { track ->
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(track.title, fontSize = 12.sp)
+                            Text("${track.artist} • ${track.genre}", fontSize = 10.sp)
+                        }
+                        TextButton(onClick = { onCorrect(track.title, track.artist) }) { Text("Change") }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } }
+    )
+}
+
+@Composable
+private fun GenreCorrectionDialog(
+    title: String, artist: String, genres: List<String>,
+    onSelect: (String?) -> Unit, onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Genre for $title") },
+        text = {
+            Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState())) {
+                Text(artist, fontSize = 12.sp)
+                TextButton(onClick = { onSelect(null) }) { Text("Use automatic detection") }
+                genres.forEach { genre ->
+                    TextButton(onClick = { onSelect(genre) }) { Text(genre) }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
 }
 
 @Composable
@@ -284,8 +400,9 @@ private fun GenreChip(state: GenreUiState.Detected) {
                     color = AccentPurpleLight
                 )
                 Text(
-                    text = "Source: ${state.source} • Confidence: ${state.confidence}" +
-                        if (state.isFallback) " • fallback" else "",
+                    text = if (state.source == "Manual correction") "Source: Manual correction"
+                        else "Source: ${state.source} • Confidence: ${state.confidence}" +
+                            if (state.isFallback) " • fallback" else "",
                     fontSize = 9.sp,
                     color = TextSecondary
                 )

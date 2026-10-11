@@ -179,9 +179,8 @@ fun EqifyApp() {
     val navController     = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute      = navBackStackEntry?.destination?.route
-    // Keep one resolver for the activity. A destination-scoped HomeViewModel can
-    // remain alive in each back-stack entry and make the same track oscillate
-    // between provisional and network-resolved genres.
+    // Keep one Home UI model across top-level navigation. Genre resolution now
+    // belongs to the application-owned GenreCoordinator, not this Activity.
     val homeViewModel: HomeViewModel = viewModel()
 
     fun navigateToTopLevel(route: String) {

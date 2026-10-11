@@ -47,6 +47,25 @@ class StateAndPersistenceTest {
     }
 
     @Test
+    fun acceptedRepeatObservationGetsNewToken() {
+        NowPlayingState.clearSong()
+        NowPlayingState.updateSong("Repeat", "Artist")
+        val first = NowPlayingState.observation.value!!.id
+        NowPlayingState.updateSong("Repeat", "Artist")
+        assertTrue(NowPlayingState.observation.value!!.id > first)
+        NowPlayingState.clearSong()
+    }
+
+    @Test
+    fun correctedGenreDoesNotClearManualOverride() {
+        EqState.restorePreset("Flat", FloatArray(8))
+        EqState.applyManualAdjustment(FloatArray(8) { 1f })
+        NowPlayingState.updateCurrentGenre("Jazz")
+        assertTrue(EqState.manualOverrideActive.value)
+        EqState.restorePreset("Flat", FloatArray(8))
+    }
+
+    @Test
     fun customPresetNameCodecRoundTripsAndReadsLegacyData() {
         val names = listOf("Late Night, Quiet", "Gym | Cardio")
         assertEquals(names, CustomPresetNameCodec.decode(CustomPresetNameCodec.encode(names)))

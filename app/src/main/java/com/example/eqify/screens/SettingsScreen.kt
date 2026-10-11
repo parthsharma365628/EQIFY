@@ -56,6 +56,7 @@ fun SettingsScreen(
     val headphoneAutoDetect   by vm.headphoneAutoDetect.collectAsState(initial = true)
     val savedLastFmApiKey     by vm.lastFmApiKey.collectAsState(initial = "")
     val cacheMessage          by vm.cacheMessage.collectAsState()
+    val historyMessage        by vm.historyMessage.collectAsState()
     var lastFmApiKeyDraft by remember(savedLastFmApiKey) {
         mutableStateOf(savedLastFmApiKey)
     }
@@ -64,6 +65,7 @@ fun SettingsScreen(
     var isPermissionGranted by remember { mutableStateOf(isNotificationServiceEnabled(context)) }
     var showPermissionDialog by remember { mutableStateOf(false) }
     var showClearCacheDialog by remember { mutableStateOf(false) }
+    var showClearHistoryDialog by remember { mutableStateOf(false) }
     var showOutputProtectionDialog by remember { mutableStateOf(false) }
 
     // Refresh permission state when user returns from the system settings screen
@@ -134,6 +136,21 @@ fun SettingsScreen(
         )
     }
 
+    if (showClearHistoryDialog) {
+        AlertDialog(
+            onDismissRequest = { showClearHistoryDialog = false },
+            title = { Text("Clear genre history?", color = TextPrimary) },
+            text = { Text("Removes local track observations and every saved genre correction. Headphone corrections and EQ presets stay intact.", color = TextSecondary) },
+            confirmButton = {
+                TextButton(onClick = { showClearHistoryDialog = false; vm.clearGenreHistory() }) {
+                    Text("Clear", color = AccentPurpleLight)
+                }
+            },
+            dismissButton = { TextButton(onClick = { showClearHistoryDialog = false }) { Text("Cancel") } },
+            containerColor = Surface2Dark
+        )
+    }
+
     if (showOutputProtectionDialog) {
         OutputProtectionDialog(
             selectedMode = outputProtectionMode,
@@ -156,6 +173,15 @@ fun SettingsScreen(
                     Text("OK", color = AccentPurpleLight)
                 }
             },
+            containerColor = Surface2Dark
+        )
+    }
+    historyMessage?.let { message ->
+        AlertDialog(
+            onDismissRequest = vm::dismissHistoryMessage,
+            title = { Text("Genre history", color = TextPrimary) },
+            text = { Text(message, color = TextSecondary) },
+            confirmButton = { TextButton(onClick = vm::dismissHistoryMessage) { Text("OK") } },
             containerColor = Surface2Dark
         )
     }
@@ -308,6 +334,11 @@ fun SettingsScreen(
             // ── About ─────────────────────────────────────────────────
             SettingsGroup(title = "ABOUT") {
                 SimpleSettingsItem(
+                    title = "Clear genre history",
+                    subtitle = "Remove local track observations and genre corrections",
+                    onClick = { showClearHistoryDialog = true }
+                )
+                SimpleSettingsItem(
                     title = "Clear downloaded corrections",
                     subtitle = "Remove locally cached AutoEQ curves",
                     onClick = { showClearCacheDialog = true }
@@ -319,12 +350,13 @@ fun SettingsScreen(
                 )
                 SimpleSettingsItem(
                     title    = "AutoEQ Database",
-                    subtitle = "Served from EQify backend + on-device cache",
+                    subtitle = "Served from GitHub Pages + on-device cache",
                     onClick  = {}
                 )
                 SimpleSettingsItem(
                     title = "Privacy",
-                    subtitle = "Song title and artist may be sent to the genre service. " +
+                    subtitle = "Song title and artist may be sent to iTunes, optional Last.fm, and the configured EQify genre service. " +
+                        "Title, artist, timestamp and detected/chosen genre are stored locally for recent tracks and genre mix. " +
                         "Headphone correction is fetched only after a headphone is selected.",
                     onClick = {}
                 )

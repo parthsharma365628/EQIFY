@@ -30,6 +30,9 @@ object EqProfileManager {
         "Ambient"    to floatArrayOf(2f, 1f, 0f, -1f, -1f, 1f, 3f, 4f),
     )
 
+    val correctionGenres: List<String> get() = defaultProfiles.keys
+        .filterNot { it == "Flat" || it == "Bass Boost" }
+
     private val genreKeywords = listOf(
         "afrobeats" to "Afrobeats",
         "afropop" to "Afrobeats",

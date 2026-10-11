@@ -7,6 +7,7 @@ import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
@@ -36,7 +37,7 @@ class MediaListenerService : NotificationListenerService() {
     }
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-    private var isFeatureEnabled = true
+    private var isFeatureEnabled = false
 
     // Track the last posted song to avoid redundant API calls on duplicate notifications
     private var lastTrack  = ""
@@ -51,8 +52,9 @@ class MediaListenerService : NotificationListenerService() {
         // Observe the feature toggle so we can stop processing without
         // destroying the service (destroying requires a permission re-grant)
         serviceScope.launch {
-            NowPlayingState.mediaListenerEnabled.collectLatest { enabled ->
+            (application as EqifyApplication).repository.mediaListenerEnabled.collectLatest { enabled ->
                 isFeatureEnabled = enabled
+                NowPlayingState.setMediaListenerEnabled(enabled)
                 if (!enabled) {
                     // Clear state when user disables the listener
                     NowPlayingState.clearSong()
@@ -61,6 +63,11 @@ class MediaListenerService : NotificationListenerService() {
                 }
             }
         }
+    }
+
+    override fun onDestroy() {
+        serviceScope.cancel()
+        super.onDestroy()
     }
 
     // ------------------------------------------------------------------

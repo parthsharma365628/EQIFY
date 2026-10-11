@@ -33,6 +33,7 @@ EQIFY/
 │     │  ├─ EqProfileManager.kt, UserPreferencesRepository.kt
 │     │  ├─ EqifyApi.kt, HeadphoneDataRepository.kt, HeadphoneEqDiskCache.kt
 │     │  ├─ MediaListenerService.kt, NowPlayingState.kt
+│     │  ├─ GenreCoordinator.kt, GenreHistoryRepository.kt
 │     │  ├─ Bluetoothheadphonedetector.kt, Localgenredetector.kt
 │     │  ├─ HomeViewModel.kt, SettingsViewModel.kt, EqTestTonePlayer.kt
 │     │  ├─ screens/{HomeScreen,EqScreen,HeadphonesScreen,SettingsScreen}.kt
@@ -59,7 +60,7 @@ every clone. In particular, GitHub does not contain `autoeq-results/` or
 - `app/src/main/java/com/example/eqify/ui/theme/` - Compose theme tokens.
 - `eqify-backend/` - Express backend and backend tests.
 - `eqify-backend/autoeq-results/` - large external AutoEQ dataset; do not commit it.
-- `FEATURE_GENRE_INSIGHTS_AND_CORRECTION.md` - deferred, documentation-only plan for local genre corrections and observation-based insights; it is not implemented.
+- `FEATURE_GENRE_INSIGHTS_AND_CORRECTION.md` - implemented local correction/history/mix semantics and device-validation checklist.
 - `CLOUDFLARE_AUTOEQ_MIGRATION.md` - deferred, step-by-step plan for converting AutoEQ data and moving the API to Cloudflare Workers + D1.
 - `GITHUB_PAGES_AUTOEQ.md` - offline eight-band export format, Pages deployment, and Android static-data integration.
 - `EQify_PRD.docx` - product requirements reference when present. Read it as requirements only and do not modify it.
@@ -150,7 +151,7 @@ The former `limit_output_gain` Boolean is a migration-only preference. Existing 
 
 `MediaListenerService` reads supported apps' media notifications and updates process-local `NowPlayingState`. It currently requires both title and artist, and deduplicates an unchanged pair. Notification-listener permission is user-controlled and must be handled gracefully when absent.
 
-`HomeViewModel`, not `EqProcessingService`, owns genre resolution. It publishes an immediate `LocalGenreDetector` result, then tries the optional direct Last.fm lookup, direct iTunes lookup, and finally `POST /api/v1/genre`. `EqProcessingService` only consumes `NowPlayingState.currentGenre`. Genre detection is therefore tied to the Home view model/activity lifetime today; do not claim background listening history without addressing that lifecycle. See `FEATURE_GENRE_INSIGHTS_AND_CORRECTION.md` for the deferred design analysis.
+`GenreCoordinator`, not `EqProcessingService` or `HomeViewModel`, owns genre resolution at application scope. It checks the local Room correction first, then publishes an immediate `LocalGenreDetector` result before optional Last.fm, iTunes, and `POST /api/v1/genre`. `EqProcessingService` only consumes `NowPlayingState.currentGenre`. The coordinator logs one final observation per accepted event while Auto-Genre is enabled; it cannot recover tracks missed when the process, notification listener, or Auto-Genre is inactive. See `FEATURE_GENRE_INSIGHTS_AND_CORRECTION.md` for semantics and limits.
 
 `Bluetoothheadphonedetector` updates the selected device for Bluetooth and wired connections. `HeadphoneDataRepository` caches the GitHub Pages `index.json`, searches it locally, validates selected profile files, and returns eight gains. `HeadphoneEqDiskCache` caches selected gains on disk; the processing service also keeps them in memory. A download failure leaves the app usable with flat correction and exposes an error message.
 
@@ -171,28 +172,30 @@ Paths are relative to `app/src/main/java/com/example/eqify/`. “Owns” means l
 
 | File (lifecycle) | Purpose / responsibilities | Dependencies and invariants | Modify when |
 | --- | --- | --- | --- |
-| `EqifyApplication.kt` (Application) | Registers global audio/headphone receivers; restores persisted EQ, preset, bass, headphone, listener state. | `EqEngine`, detector, preferences, runtime states; receivers outlive Activity. | Changing process startup or state restoration. |
-| `MainActivity.kt` (Activity / Compose host) | Starts processing service; permissions and navigation; creates shared `HomeViewModel`. | Service, screens; preserve single-top/save-restore navigation to avoid competing genre collectors. | Changing entry, permissions, navigation. |
+| `EqifyApplication.kt` (Application) | Registers global receivers, starts genre coordinator, restores persisted EQ/preset/bass/headphone/listener state. | Engine, detector, preferences, genre history/coordinator; receivers and resolver outlive Activity. | Changing process startup or state restoration. |
+| `MainActivity.kt` (Activity / Compose host) | Starts processing service; permissions and navigation; creates shared `HomeViewModel`. | Service, screens; preserve single-top/save-restore navigation; genre resolver is application-owned. | Changing entry, permissions, navigation. |
 | `EqProcessingService.kt` (foreground Service) | Combines tone/genre, correction, bass, protection; owns auto/manual collectors, correction memory cache, notification and tile snapshot writes. | Runtime states, repositories, `EqProfileManager`, `EqEngine`; manual updates must neither wait for network nor lose to stale auto work. | Changing audio orchestration, correction fallback, mono, notification. |
 | `EqEngine.kt` (process singleton / audio effects) | Attaches/releases Equalizer and limiter; session selection, hardware gain application, diagnostics. | `EqProfileManager`, limiter status; EQ and limiter share session; do not release on Activity teardown. | Changing effect/session or device-band behavior. |
 | `EqState.kt` (process singleton / StateFlows) | Live EQ request/bypass, base tone, manual override/update, output, headphone correction/status, bass, service flag, protection. | UI/view models and service; tone-only and composed gains differ; copy arrays and preserve immediate manual path. | Changing shared processing state or override transitions. |
-| `NowPlayingState.kt` (process singleton / StateFlows) | Current track/artist/genre, selected headphone and listener state. | Media listener, Home VM, detector, service; track changes clear stale genre/manual override; not durable. | Changing live media/headphone propagation. |
+| `NowPlayingState.kt` (process singleton / StateFlows) | Current track/artist/genre, accepted observation token, selected headphone and listener state. | Media listener, genre coordinator, detector, service; track changes clear stale genre/manual override; not durable. | Changing live media/headphone propagation. |
 | `EqProfileManager.kt` (pure singleton) | Eight bands, genre presets, genre labels, gain composition and device-band mapping. | Service, engine, VMs; preserve `[60,170,310,600,1000,3000,6000,12000]` Hz order. | Changing curves, genre mappings, arithmetic or interpolation. |
 | `OutputProtectionMode.kt` (enum) | Balanced/Safe/Off values and parser. | Preferences, service, settings; preserve stored-value migration. | Changing mode identity/parsing. |
 | `LimiterDiagnostics.kt` (status model) | Availability, attachment, enabled/unsupported/failure details. | Engine publishes, Settings reads; report actual effect state, not just intent. | Changing limiter diagnostics. |
 | `EqProcessingSnapshot.kt` (persisted status model) | Processing status and compact tile snapshot. | Service writes through preferences, tile reads; requested enable is not actual activity. | Changing external status contract. |
 | `EqQuickSettingsTileService.kt` (TileService) | Renders/toggles tile from persisted snapshot and live service flag. | Preferences, `EqState`, service; stale ACTIVE snapshot cannot prove service runs. | Changing tile action, label or lifecycle. |
 | `UserPreferencesRepository.kt` (DataStore repository) | Durable settings, selected/favorite headphones, global custom tone presets, key and snapshot; migrations. | Application, service, VMs, tile; preserve legacy limiter and preset-name migrations; not downloaded-gain cache. | Changing preferences, preset CRUD or migration. |
-| `EqifyApi.kt` (Retrofit contracts/clients) | Pages index/profile, Last.fm/iTunes and Node genre DTOs/endpoints. | Headphone repo, Home VM; keep JSON/base-URL contract; Android does not call Node headphone routes. | Changing network contracts/configuration. |
+| `EqifyApi.kt` (Retrofit contracts/clients) | Pages index/profile, Last.fm/iTunes and Node genre DTOs/endpoints. | Headphone repo, genre coordinator; keep JSON/base-URL contract; Android does not call Node headphone routes. | Changing network contracts/configuration. |
 | `HeadphoneDataRepository.kt` (process singleton / Pages repository) | Caches Pages index, searches locally, validates/fetches one selected eight-gain profile. | Retrofit client, index file cache, screens/detector/service; do not download all profiles or accept malformed gains. | Changing catalog search, index cache or profile retrieval. |
 | `HeadphoneEqDiskCache.kt` (process singleton / app-private cache) | Stores selected downloaded eight-gain corrections by name; load/save/count/clear. | Service and Settings; separate from index and favorites; clear must not erase choices. | Changing offline correction cache. |
 | `Bluetoothheadphonedetector.kt` (application-registered receiver) | Detects Bluetooth/wired devices, matches catalog names, updates selection/banner. | Headphone repo, preferences, `NowPlayingState`; respect auto-detect setting/manual choice. | Changing device discovery or auto-selection. |
 | `MediaListenerService.kt` (NotificationListenerService) | Extracts/deduplicates supported players' track and artist. | `NowPlayingState`; user permission required; ignore incomplete notifications. | Changing supported players or metadata extraction. |
-| `Localgenredetector.kt` (pure singleton) | Immediate ordered keyword/artist genre heuristic. | Home VM; first match wins, Pop fallback; align with supported profiles. | Changing local genre rules. |
-| `HomeViewModel.kt` (Activity-scoped AndroidViewModel) | Resolves genre local → Last.fm → iTunes → Node; exposes source/confidence; Home EQ/bass/test actions. | Runtime states, detector, APIs, preferences, test player; genre work is not a background history service. | Changing genre order or Home actions/state. |
-| `SettingsViewModel.kt` (screen AndroidViewModel) | Adapts persisted settings; syncs immediate state; clears downloaded corrections. | Preferences, runtime states, disk cache; persist choices via repository. | Adding settings action or cache operation. |
+| `Localgenredetector.kt` (pure singleton) | Immediate ordered keyword/artist genre heuristic. | Genre coordinator; first match wins, Pop fallback; align with supported profiles. | Changing local genre rules. |
+| `GenreCoordinator.kt` (application-scoped coordinator) | Resolves corrected/automatic genre, guards stale async work, logs one final observation per accepted track. | `NowPlayingState`, history, APIs, preferences; never query Room from the EQ service or log provisional results. | Changing genre priority, background lifecycle or observation logging. |
+| `GenreHistoryRepository.kt` (Room repository + pure aggregation) | Stores observations/corrections, prunes at 16 days, exposes 14-day recent and 7-day mix with read-time corrections. | Coordinator, Home/Settings VMs; composite normalized track identity, local-only data, DataStore remains separate. | Changing history schema, retention, correction semantics or aggregation. |
+| `HomeViewModel.kt` (Activity-scoped AndroidViewModel) | Exposes coordinator status and Room recent/mix flows; Home EQ/bass/test and correction actions. | Coordinator, history, preferences, test player; it no longer owns genre lookup. | Changing Home actions or presentation state. |
+| `SettingsViewModel.kt` (screen AndroidViewModel) | Adapts persisted settings; syncs immediate state; separately clears downloaded corrections and genre history. | Preferences, runtime states, disk cache, coordinator; persist choices via repository. | Adding settings action or clear operation. |
 | `EqTestTonePlayer.kt` (singleton / short-lived AudioTrack) | Generates test tones with overlap guard and cleanup. | Home VM; playback off main thread, always release audio resources. | Changing test playback. |
-| `screens/HomeScreen.kt` (Compose screen) | Displays playback/genre, EQ/headphone status, bass/test controls. | Home VM and runtime states; no second genre resolver. | Changing Home UI. |
+| `screens/HomeScreen.kt` (Compose screen) | Displays playback/genre, weekly observation mix, recent tracks/correction picker, EQ/headphone/bass/test controls. | Home VM and runtime states; no second genre resolver; mix is track counts, not listening time. | Changing Home UI. |
 | `screens/EqScreen.kt` (Compose screen + screen AndroidViewModel) | Preset picker/CRUD/rename, eight sliders, EQ controls. | `EqState`, profile manager, preferences; preserve immediate manual path; global tone presets differ from headphone corrections. | Changing EQ UI, presets or sliders. |
 | `screens/HeadphonesScreen.kt` (Compose screen + screen AndroidViewModel) | Catalog search, favorites, selected/custom headphone and correction feedback. | Headphone repo, preferences, runtime states; persist selection; unmatched custom names use flat correction. | Changing headphone picker/selection UI. |
 | `screens/SettingsScreen.kt` (Compose screen) | Settings, protection explanation/diagnostics, permissions, cache/privacy controls. | Settings VM, limiter diagnostics; describe Safe fallback accurately. | Changing Settings UI/copy. |
@@ -204,7 +207,9 @@ Paths are relative to `app/src/main/java/com/example/eqify/`. “Owns” means l
 | --- | --- | --- |
 | Preferences, selected/favorite headphone, custom **tone** presets | `UserPreferencesRepository` / durable | View models, service, detector, tile |
 | Live EQ request, override, computed gains/correction | `EqState` / process | Service, screens, tile |
-| Track, resolved genre, detected headphone | `NowPlayingState` / process | Home VM, service, screens |
+| Track event, resolved genre, detected headphone | `NowPlayingState` / process | Coordinator, service, screens |
+| Corrections and 16-day observation log | `GenreHistoryRepository` / local Room database | Coordinator, Home/Settings VMs |
+| Genre lookup and final event logging | `GenreCoordinator` / application process | Home VM, `NowPlayingState` |
 | Actual Equalizer/limiter attachment and diagnostics | `EqEngine` / audio session | Service, Settings |
 | Processing collectors, correction memory cache, notification | `EqProcessingService` / service | Engine, runtime state, preferences |
 | Pages index vs selected correction cache | `HeadphoneDataRepository` vs `HeadphoneEqDiskCache` / local files | Search/detector vs service/Settings |
@@ -218,8 +223,8 @@ Paths are relative to `app/src/main/java/com/example/eqify/`. “Owns” means l
 | Audio effect/session attachment | `EqEngine.kt` | Application-lifetime audio-session receiver; limiter must share session |
 | Composed EQ output | `EqProfileManager.kt`, `EqProcessingService.kt` | Preserve separate automatic and immediate manual paths |
 | Runtime UI state | `EqState.kt`, `NowPlayingState.kt` | In-memory state is not durable across process death |
-| Genre resolution | `HomeViewModel.kt`, `Localgenredetector.kt`, `EqProfileManager.kt`, `NowPlayingState.kt` | Current order is local → optional Last.fm → iTunes → EQify backend; currently view-model scoped |
-| Deferred genre history/corrections | `FEATURE_GENRE_INSIGHTS_AND_CORRECTION.md` | Planning only; no Room/history implementation exists |
+| Genre resolution and correction | `GenreCoordinator.kt`, `GenreHistoryRepository.kt`, `Localgenredetector.kt` | Correction first, then local → optional Last.fm → iTunes → EQify backend; application-scoped |
+| Recent tracks / weekly mix | `GenreHistoryRepository.kt`, `screens/HomeScreen.kt` | 14-day distinct recents, 7-day observation counts, 16-day retention; not listening duration |
 | Durable preferences/presets | `UserPreferencesRepository.kt` | Preferences DataStore, plus legacy output-protection migration |
 | Headphone lookup/correction | `HeadphonesScreen.kt`, `HeadphoneDataRepository.kt`, `EqifyApi.kt`, `EqProcessingService.kt`, `HeadphoneEqDiskCache.kt` | Pages index is cached; only selected gains are downloaded; failure uses favorites/flat correction or cached gains |
 | Quick Settings control | `EqQuickSettingsTileService.kt`, `EqProcessingSnapshot.kt` | Snapshot in DataStore plus live service-running flag; no home-screen widget exists |

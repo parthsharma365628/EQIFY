@@ -16,11 +16,14 @@ class EqifyApplication : Application() {
     val repository: UserPreferencesRepository by lazy {
         UserPreferencesRepository(this)
     }
+    val genreHistory: GenreHistoryRepository by lazy { GenreHistoryRepository(this) }
+    val genreCoordinator: GenreCoordinator by lazy { GenreCoordinator(repository, genreHistory, appScope) }
 
     override fun onCreate() {
         super.onCreate()
         registerGlobalReceivers()
         restorePersistedState()
+        genreCoordinator
     }
 
     /**

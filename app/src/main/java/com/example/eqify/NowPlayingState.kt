@@ -8,10 +8,18 @@ import kotlinx.coroutines.flow.asStateFlow
  * and the rest of the app (ViewModel, EqProcessingService).
  *
  * Added in this version: [currentGenre]
- * The genre is written by [HomeViewModel] after the backend API responds,
+ * The genre is written by [GenreCoordinator] after detection,
  * and read by [EqProcessingService] to auto-select an EQ profile.
  */
 object NowPlayingState {
+
+    data class TrackObservation(
+        val id: Long, val title: String, val artist: String,
+        val observedAtEpochMillis: Long
+    )
+    private var nextObservationId = 0L
+    private val _observation = MutableStateFlow<TrackObservation?>(null)
+    val observation = _observation.asStateFlow()
 
     // ------------------------------------------------------------------
     // Track metadata
@@ -24,7 +32,7 @@ object NowPlayingState {
     val artist = _artist.asStateFlow()
 
     // ------------------------------------------------------------------
-    // Genre (written by HomeViewModel, read by EqProcessingService)
+    // Genre (written by GenreCoordinator, read by EqProcessingService)
     // ------------------------------------------------------------------
 
     private val _currentGenre = MutableStateFlow("")
@@ -54,11 +62,15 @@ object NowPlayingState {
      */
     fun updateSong(newTrack: String, newArtist: String) {
         val changed = newTrack != _track.value || newArtist != _artist.value
-        if (!changed) return
-        EqState.clearManualOverride()
-        _currentGenre.value = ""
-        _track.value  = newTrack
-        _artist.value = newArtist
+        if (changed) {
+            EqState.clearManualOverride()
+            _currentGenre.value = ""
+            _track.value = newTrack
+            _artist.value = newArtist
+        }
+        // MediaListenerService deduplicates posted notifications. A newly
+        // accepted occurrence may have the same metadata after listener restart.
+        _observation.value = TrackObservation(++nextObservationId, newTrack, newArtist, System.currentTimeMillis())
     }
 
     /**
@@ -70,10 +82,11 @@ object NowPlayingState {
         _track.value        = "Waiting for music…"
         _artist.value       = ""
         _currentGenre.value = ""
+        _observation.value = null
     }
 
     /**
-     * Called by [HomeViewModel] once the genre API call resolves.
+     * Called by [GenreCoordinator] as detection resolves.
      * [EqProcessingService] observes this and immediately recomputes the EQ profile.
      */
     fun updateCurrentGenre(genre: String) {

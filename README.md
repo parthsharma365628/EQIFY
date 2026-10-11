@@ -29,4 +29,7 @@ database is published separately through GitHub Pages. Android caches its index,
 searches it locally, and downloads only the selected profile's eight gains.
 Cloudflare remains a future migration plan.
 
+Genre corrections, recent tracks, and a seven-day genre mix are stored on-device
+with Room. The mix counts detected track observations, not listening time.
+
 Made by Parth Sharma and Shreyansh Mangal.

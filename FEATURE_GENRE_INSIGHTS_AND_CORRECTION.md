@@ -1,8 +1,16 @@
 # Feature Plan: Genre Correction, Recent Tracks, and Weekly Insights
 
-Status: planning only. Do not implement this feature until explicitly requested.
+Status: implemented locally in the Android app (2026-10-11). Debug Kotlin compilation and JVM unit tests pass; device validation remains pending. Do not treat the checklist below as proof of manual tests that have not run.
 
 This document supersedes the deleted `FEATURE_GENRE_LISTENING_INSIGHTS.md`.
+Implementation uses `GenreCoordinator.kt` (application-owned resolver),
+`GenreHistoryRepository.kt` (Room schema, retention, reactive recent/mix reads),
+`NowPlayingState.observation` (accepted track event), and the existing Home and
+Settings screens/view models. The feature stores track observations while the
+app process, notification listener, and Auto-Genre are active, including when
+the Activity is closed; it cannot recover tracks missed while any is off.
+Percentages are whole-number rounding per genre and need not sum to exactly 100.
+The implementation adds no network destination.
 It was checked against repository source at commit `8fd1092` on 2026-09-21.
 Re-check the code and Git state before implementation because later commits may
 change these findings.
@@ -29,7 +37,7 @@ Non-goals:
 | --- | --- | --- |
 | `MediaListenerService` | Accepts Spotify, YouTube Music, YouTube, and Apple Music notifications. Requires nonblank title and artist. Ignores a repeated identical pair until another track is accepted or the tracked notification is removed. | History can only represent metadata changes EQify observes. Blank metadata needs no new fallback unless listener behavior is deliberately expanded. |
 | `NowPlayingState` | Holds process-local `track`, `artist`, and `currentGenre` flows. A song change clears genre and manual EQ override. | This is the bridge, not durable history. |
-| `HomeViewModel` | Owns genre resolution. It publishes an immediate local result, then tries optional Last.fm, iTunes, and finally the EQify backend. | Correction lookup and final event logging belong around this resolver, not in the audio service. |
+| `GenreCoordinator` | Application-owned genre resolution: correction, immediate local result, optional Last.fm, iTunes, then EQify backend. | Final event logging belongs here, not in the audio service. |
 | `EqProcessingService` | Observes `NowPlayingState.currentGenre` and applies the matching tone curve through the existing automatic path. It does not detect genre. | Do not add database or correction queries to either EQ processing path. Feed corrected genre through the existing `currentGenre` flow. |
 | `HomeScreen` | `NowPlayingCard` already displays title, artist, genre, source, and confidence. | Current-track correction belongs here. `EqScreen` does not display current-track metadata. |
 | `EqProfileManager` | Contains fixed profile names and maps external genre strings to them. `Flat` and `Bass Boost` are utility profiles, not genres. | Picker choices should come from one genre-only source derived from this manager, excluding utility profiles. |
@@ -38,12 +46,12 @@ Non-goals:
 
 ### Important lifecycle limitation
 
-Genre detection currently lives in `HomeViewModel`. It runs while the Home
-navigation entry and activity are alive; it is not owned by the foreground
-processing service. `MediaListenerService` may continue to receive metadata
-after the activity is destroyed, but no `HomeViewModel` then resolves a genre.
+Genre detection has moved out of `HomeViewModel` into an application-owned
+coordinator. It can continue while the Activity is closed if Android keeps the
+app process and notification listener alive. The app does not reconstruct
+missed notifications after process death or listener downtime.
 
-Before implementing weekly insights, choose and document one of these scopes:
+The implementation chose the first scope below:
 
 - **Recommended for a real weekly feature:** move genre resolution into an
   application/service-owned coordinator, with `HomeViewModel` observing its UI
@@ -239,7 +247,7 @@ artist, effective genre, and a correction affordance. No pagination or search.
 - One explicit action clears both Room tables. App uninstall/storage clear also
   removes them normally.
 
-## Verification plan for future implementation
+## Verification checklist (device validation pending)
 
 Unit tests:
 

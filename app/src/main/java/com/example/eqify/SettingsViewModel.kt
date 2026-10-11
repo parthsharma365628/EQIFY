@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
 /**
@@ -26,6 +27,7 @@ import kotlinx.coroutines.launch
 class SettingsViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repository = (application as EqifyApplication).repository
+    private val genreCoordinator = (application as EqifyApplication).genreCoordinator
 
     // ── Exposed flows (SettingsScreen collects these) ─────────────────
 
@@ -40,6 +42,23 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     private val _cacheMessage = MutableStateFlow<String?>(null)
     val cacheMessage = _cacheMessage.asStateFlow()
+    private val _historyMessage = MutableStateFlow<String?>(null)
+    val historyMessage = _historyMessage.asStateFlow()
+
+    fun clearGenreHistory() {
+        viewModelScope.launch {
+            try {
+                genreCoordinator.clearHistory()
+                _historyMessage.value = "Genre observations and corrections cleared."
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _historyMessage.value = "Could not clear genre history: ${e.message ?: "unknown error"}"
+            }
+        }
+    }
+
+    fun dismissHistoryMessage() { _historyMessage.value = null }
 
     // ── Write methods ─────────────────────────────────────────────────
 
