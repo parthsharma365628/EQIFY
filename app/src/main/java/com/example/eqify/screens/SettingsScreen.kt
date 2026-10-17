@@ -43,6 +43,7 @@ fun SettingsScreen(
     // ── Persisted settings (from DataStore via ViewModel) ─────────────
     val isEqEnabled        by vm.isEqEnabled.collectAsState(initial = true)
     val autoGenreDetection by vm.autoGenreDetection.collectAsState(initial = true)
+    val smoothEqTransitions by vm.smoothEqTransitions.collectAsState(initial = true)
     val outputProtectionMode by vm.outputProtectionMode.collectAsState(
         initial = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             OutputProtectionMode.BALANCED
@@ -252,6 +253,12 @@ fun SettingsScreen(
 
             // ── Audio ─────────────────────────────────────────────────
             SettingsGroup(title = "AUDIO") {
+                ControlledSettingsItem(
+                    title = "Smooth EQ transitions",
+                    subtitle = "Gradually shifts EQ when the genre or headphone correction changes",
+                    checked = smoothEqTransitions,
+                    onCheckedChange = vm::setSmoothEqTransitions
+                )
                 OutputProtectionSettingsItem(
                     mode = outputProtectionMode,
                     limiterStatus = limiterStatus,

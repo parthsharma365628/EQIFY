@@ -8,6 +8,7 @@ import android.app.Service
 import android.content.Intent
 import android.media.AudioManager
 import android.os.IBinder
+import android.os.SystemClock
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.CoroutineScope
@@ -40,11 +41,23 @@ class EqProcessingService : Service() {
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private val headphoneEqCache = mutableMapOf<String, FloatArray>()
+    private var serviceActive = false
+    private var lastAutoSnapshot: AutoSnapshot? = null
+    private val gainRamp = EqGainRampController(
+        scope = serviceScope,
+        clockMs = { SystemClock.uptimeMillis() },
+        canWrite = {
+            serviceActive && EqState.isEqEnabled.value && !EqState.isBypassed.value &&
+                !EqState.manualOverrideActive.value
+        },
+        write = EqEngine::writeRampStep
+    )
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
         super.onCreate()
+        serviceActive = true
         createNotificationChannel()
         startForeground(NOTIFICATION_ID, buildNotification("EQify starting…"))
 
@@ -100,6 +113,11 @@ class EqProcessingService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        serviceActive = false
+        gainRamp.cancel()
+        if (EqState.isEqEnabled.value && !EqState.isBypassed.value) {
+            lastAutoSnapshot?.let { EqEngine.applyGains(it.outputGains) }
+        }
         setMonoOutput(false)
         serviceScope.cancel()
         EqState.setServiceRunning(false)
@@ -154,8 +172,9 @@ class EqProcessingService : Service() {
                 combine(
                     repository.outputProtectionMode,
                     repository.forceMono,
-                    EqState.bassBoostLevel
-                ) { l, m, b -> Triple(l, m, b) },
+                    EqState.bassBoostLevel,
+                    repository.smoothEqTransitions
+                ) { l, m, b, smooth -> AudioSettingsState(l, m, b, smooth) },
                 combine(
                     repository.autoGenreDetection,
                     EqState.baseToneGains,
@@ -169,15 +188,22 @@ class EqProcessingService : Service() {
                     correctionSelection = t1.correctionSelection,
                     enabled       = t1.enabled,
                     bypassed      = t1.bypassed,
-                    outputProtectionMode = t2.first,
-                    mono          = t2.second,
-                    bassBoost     = t2.third,
+                    outputProtectionMode = t2.outputProtectionMode,
+                    mono          = t2.mono,
+                    bassBoost     = t2.bassBoost,
+                    smoothTransitions = t2.smoothTransitions,
                     autoGenre     = t3.autoGenre,
                     baseToneGains = t3.baseToneGains,
                     toneName      = t3.toneName,
                     manualOverride = t3.manualOverride
                 )
             }.collectLatest { pipe ->
+                val previous = lastAutoSnapshot
+                val protectionChanged = previous != null &&
+                    previous.outputProtectionMode != pipe.outputProtectionMode
+                if (!pipe.enabled || pipe.bypassed || !pipe.smoothTransitions ||
+                    protectionChanged
+                ) gainRamp.cancel()
                 EqState.setOutputProtectionMode(pipe.outputProtectionMode)
                 setMonoOutput(pipe.mono)
                 if (EqEngine.equalizer == null) EqEngine.initSessionZero()
@@ -195,10 +221,25 @@ class EqProcessingService : Service() {
                 }
 
                 if (!pipe.enabled || pipe.bypassed) {
+                    gainRamp.cancel()
                     EqEngine.applyFlat()
+                    lastAutoSnapshot = null
                     EqState.updateOutputGains(FloatArray(8))
                     updateNotification(if (pipe.bypassed) "EQ bypassed for comparison" else "EQ paused")
                     return@collectLatest
+                }
+
+                // A Safe transition must not wait behind a headphone lookup while
+                // an old Off/Balanced ramp remains above Safe's boost limit.
+                if (previous != null && protectionChanged) {
+                    val safeNow = pipe.outputProtectionMode == OutputProtectionMode.SAFE ||
+                        (pipe.outputProtectionMode == OutputProtectionMode.BALANCED &&
+                            !EqEngine.isLimiterProtectionActive())
+                    EqEngine.applyGains(if (safeNow) applyLimitOutputGain(previous.outputGains)
+                        else previous.outputGains)
+                } else if (previous != null && previous.smoothTransitions &&
+                    !pipe.smoothTransitions) {
+                    EqEngine.applyGains(previous.outputGains)
                 }
 
                 // Fetch headphone correction (cached after first fetch — no repeated calls)
@@ -264,7 +305,20 @@ class EqProcessingService : Service() {
                         !pipe.baseToneGains.contentEquals(EqState.baseToneGains.value))
                 ) return@collectLatest
                 EqState.applyComputedOutput(displayName, tonePart, combined)
-                EqEngine.applyGains(combined)
+                val shouldRamp = pipe.smoothTransitions && !pipe.manualOverride &&
+                    previous != null && previous.canRampTo(pipe, hpCorrection, combined)
+                val nextSnapshot = AutoSnapshot.from(pipe, hpCorrection, combined)
+                if (shouldRamp) {
+                    gainRamp.cancel()
+                    val prepared = EqEngine.prepareGainRamp(combined)
+                    if (prepared != null) gainRamp.start(prepared)
+                } else if (previous == null || !previous.outputGains.contentEquals(combined) ||
+                    previous.requiresSnap(pipe)
+                ) {
+                    gainRamp.cancel()
+                    EqEngine.applyGains(combined)
+                }
+                lastAutoSnapshot = nextSnapshot
 
                 val hpShort = pipe.headphone.split(" ").takeLast(2).joinToString(" ")
                 updateNotification("$displayName$bassTag · $hpShort")
@@ -287,6 +341,7 @@ class EqProcessingService : Service() {
         serviceScope.launch {
             EqState.manualBandUpdate.collectLatest { toneGains ->
                 toneGains ?: return@collectLatest
+                gainRamp.cancel()
                 if (EqState.isBypassed.value || !EqState.isEqEnabled.value) return@collectLatest
 
                 if (EqEngine.equalizer == null) {
@@ -320,7 +375,7 @@ class EqProcessingService : Service() {
         val correctionSelection: HeadphoneCorrectionSelection,
         val bypassed: Boolean,
         val outputProtectionMode: OutputProtectionMode,
-        val mono: Boolean, val bassBoost: Float,
+        val mono: Boolean, val bassBoost: Float, val smoothTransitions: Boolean,
         val autoGenre: Boolean, val baseToneGains: FloatArray, val toneName: String,
         val manualOverride: Boolean
     )
@@ -339,6 +394,53 @@ class EqProcessingService : Service() {
         val toneName: String,
         val manualOverride: Boolean
     )
+
+    private data class AudioSettingsState(
+        val outputProtectionMode: OutputProtectionMode,
+        val mono: Boolean,
+        val bassBoost: Float,
+        val smoothTransitions: Boolean
+    )
+
+    private data class AutoSnapshot(
+        val genre: String,
+        val correctionSelection: HeadphoneCorrectionSelection,
+        val headphoneCorrection: FloatArray,
+        val baseToneGains: FloatArray,
+        val toneName: String,
+        val autoGenre: Boolean,
+        val manualOverride: Boolean,
+        val enabled: Boolean,
+        val bypassed: Boolean,
+        val bassBoost: Float,
+        val mono: Boolean,
+        val outputProtectionMode: OutputProtectionMode,
+        val smoothTransitions: Boolean,
+        val outputGains: FloatArray
+    ) {
+        fun requiresSnap(pipe: EqPipe): Boolean =
+            enabled != pipe.enabled || bypassed != pipe.bypassed ||
+                bassBoost != pipe.bassBoost || mono != pipe.mono ||
+                outputProtectionMode != pipe.outputProtectionMode ||
+                smoothTransitions != pipe.smoothTransitions ||
+                autoGenre != pipe.autoGenre ||
+                toneName != pipe.toneName || !baseToneGains.contentEquals(pipe.baseToneGains)
+
+        fun canRampTo(pipe: EqPipe, correction: FloatArray, output: FloatArray): Boolean =
+            !requiresSnap(pipe) && !outputGains.contentEquals(output) &&
+                (genre != pipe.genre || correctionSelection != pipe.correctionSelection ||
+                    !headphoneCorrection.contentEquals(correction))
+
+        companion object {
+            fun from(pipe: EqPipe, correction: FloatArray, output: FloatArray) = AutoSnapshot(
+                pipe.genre, pipe.correctionSelection, correction.copyOf(),
+                pipe.baseToneGains.copyOf(), pipe.toneName, pipe.autoGenre,
+                pipe.manualOverride, pipe.enabled, pipe.bypassed, pipe.bassBoost,
+                pipe.mono, pipe.outputProtectionMode, pipe.smoothTransitions,
+                output.copyOf()
+            )
+        }
+    }
 
     // ── Limit Output Gain ─────────────────────────────────────────────
 

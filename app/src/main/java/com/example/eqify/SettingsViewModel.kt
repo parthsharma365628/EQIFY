@@ -37,6 +37,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     val isEqEnabled          = repository.isEqEnabled
     val autoGenreDetection   = repository.autoGenreDetection
+    val smoothEqTransitions  = repository.smoothEqTransitions
     val outputProtectionMode = repository.outputProtectionMode
     val limiterDiagnosticStatus = EqEngine.limiterDiagnosticStatus
     val forceMono            = repository.forceMono
@@ -97,6 +98,10 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             // stops switching profiles and holds its current setting
             if (!enabled) NowPlayingState.updateCurrentGenre("")
         }
+    }
+
+    fun setSmoothEqTransitions(enabled: Boolean) {
+        viewModelScope.launch { repository.setSmoothEqTransitions(enabled) }
     }
 
     fun setOutputProtectionMode(mode: OutputProtectionMode) {

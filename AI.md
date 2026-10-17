@@ -28,6 +28,7 @@ EQIFY/
 │     ├─ main/java/com/example/eqify/
 │     │  ├─ MainActivity.kt, EqifyApplication.kt
 │     │  ├─ EqEngine.kt, EqProcessingService.kt, EqState.kt
+│     │  ├─ EqGainRamp.kt
 │     │  ├─ EqProcessingSnapshot.kt, EqQuickSettingsTileService.kt
 │     │  ├─ OutputProtectionMode.kt, LimiterDiagnostics.kt
 │     │  ├─ EqProfileManager.kt, UserPreferencesRepository.kt
@@ -175,8 +176,9 @@ Paths are relative to `app/src/main/java/com/example/eqify/`. “Owns” means l
 | --- | --- | --- | --- |
 | `EqifyApplication.kt` (Application) | Registers global receivers, starts genre coordinator, restores persisted EQ/preset/bass/headphone/listener state. | Engine, detector, preferences, genre history/coordinator; receivers and resolver outlive Activity. | Changing process startup or state restoration. |
 | `MainActivity.kt` (Activity / Compose host) | Starts processing service; permissions and navigation; creates shared `HomeViewModel`. | Service, screens; preserve single-top/save-restore navigation; genre resolver is application-owned. | Changing entry, permissions, navigation. |
-| `EqProcessingService.kt` (foreground Service) | Combines tone/genre, correction, bass, protection; owns auto/manual collectors, correction memory cache, notification and tile snapshot writes. | Runtime states, repositories, `EqProfileManager`, `EqEngine`; manual updates must neither wait for network nor lose to stale auto work. | Changing audio orchestration, correction fallback, mono, notification. |
-| `EqEngine.kt` (process singleton / audio effects) | Attaches/releases Equalizer and limiter; session selection, hardware gain application, diagnostics. | `EqProfileManager`, limiter status; EQ and limiter share session; do not release on Activity teardown. | Changing effect/session or device-band behavior. |
+| `EqProcessingService.kt` (foreground Service) | Combines tone/genre, correction, bass, protection; owns auto/manual collectors, service-lifetime EQ ramp job, correction memory cache, notification and tile snapshot writes. | Runtime states, repositories, `EqProfileManager`, `EqEngine`; manual updates cancel ramp before instant write and must not lose to stale auto work. | Changing audio orchestration, transition classification, correction fallback, mono, notification. |
+| `EqEngine.kt` (process singleton / audio effects) | Attaches/releases Equalizer and limiter; session selection, hardware gain application, final-target/applied-level tracking and attachment epoch. | `EqProfileManager`, limiter status, ramp controller; interim ramp writes must not replace restorable final target; do not release on Activity teardown. | Changing effect/session or device-band behavior. |
+| `EqGainRamp.kt` (pure interpolation + service-owned controller) | Interpolates mapped millibel device levels over 250 ms and cancels/retargets one service-lifetime job. | Service supplies clock/scope and engine writer; delayed writes must never override manual input or cross attachment epochs. | Changing EQ transition timing/cancellation. |
 | `EqState.kt` (process singleton / StateFlows) | Live EQ request/bypass, base tone, manual override/update, output, headphone correction/status, bass, service flag, protection. | UI/view models and service; tone-only and composed gains differ; copy arrays and preserve immediate manual path. | Changing shared processing state or override transitions. |
 | `NowPlayingState.kt` (process singleton / StateFlows) | Current track/artist/genre, accepted observation token, selected headphone and listener state. | Media listener, genre coordinator, detector, service; track changes clear stale genre/manual override; not durable. | Changing live media/headphone propagation. |
 | `EqProfileManager.kt` (pure singleton) | Eight bands, genre presets, genre labels, gain composition and device-band mapping. | Service, engine, VMs; preserve `[60,170,310,600,1000,3000,6000,12000]` Hz order. | Changing curves, genre mappings, arithmetic or interpolation. |
@@ -227,6 +229,7 @@ Paths are relative to `app/src/main/java/com/example/eqify/`. “Owns” means l
 | --- | --- | --- |
 | Audio effect/session attachment | `EqEngine.kt` | Application-lifetime audio-session receiver; limiter must share session |
 | Composed EQ output | `EqProfileManager.kt`, `EqProcessingService.kt` | Preserve separate automatic and immediate manual paths |
+| EQ transition smoothing | `EqGainRamp.kt`, `EqProcessingService.kt`, `EqEngine.kt`, `UserPreferencesRepository.kt`, `screens/SettingsScreen.kt` | Only genre/correction changes ramp; manual, bypass, protection and controls snap; device listening validation pending |
 | Runtime UI state | `EqState.kt`, `NowPlayingState.kt` | In-memory state is not durable across process death |
 | Genre resolution and correction | `GenreCoordinator.kt`, `GenreHistoryRepository.kt`, `Localgenredetector.kt` | Correction first, then local → optional Last.fm → iTunes → EQify backend; application-scoped |
 | Recent tracks / weekly mix | `GenreHistoryRepository.kt`, `screens/HomeScreen.kt` | 14-day distinct recents, 7-day observation counts, 16-day retention; not listening duration |

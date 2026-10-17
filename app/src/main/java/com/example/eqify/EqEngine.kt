@@ -37,7 +37,9 @@ object EqEngine {
 
     private var dynamicsProcessor: DynamicsProcessing? = null
     private var currentSessionId = 0
+    private var attachmentEpoch = 0L
     private var currentGains = FloatArray(8)
+    private var appliedLevels: IntArray? = null
     private var limiterProtectionRequested = false
 
     private val _limiterDiagnosticStatus = MutableStateFlow(initialLimiterStatus())
@@ -82,6 +84,7 @@ object EqEngine {
         try {
             currentSessionId = sessionId
             equalizer = Equalizer(0, sessionId).apply { enabled = true }
+            attachmentEpoch++
             _isEqualizerAttached.value = true
             attachLimiterToSession(sessionId)
             Log.d(TAG, "Attached to session $sessionId — ${equalizer?.numberOfBands} bands")
@@ -97,6 +100,7 @@ object EqEngine {
         try {
             currentSessionId = 0
             equalizer = Equalizer(0, 0).apply { enabled = true }
+            attachmentEpoch++
             _isEqualizerAttached.value = true
             attachLimiterToSession(0)
             Log.d(TAG, "Session 0 attached — ${equalizer?.numberOfBands} bands")
@@ -386,33 +390,81 @@ object EqEngine {
         applyCurrentGains()
     }
 
+    /** Stores the final target for reattach, but leaves hardware at the last applied step. */
+    internal fun prepareGainRamp(gains: FloatArray): PreparedGainRamp? {
+        currentGains = gains.copyOf()
+        if (equalizer == null) {
+            trySessionZeroFallback() // New attachment applies the final target directly.
+            return null
+        }
+        return try {
+            val eq = equalizer ?: return null
+            val target = mapLevels(eq, gains).map { it.toInt() }.toIntArray()
+            val from = appliedLevels?.copyOf()
+            if (from == null || from.size != target.size) {
+                applyCurrentGains()
+                null
+            } else {
+                PreparedGainRamp(attachmentEpoch, from, target)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to prepare gain ramp: ${e.message}")
+            releaseEqualizer()
+            null
+        }
+    }
+
+    /** Rejects steps from a detached or replaced effect. Does not change currentGains. */
+    internal fun writeRampStep(epoch: Long, levels: IntArray): Boolean {
+        val eq = equalizer ?: return false
+        if (epoch != attachmentEpoch || appliedLevels?.size != levels.size) return false
+        val previous = appliedLevels ?: return false
+        return try {
+            val range = eq.bandLevelRange
+            val bounded = IntArray(levels.size) { i ->
+                levels[i].coerceIn(range[0].toInt(), range[1].toInt())
+            }
+            for (i in levels.indices) {
+                if (bounded[i] != previous[i]) {
+                    eq.setBandLevel(i.toShort(), bounded[i].toShort())
+                }
+            }
+            appliedLevels = bounded
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "Gain ramp write failed: ${e.message}")
+            appliedLevels = null // A partial band write is not a valid starting curve.
+            releaseEqualizer()
+            false
+        }
+    }
+
+    private fun mapLevels(eq: Equalizer, gains: FloatArray): ShortArray {
+        val centers = IntArray(eq.numberOfBands.toInt()) { band -> eq.getCenterFreq(band.toShort()) }
+        return EqProfileManager.mapToDeviceBands(centers, gains, eq.bandLevelRange)
+    }
+
     private fun applyCurrentGains() {
         val eq = equalizer ?: run {
             Log.w(TAG, "applyCurrentGains: no equalizer attached")
             return
         }
         try {
-            val numBands = eq.numberOfBands.toInt()
-            val range = eq.bandLevelRange
-            val centers = IntArray(numBands) { band ->
-                eq.getCenterFreq(band.toShort())
-            }
-            val mappedLevels = EqProfileManager.mapToDeviceBands(
-                centers,
-                currentGains,
-                range
-            )
+            val mappedLevels = mapLevels(eq, currentGains)
+            val numBands = mappedLevels.size
 
             Log.d(TAG, "Applying to $numBands device bands")
 
             for (i in 0 until numBands) {
                 eq.setBandLevel(i.toShort(), mappedLevels[i])
             }
+            appliedLevels = mappedLevels.map { it.toInt() }.toIntArray()
 
             Log.d(TAG, "setBandLevel done")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to apply gains: ${e.message}")
             // Session went stale — clear so next call retries
+            appliedLevels = null
             releaseEqualizer()
         }
     }
@@ -426,14 +478,18 @@ object EqEngine {
             for (i in 0 until numBands) {
                 eq.setBandLevel(i.toShort(), 0)
             }
+            appliedLevels = IntArray(numBands)
             Log.d(TAG, "Flat EQ applied")
         } catch (e: Exception) {
             Log.e(TAG, "Flat EQ failed: ${e.message}")
+            appliedLevels = null
             releaseEqualizer()
         }
     }
 
     fun releaseEqualizer() {
+        attachmentEpoch++
+        appliedLevels = null
         releaseLimiter()
         try { equalizer?.release() } catch (e: Exception) {
             Log.w(TAG, "Error releasing equalizer: ${e.message}")

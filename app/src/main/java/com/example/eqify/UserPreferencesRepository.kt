@@ -70,6 +70,7 @@ class UserPreferencesRepository(private val context: Context) {
     private object Keys {
         val IS_EQ_ENABLED         = booleanPreferencesKey("is_eq_enabled")
         val AUTO_GENRE_DETECTION  = booleanPreferencesKey("auto_genre_detection")
+        val SMOOTH_EQ_TRANSITIONS = booleanPreferencesKey("smooth_eq_transitions")
         val OUTPUT_PROTECTION_MODE = stringPreferencesKey("output_protection_mode")
         // Legacy Boolean retained only for migrating existing installations.
         val LIMIT_OUTPUT_GAIN     = booleanPreferencesKey("limit_output_gain")
@@ -96,6 +97,10 @@ class UserPreferencesRepository(private val context: Context) {
 
     val autoGenreDetection: Flow<Boolean> = context.dataStore.data.map { prefs ->
         prefs[Keys.AUTO_GENRE_DETECTION] ?: true
+    }
+
+    val smoothEqTransitions: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[Keys.SMOOTH_EQ_TRANSITIONS] ?: true
     }
 
     val outputProtectionMode: Flow<OutputProtectionMode> = context.dataStore.data.map { prefs ->
@@ -174,6 +179,10 @@ class UserPreferencesRepository(private val context: Context) {
 
     suspend fun setAutoGenreDetection(enabled: Boolean) {
         context.dataStore.edit { it[Keys.AUTO_GENRE_DETECTION] = enabled }
+    }
+
+    suspend fun setSmoothEqTransitions(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.SMOOTH_EQ_TRANSITIONS] = enabled }
     }
 
     suspend fun setOutputProtectionMode(mode: OutputProtectionMode) {
