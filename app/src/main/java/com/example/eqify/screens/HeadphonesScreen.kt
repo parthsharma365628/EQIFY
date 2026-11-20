@@ -2,7 +2,6 @@ package com.example.eqify
 
 import android.app.Application
 import android.net.Uri
-import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
@@ -31,9 +30,6 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.io.ByteArrayOutputStream
-import java.nio.ByteBuffer
-import java.nio.charset.CodingErrorAction
 
 data class HeadphoneResult(val name: String, val type: String)
 
@@ -123,25 +119,9 @@ class HeadphonesViewModel(application: Application) : AndroidViewModel(applicati
             try {
                 val app = getApplication<Application>()
                 val profile = withContext(Dispatchers.IO) {
-                    val filename = app.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME),
-                        null, null, null)?.use { cursor ->
-                        if (cursor.moveToFirst()) cursor.getString(0) else null
-                    } ?: "GraphicEQ.txt"
-                    val bytes = ByteArrayOutputStream()
-                    app.contentResolver.openInputStream(uri)?.use { input ->
-                        val chunk = ByteArray(8192)
-                        while (true) {
-                            val count = input.read(chunk)
-                            if (count < 0) break
-                            if (count > 0) bytes.write(chunk, 0, count)
-                            require(bytes.size() <= 1_048_576) { "File exceeds 1 MiB limit." }
-                        }
-                    } ?: error("Could not open selected file.")
-                    val text = Charsets.UTF_8.newDecoder()
-                        .onMalformedInput(CodingErrorAction.REPORT)
-                        .onUnmappableCharacter(CodingErrorAction.REPORT)
-                        .decode(ByteBuffer.wrap(bytes.toByteArray())).toString()
-                    val result = GraphicEqImporter.convert(text)
+                    val document = BoundedTextReader.read(app, uri, maxBytes = 1_048_576, limitLabel = "1 MiB")
+                    val filename = document.displayName ?: "GraphicEQ.txt"
+                    val result = GraphicEqImporter.convert(document.text)
                     customProfilesRepository.importProfile(filename.substringBeforeLast('.').ifBlank { "Imported EQ" },
                         filename, result.gains) to result.limited
                 }

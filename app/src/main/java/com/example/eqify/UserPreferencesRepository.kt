@@ -315,6 +315,21 @@ class UserPreferencesRepository(private val context: Context) {
         }
     }
 
+    /**
+     * Adds a new preset in one atomic edit. Unlike [saveCustomPreset], never
+     * overwrites: fails if the name is reserved or already used (case-insensitive).
+     */
+    suspend fun saveNewCustomPreset(presetName: String, gains: FloatArray) {
+        val name = presetName.trim()
+        require(gains.size == 8 && gains.all { it.isFinite() && it in -12f..12f }) { "Invalid preset gains." }
+        context.dataStore.edit { prefs ->
+            val names = CustomPresetNameCodec.decode(prefs[Keys.CUSTOM_PRESET_NAMES] ?: "")
+            PresetNameRules.validateNew(name, names)?.let { throw IllegalArgumentException(it) }
+            prefs[stringPreferencesKey("custom_gains_$name")] = gains.joinToString(",")
+            prefs[Keys.CUSTOM_PRESET_NAMES] = CustomPresetNameCodec.encode(names + name)
+        }
+    }
+
     suspend fun loadCustomPresetGains(presetName: String): FloatArray? {
         val gainsKey = stringPreferencesKey("custom_gains_$presetName")
         val prefs = context.dataStore.data.first()

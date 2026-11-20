@@ -40,6 +40,14 @@ object HeadphoneDataRepository {
             .toList()
     }
 
+    /** Catalog spelling of [headphoneName] (case-insensitive exact match), or null. */
+    suspend fun findExactName(context: Context, headphoneName: String): String? {
+        val term = headphoneName.trim()
+        if (term.isEmpty()) return null
+        return getIndex(context.applicationContext).headphones
+            .firstOrNull { it.name.equals(term, ignoreCase = true) }?.name
+    }
+
     suspend fun getProfileGains(context: Context, headphoneName: String): FloatArray {
         val index = getIndex(context.applicationContext)
         val summary = index.headphones.firstOrNull {

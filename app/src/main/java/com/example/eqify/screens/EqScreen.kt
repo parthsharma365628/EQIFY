@@ -27,10 +27,56 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.eqify.ui.theme.*
+import android.content.Intent
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontFamily
 import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.math.abs
 import kotlin.math.roundToInt
+
+/** Matches the Home screen's Bass Booster buttons. */
+private val BASS_LEVELS = listOf(0f, 3f, 6f, 9f)
+
+/** What the share sheet will encode. Toggles only drop optional parts. */
+data class ShareDraft(
+    val name: String,
+    val tone: List<Float>,
+    val correction: SharedCorrection?,
+    val bass: Float?,
+    val isBuiltIn: Boolean = false,
+    val includeCorrection: Boolean = true,
+    val includeBass: Boolean = true
+) {
+    val profile: SharedEqProfile
+        get() = SharedEqProfile(
+            name, tone,
+            correction.takeIf { includeCorrection },
+            bass.takeIf { includeBass }
+        )
+    val code: String get() = EqProfileCodec.encode(profile)
+    val suggestedFileName: String
+        get() = name.replace(Regex("[^A-Za-z0-9 _.-]"), "_").trim().ifEmpty { "profile" } + ".eqify.json"
+}
+
+/** A decoded profile awaiting the user's confirmation. */
+data class ImportPreview(
+    val profile: SharedEqProfile,
+    /** Catalog spelling when the profile names a dataset headphone that exists locally. */
+    val datasetMatch: String?,
+    val autoGenreOn: Boolean
+)
 
 class EqScreenViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -163,15 +209,8 @@ class EqScreenViewModel(application: Application) : AndroidViewModel(application
 
     fun createNewProfile(name: String) {
         val trimmedName = name.trim()
-        val reserved = trimmedName.equals("Custom", ignoreCase = true) ||
-            EqProfileManager.defaultProfiles.keys.any { it.equals(trimmedName, ignoreCase = true) }
-        val duplicate = customPresetNames.value.any { it.equals(trimmedName, ignoreCase = true) }
-        if (trimmedName.isBlank()) {
-            _newProfileError.value = "Enter a profile name."
-            return
-        }
-        if (reserved || duplicate) {
-            _newProfileError.value = "Choose a unique profile name."
+        PresetNameRules.validateNew(trimmedName, customPresetNames.value)?.let {
+            _newProfileError.value = it
             return
         }
         val gains = _bands.value.toFloatArray()
@@ -230,6 +269,269 @@ class EqScreenViewModel(application: Application) : AndroidViewModel(application
         } catch (e: Exception) {
             e.message ?: "Unable to rename profile."
         }
+    }
+
+    // ── Sharing: export ───────────────────────────────────────────────
+    //
+    // Export reads tone gains (never the combined output), plus the active
+    // headphone correction only when its gains are actually loaded.
+
+    private val customEqProfiles = (application as EqifyApplication).customEqProfiles
+
+    private val _shareDraft = MutableStateFlow<ShareDraft?>(null)
+    val shareDraft: StateFlow<ShareDraft?> = _shareDraft.asStateFlow()
+
+    private val _shareMessage = MutableStateFlow<String?>(null)
+    val shareMessage: StateFlow<String?> = _shareMessage.asStateFlow()
+
+    /** Opens the share sheet for [presetName], or for the current sliders when null. */
+    fun openShare(presetName: String? = null) {
+        _showPresetPicker.value = false
+        viewModelScope.launch {
+            val tone = if (presetName == null) _bands.value.toFloatArray() else
+                customGainsCache[presetName]?.copyOf()
+                    ?: repository.loadCustomPresetGains(presetName)
+                    ?: EqProfileManager.defaultProfiles[presetName]?.copyOf()
+            if (tone == null || tone.size != 8 || tone.any { !it.isFinite() || it !in -12f..12f }) {
+                _shareMessage.value = "This profile can't be shared: its saved values are invalid."
+                return@launch
+            }
+            val name = presetName ?: _activePreset.value.takeUnless { it == "Custom" } ?: "My EQ"
+            _shareDraft.value = ShareDraft(
+                name = name,
+                tone = tone.toList(),
+                correction = correctionForShare(),
+                bass = EqState.bassBoostLevel.value.takeIf { it > 0f && it <= EqProfileCodec.MAX_BASS_DB },
+                isBuiltIn = presetName != null && isDefaultPreset(presetName)
+            )
+        }
+    }
+
+    private suspend fun correctionForShare(): SharedCorrection? {
+        val shared = when (val selection = repository.headphoneCorrectionSelection.first()) {
+            is HeadphoneCorrectionSelection.Dataset -> {
+                val ready = when (val status = EqState.headphoneCorrectionStatus.value) {
+                    is HeadphoneCorrectionStatus.Downloaded -> status.headphoneName.equals(selection.name, true)
+                    is HeadphoneCorrectionStatus.Cached -> status.headphoneName.equals(selection.name, true)
+                    else -> false
+                }
+                if (!ready) null else SharedCorrection(SharedCorrection.Kind.DATASET, selection.name,
+                    EqState.currentHeadphoneCorrection.value.toList())
+            }
+            is HeadphoneCorrectionSelection.Custom -> customEqProfiles.find(selection.profileId)?.let {
+                SharedCorrection(SharedCorrection.Kind.CUSTOM, it.displayName, it.gains)
+            }
+            HeadphoneCorrectionSelection.None -> null
+        }
+        return shared?.takeIf { c -> c.gains.size == 8 && c.gains.all { it.isFinite() && it in -12f..12f } }
+    }
+
+    fun setShareIncludeCorrection(include: Boolean) {
+        _shareDraft.update { it?.copy(includeCorrection = include) }
+    }
+
+    fun setShareIncludeBass(include: Boolean) {
+        _shareDraft.update { it?.copy(includeBass = include) }
+    }
+
+    fun closeShare() { _shareDraft.value = null }
+
+    fun onCodeCopied() {
+        _shareMessage.value = "Profile code copied. Paste it anywhere to share."
+        _shareDraft.value = null
+    }
+
+    fun exportShareToFile(uri: Uri) {
+        val draft = _shareDraft.value ?: return
+        viewModelScope.launch {
+            _shareMessage.value = try {
+                val json = EqProfileCodec.encodeJson(draft.profile)
+                withContext(Dispatchers.IO) {
+                    getApplication<Application>().contentResolver.openOutputStream(uri, "wt")?.use {
+                        it.write(json.toByteArray(Charsets.UTF_8))
+                    } ?: error("Could not open the chosen file.")
+                }
+                "Saved \"${draft.name}\" to a file."
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                "Could not save the file: ${e.message ?: "unknown error"}"
+            }
+        }
+    }
+
+    fun dismissShareMessage() { _shareMessage.value = null }
+
+    // ── Sharing: import ───────────────────────────────────────────────
+    //
+    // Decode → preview → explicit confirm. Nothing is written before confirm.
+    // Applying goes through selectPreset / EqState and the tagged correction
+    // selection, never EqEngine.
+
+    private val _showImportDialog = MutableStateFlow(false)
+    val showImportDialog: StateFlow<Boolean> = _showImportDialog.asStateFlow()
+
+    private val _importError = MutableStateFlow<String?>(null)
+    val importError: StateFlow<String?> = _importError.asStateFlow()
+
+    private val _importPreview = MutableStateFlow<ImportPreview?>(null)
+    val importPreview: StateFlow<ImportPreview?> = _importPreview.asStateFlow()
+
+    private val _importBusy = MutableStateFlow(false)
+    val importBusy: StateFlow<Boolean> = _importBusy.asStateFlow()
+
+    private var importJob: Job? = null
+
+    fun openImport() {
+        _showPresetPicker.value = false
+        _importError.value = null
+        _showImportDialog.value = true
+    }
+
+    fun closeImport() {
+        importJob?.cancel()
+        _importBusy.value = false
+        _showImportDialog.value = false
+        _importPreview.value = null
+        _importError.value = null
+    }
+
+    fun importFromText(text: String) = startPreview { text }
+
+    fun importFromFile(uri: Uri) = startPreview {
+        withContext(Dispatchers.IO) {
+            BoundedTextReader.read(getApplication(), uri, maxBytes = 64 * 1024, limitLabel = "64 KB").text
+        }
+    }
+
+    private fun startPreview(readText: suspend () -> String) {
+        importJob?.cancel()
+        _importError.value = null
+        _importBusy.value = true
+        importJob = viewModelScope.launch {
+            try {
+                val text = readText()
+                val profile = withContext(Dispatchers.Default) { EqProfileCodec.decode(text) }
+                val match = profile.correction
+                    ?.takeIf { it.kind == SharedCorrection.Kind.DATASET }
+                    ?.let { findCatalogName(it.name) }
+                _importPreview.value = ImportPreview(
+                    profile = profile,
+                    datasetMatch = match,
+                    autoGenreOn = repository.autoGenreDetection.first()
+                )
+                _showImportDialog.value = false
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _importError.value = e.message ?: "This profile could not be read."
+            } finally {
+                _importBusy.value = false
+            }
+        }
+    }
+
+    /** Cached-catalog lookup; offline or slow → null, and embedded gains are used instead. */
+    private suspend fun findCatalogName(name: String): String? = try {
+        withTimeoutOrNull(5_000) { HeadphoneDataRepository.findExactName(getApplication(), name) }
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        null
+    }
+
+    fun confirmImport(saveTone: Boolean, useCorrection: Boolean, applyBass: Boolean, useNow: Boolean) {
+        val preview = _importPreview.value ?: return
+        if (_importBusy.value) return
+        _importBusy.value = true
+        importJob = viewModelScope.launch {
+            val done = mutableListOf<String>()
+            try {
+                val profile = preview.profile
+                val tone = profile.tone.toFloatArray()
+
+                val savedName = if (saveTone) saveImportedTone(profile.name, tone).also {
+                    done += "Saved \"$it\" to My profiles."
+                } else null
+
+                val correction = profile.correction
+                if (useCorrection && correction != null) {
+                    val match = preview.datasetMatch
+                    if (correction.kind == SharedCorrection.Kind.DATASET && match != null) {
+                        if (useNow) {
+                            repository.setSelectedHeadphone(match)
+                            NowPlayingState.updateSelectedHeadphone(match)
+                            done += "Using $match correction."
+                        } else {
+                            done += "$match is in your headphone catalog; select it on the Headphones screen to use it."
+                        }
+                    } else {
+                        val id = withContext(Dispatchers.IO) { saveImportedCorrection(correction) }
+                        if (useNow) repository.selectCustomCorrection(id)
+                        done += "Headphone correction saved to My custom profiles" +
+                            if (useNow) " and selected." else "."
+                    }
+                }
+
+                val bass = profile.bass
+                if (applyBass && bass != null) {
+                    val level = snapBassLevel(bass)
+                    EqState.setBassBoost(level)
+                    repository.setBassBoostLevel(level)
+                    done += if (level == 0f) "Bass boost turned off." else "Bass boost set to +${level.toInt()} dB."
+                }
+
+                if (useNow) {
+                    if (savedName != null) selectPreset(savedName) else applyUnsavedTone(tone)
+                }
+                _shareMessage.value = done.joinToString(" ").ifEmpty { "Nothing was imported." }
+                _importPreview.value = null
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _shareMessage.value = (done + "Import stopped: ${e.message ?: "unknown error"}").joinToString(" ")
+                _importPreview.value = null
+            } finally {
+                _importBusy.value = false
+            }
+        }
+    }
+
+    /** Saves as a new preset with a free name; never overwrites an existing one. */
+    private suspend fun saveImportedTone(baseName: String, gains: FloatArray): String {
+        var lastError: Exception? = null
+        repeat(3) {
+            val name = PresetNameRules.uniqueName(baseName, repository.customPresetNames.first())
+            try {
+                repository.saveNewCustomPreset(name, gains)
+                customGainsCache[name] = gains.copyOf()
+                return name
+            } catch (e: IllegalArgumentException) {
+                lastError = e // a concurrent save took the name; pick another
+            }
+        }
+        throw lastError ?: IllegalStateException("Could not save the preset.")
+    }
+
+    /** Reuses an identical imported correction instead of duplicating it. Returns its id. */
+    private fun saveImportedCorrection(correction: SharedCorrection): String {
+        customEqProfiles.profiles.value.firstOrNull { existing ->
+            existing.gains.map { EqProfileCodec.round01(it) } == correction.gains
+        }?.let { return it.id }
+        return customEqProfiles.importProfile(correction.name, "Shared profile",
+            correction.gains.toFloatArray()).id
+    }
+
+    private fun snapBassLevel(level: Float): Float =
+        BASS_LEVELS.minByOrNull { abs(it - level) } ?: 0f
+
+    /** "Use now" without saving: same effect as editing the sliders by hand. */
+    private fun applyUnsavedTone(gains: FloatArray) {
+        presetSelectionJob?.cancel()
+        _activePreset.value = "Custom"
+        _bands.value = gains.toList()
+        _hasUnsavedChanges.value = true
+        EqState.applyManualAdjustment(gains.copyOf(), "Custom")
     }
 
     // ── Dialog helpers ────────────────────────────────────────────────
@@ -307,8 +609,72 @@ fun EqScreen(vm: EqScreenViewModel = viewModel()) {
         allPresets = allPresets, customPresets = customPresets, activePreset = activePreset,
         onSelect = { vm.selectPreset(it) }, onDelete = { vm.requestDelete(it) },
         onRename = { renameTarget = it; renameDraft = it; renameError = null; vm.closePresetPicker() },
-        onNewProfile = { vm.openNewProfile() }, onDismiss = { vm.closePresetPicker() }
+        onNewProfile = { vm.openNewProfile() }, onDismiss = { vm.closePresetPicker() },
+        onShare = { vm.openShare(it) }, onImport = { vm.openImport() }
     )
+
+    // ── Profile sharing ───────────────────────────────────────────────
+    val shareDraft by vm.shareDraft.collectAsState()
+    val shareMessage by vm.shareMessage.collectAsState()
+    val showImportDialog by vm.showImportDialog.collectAsState()
+    val importError by vm.importError.collectAsState()
+    val importPreview by vm.importPreview.collectAsState()
+    val importBusy by vm.importBusy.collectAsState()
+    val context = LocalContext.current
+    val clipboard = LocalClipboardManager.current
+    val saveFileLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json")
+    ) { uri -> if (uri != null) vm.exportShareToFile(uri) }
+    val openFileLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri -> if (uri != null) vm.importFromFile(uri) }
+
+    shareDraft?.let { draft ->
+        ShareProfileDialog(
+            draft = draft,
+            onIncludeCorrection = vm::setShareIncludeCorrection,
+            onIncludeBass = vm::setShareIncludeBass,
+            onCopy = {
+                clipboard.setText(AnnotatedString(draft.code))
+                vm.onCodeCopied()
+            },
+            onShareText = {
+                val send = Intent(Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    putExtra(Intent.EXTRA_SUBJECT, "EQify profile: ${draft.name}")
+                    putExtra(Intent.EXTRA_TEXT,
+                        "EQify profile \"${draft.name}\". To use it, open EQify → Equalizer → " +
+                            "presets → Import shared profile, and paste this code:\n\n${draft.code}")
+                }
+                context.startActivity(Intent.createChooser(send, "Share EQ profile"))
+                vm.closeShare()
+            },
+            onSaveFile = { saveFileLauncher.launch(draft.suggestedFileName) },
+            onDismiss = vm::closeShare
+        )
+    }
+
+    if (showImportDialog) {
+        ImportProfileDialog(
+            error = importError,
+            busy = importBusy,
+            onPasteFromClipboard = { clipboard.getText()?.text.orEmpty() },
+            onImportText = vm::importFromText,
+            onOpenFile = {
+                openFileLauncher.launch(arrayOf("application/json", "text/plain", "application/octet-stream"))
+            },
+            onDismiss = vm::closeImport
+        )
+    }
+
+    importPreview?.let { preview ->
+        ImportPreviewDialog(
+            preview = preview,
+            busy = importBusy,
+            onConfirm = vm::confirmImport,
+            onDismiss = vm::closeImport
+        )
+    }
 
     if (showNewProfile) NewProfileDialog(
         errorMessage = newProfileError,
@@ -336,6 +702,9 @@ fun EqScreen(vm: EqScreenViewModel = viewModel()) {
                 }
                 TextButton(onClick = { vm.resetCurrentPreset() }) {
                     Text("Reset", color = TextSecondary, fontSize = 12.sp)
+                }
+                TextButton(onClick = { vm.openShare() }) {
+                    Text("Share", color = TextSecondary, fontSize = 12.sp)
                 }
                 TextButton(onClick = { EqState.setBypassed(!isBypassed) }) {
                     Text(
@@ -380,6 +749,20 @@ fun EqScreen(vm: EqScreenViewModel = viewModel()) {
             }
         }
 
+        shareMessage?.let { message ->
+            Surface(
+                shape = RoundedCornerShape(10.dp),
+                color = AccentPurple.copy(alpha = 0.12f),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 10.dp)
+                    .clickable { vm.dismissShareMessage() }
+            ) {
+                Row(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(message, color = TextPrimary, fontSize = 11.sp, modifier = Modifier.weight(1f))
+                    Text("✕", color = TextSecondary, fontSize = 12.sp, modifier = Modifier.padding(start = 8.dp))
+                }
+            }
+        }
+
         // Sliders
         Card(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).weight(1f),
@@ -411,7 +794,8 @@ fun EqScreen(vm: EqScreenViewModel = viewModel()) {
 fun PresetPickerDialog(
     allPresets: List<String>, customPresets: List<String>, activePreset: String,
     onSelect: (String) -> Unit, onDelete: (String) -> Unit, onRename: (String) -> Unit,
-    onNewProfile: () -> Unit, onDismiss: () -> Unit
+    onNewProfile: () -> Unit, onDismiss: () -> Unit,
+    onShare: (String) -> Unit = {}, onImport: () -> Unit = {}
 ) {
     AlertDialog(
         onDismissRequest = onDismiss, containerColor = Surface2Dark,
@@ -432,7 +816,8 @@ fun PresetPickerDialog(
                 allPresets.filter { candidate ->
                     customPresets.none { it.equals(candidate, ignoreCase = true) }
                 }.forEach { name ->
-                    PresetRow(name, name == activePreset, false, { onSelect(name) }, {})
+                    PresetRow(name, name == activePreset, false, { onSelect(name) }, {},
+                        onShare = { onShare(name) })
                 }
                 if (customPresets.isNotEmpty()) {
                     Spacer(Modifier.height(12.dp))
@@ -441,7 +826,8 @@ fun PresetPickerDialog(
                     Text("MY PROFILES", fontSize = 9.sp, color = TextSecondary, letterSpacing = 1.5.sp,
                         modifier = Modifier.padding(bottom = 4.dp))
                     customPresets.forEach { name ->
-                        PresetRow(name, name == activePreset, true, { onSelect(name) }, { onDelete(name) }, { onRename(name) })
+                        PresetRow(name, name == activePreset, true, { onSelect(name) }, { onDelete(name) },
+                            { onRename(name) }, onShare = { onShare(name) })
                     }
                 }
                 Spacer(Modifier.height(12.dp))
@@ -460,6 +846,20 @@ fun PresetPickerDialog(
                         }
                     }
                 }
+                Spacer(Modifier.height(8.dp))
+                Surface(
+                    shape = RoundedCornerShape(12.dp), color = AccentPurple.copy(alpha = 0.1f),
+                    modifier = Modifier.fillMaxWidth().clickable { onImport() }
+                ) {
+                    Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("⇩", fontSize = 18.sp, color = AccentPurpleLight, fontWeight = FontWeight.Bold)
+                        Column {
+                            Text("Import shared profile", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = AccentPurpleLight)
+                            Text("Paste an EQify code or open a .eqify.json file", fontSize = 10.sp, color = TextSecondary)
+                        }
+                    }
+                }
             }
         },
         confirmButton = {}
@@ -469,7 +869,8 @@ fun PresetPickerDialog(
 @Composable
 private fun PresetRow(
     name: String, isActive: Boolean, isCustom: Boolean,
-    onSelect: () -> Unit, onDelete: () -> Unit, onRename: () -> Unit = {}
+    onSelect: () -> Unit, onDelete: () -> Unit, onRename: () -> Unit = {},
+    onShare: (() -> Unit)? = null
 ) {
     Row(
         modifier = Modifier.fillMaxWidth().clickable { onSelect() }.padding(vertical = 8.dp, horizontal = 2.dp),
@@ -491,6 +892,11 @@ private fun PresetRow(
             Text(name, fontSize = 14.sp,
                 color = if (isActive) TextPrimary else TextSecondary,
                 fontWeight = if (isActive) FontWeight.SemiBold else FontWeight.Normal)
+        }
+        if (onShare != null) {
+            TextButton(onClick = onShare, contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)) {
+                Text("Share", fontSize = 12.sp, color = AccentPurpleLight)
+            }
         }
         if (isCustom) {
             TextButton(onClick = onRename, contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)) {
@@ -552,6 +958,229 @@ fun DeleteConfirmDialog(presetName: String, onConfirm: () -> Unit, onDismiss: ()
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel", color = TextSecondary) } }
     )
+}
+
+// ── Profile sharing dialogs ───────────────────────────────────────────
+
+@Composable
+fun ShareProfileDialog(
+    draft: ShareDraft,
+    onIncludeCorrection: (Boolean) -> Unit,
+    onIncludeBass: (Boolean) -> Unit,
+    onCopy: () -> Unit,
+    onShareText: () -> Unit,
+    onSaveFile: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss, containerColor = Surface2Dark,
+        title = { Text("Share \"${draft.name}\"", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 16.sp) },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                if (draft.isBuiltIn) {
+                    Text("This is a built-in preset; everyone with EQify already has it.",
+                        color = TextSecondary, fontSize = 11.sp)
+                    Spacer(Modifier.height(8.dp))
+                }
+                ToneCurvePreview(draft.tone)
+                Spacer(Modifier.height(10.dp))
+                draft.correction?.let { c ->
+                    CheckRow(
+                        checked = draft.includeCorrection,
+                        onChange = onIncludeCorrection,
+                        label = "Include headphone correction",
+                        detail = c.name + if (c.kind == SharedCorrection.Kind.CUSTOM) " (imported)" else ""
+                    )
+                } ?: Text("No headphone correction is loaded, so only the tone is shared.",
+                    color = TextSecondary, fontSize = 11.sp)
+                draft.bass?.let { bass ->
+                    CheckRow(
+                        checked = draft.includeBass,
+                        onChange = onIncludeBass,
+                        label = "Include bass boost",
+                        detail = "+${bass.toInt()} dB (the receiver chooses whether to apply it)"
+                    )
+                }
+                Spacer(Modifier.height(10.dp))
+                Text("Profile code", color = TextSecondary, fontSize = 10.sp)
+                SelectionContainer {
+                    Text(draft.code, color = TextPrimary, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+                }
+                Spacer(Modifier.height(6.dp))
+                Text("Contains only EQ values and names. No listening history or device details.",
+                    color = TextSecondary, fontSize = 10.sp)
+                Spacer(Modifier.height(8.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    TextButton(onClick = onCopy) { Text("Copy code", color = AccentPurpleLight) }
+                    TextButton(onClick = onShareText) { Text("Share…", color = AccentPurpleLight) }
+                    TextButton(onClick = onSaveFile) { Text("Save file", color = AccentPurpleLight) }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Close", color = TextSecondary) } }
+    )
+}
+
+@Composable
+fun ImportProfileDialog(
+    error: String?,
+    busy: Boolean,
+    onPasteFromClipboard: () -> String,
+    onImportText: (String) -> Unit,
+    onOpenFile: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    var text by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss, containerColor = Surface2Dark,
+        title = { Text("Import shared profile", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 16.sp) },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                Text("Paste an EQify code (it starts with EQIFY1:) or open a .eqify.json file. " +
+                    "You'll see a preview before anything is saved.",
+                    color = TextSecondary, fontSize = 12.sp)
+                Spacer(Modifier.height(10.dp))
+                OutlinedTextField(
+                    value = text, onValueChange = { text = it.take(EqProfileCodec.MAX_INPUT_CHARS) },
+                    enabled = !busy,
+                    placeholder = { Text("EQIFY1:…", color = TextSecondary, fontSize = 12.sp) },
+                    minLines = 3, maxLines = 6, modifier = Modifier.fillMaxWidth(),
+                    isError = error != null,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = AccentPurple, unfocusedBorderColor = AccentPurple.copy(alpha = 0.3f),
+                        cursorColor = AccentPurple, focusedTextColor = TextPrimary, unfocusedTextColor = TextPrimary)
+                )
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    TextButton(enabled = !busy, onClick = { text = onPasteFromClipboard().take(EqProfileCodec.MAX_INPUT_CHARS) }) {
+                        Text("Paste", color = AccentPurpleLight)
+                    }
+                    TextButton(enabled = !busy, onClick = onOpenFile) {
+                        Text("Open file…", color = AccentPurpleLight)
+                    }
+                }
+                if (busy) LinearProgressIndicator(Modifier.fillMaxWidth(), color = AccentPurple)
+                error?.let {
+                    Spacer(Modifier.height(6.dp))
+                    Text(it, color = Color(0xFFFF5252), fontSize = 11.sp)
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = !busy && text.isNotBlank(), onClick = { onImportText(text) }) {
+                Text("Preview", color = AccentPurpleLight, fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel", color = TextSecondary) } }
+    )
+}
+
+@Composable
+fun ImportPreviewDialog(
+    preview: ImportPreview,
+    busy: Boolean,
+    onConfirm: (saveTone: Boolean, useCorrection: Boolean, applyBass: Boolean, useNow: Boolean) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val profile = preview.profile
+    var saveTone by remember(preview) { mutableStateOf(true) }
+    var useCorrection by remember(preview) { mutableStateOf(profile.correction != null) }
+    var applyBass by remember(preview) { mutableStateOf(false) }
+    val nothingSelected = !saveTone && !(useCorrection && profile.correction != null) &&
+        !(applyBass && profile.bass != null)
+
+    AlertDialog(
+        onDismissRequest = { if (!busy) onDismiss() }, containerColor = Surface2Dark,
+        title = { Text("Import \"${profile.name}\"", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 16.sp) },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                ToneCurvePreview(profile.tone)
+                Spacer(Modifier.height(10.dp))
+                CheckRow(saveTone, { saveTone = it }, "Save tone as a preset",
+                    "Added to My profiles; an existing preset is never replaced.", enabled = !busy)
+                profile.correction?.let { c ->
+                    val detail = when {
+                        c.kind == SharedCorrection.Kind.DATASET && preview.datasetMatch != null ->
+                            "${preview.datasetMatch} (found in your headphone catalog)"
+                        c.kind == SharedCorrection.Kind.DATASET ->
+                            "${c.name}: not found in your catalog, so it will be saved as an imported correction"
+                        else -> "${c.name}: saved to My custom profiles"
+                    }
+                    CheckRow(useCorrection, { useCorrection = it }, "Use headphone correction", detail, enabled = !busy)
+                }
+                profile.bass?.let { bass ->
+                    CheckRow(applyBass, { applyBass = it }, "Also set bass boost",
+                        "Shared level +${bass.toInt()} dB; changes your global Bass Booster setting.", enabled = !busy)
+                }
+                if (preview.autoGenreOn) {
+                    Spacer(Modifier.height(6.dp))
+                    Text("Auto-Genre is on, so a tone you use now will be replaced by the genre preset on the next track.",
+                        color = NeonCyan, fontSize = 11.sp)
+                }
+                if (busy) {
+                    Spacer(Modifier.height(6.dp))
+                    LinearProgressIndicator(Modifier.fillMaxWidth(), color = AccentPurple)
+                }
+            }
+        },
+        confirmButton = {
+            Row {
+                TextButton(enabled = !busy && !nothingSelected,
+                    onClick = { onConfirm(saveTone, useCorrection, applyBass, false) }) {
+                    Text("Save", color = AccentPurpleLight)
+                }
+                TextButton(enabled = !busy,
+                    onClick = { onConfirm(saveTone, useCorrection, applyBass, true) }) {
+                    Text("Save & use", color = AccentPurpleLight, fontWeight = FontWeight.Bold)
+                }
+            }
+        },
+        dismissButton = { TextButton(enabled = !busy, onClick = onDismiss) { Text("Cancel", color = TextSecondary) } }
+    )
+}
+
+@Composable
+private fun CheckRow(
+    checked: Boolean, onChange: (Boolean) -> Unit, label: String, detail: String, enabled: Boolean = true
+) {
+    Row(
+        Modifier.fillMaxWidth().clickable(enabled = enabled) { onChange(!checked) }.padding(vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Checkbox(checked = checked, onCheckedChange = onChange, enabled = enabled,
+            colors = CheckboxDefaults.colors(checkedColor = AccentPurple))
+        Column {
+            Text(label, color = TextPrimary, fontSize = 13.sp)
+            Text(detail, color = TextSecondary, fontSize = 10.sp)
+        }
+    }
+}
+
+/** Eight bars around a 0 dB line; ±12 dB fills the half-height. */
+@Composable
+private fun ToneCurvePreview(gains: List<Float>) {
+    Column {
+        Canvas(Modifier.fillMaxWidth().height(64.dp)) {
+            val mid = size.height / 2f
+            val slot = size.width / gains.size.coerceAtLeast(1)
+            drawLine(Color.White.copy(alpha = 0.15f),
+                androidx.compose.ui.geometry.Offset(0f, mid), androidx.compose.ui.geometry.Offset(size.width, mid), 1.dp.toPx())
+            gains.forEachIndexed { i, g ->
+                val h = (g.coerceIn(-12f, 12f) / 12f) * (mid - 2.dp.toPx())
+                val x = slot * i + slot / 2f
+                drawLine(AccentPurpleLight,
+                    androidx.compose.ui.geometry.Offset(x, mid), androidx.compose.ui.geometry.Offset(x, mid - h),
+                    (slot * 0.45f).coerceAtMost(14.dp.toPx()), StrokeCap.Round)
+            }
+        }
+        Row(Modifier.fillMaxWidth()) {
+            EqProfileManager.BAND_LABELS.forEachIndexed { i, label ->
+                Text("$label\n${"%+.1f".format(gains.getOrElse(i) { 0f })}", color = TextSecondary,
+                    fontSize = 8.sp, lineHeight = 10.sp, modifier = Modifier.weight(1f),
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+            }
+        }
+    }
 }
 
 // ── Vertical EQ Slider ────────────────────────────────────────────────
