@@ -17,6 +17,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -180,6 +183,53 @@ class HeadphonesViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
+    // ── Sharing an imported correction (flat tone, correction only) ────
+
+    private val _shareDraft = MutableStateFlow<ShareDraft?>(null)
+    val shareDraft: StateFlow<ShareDraft?> = _shareDraft.asStateFlow()
+
+    fun openShareCustomProfile(id: String) {
+        val profile = customProfilesRepository.find(id)
+        if (profile == null) {
+            _importMessage.value = "Profile no longer exists."
+            return
+        }
+        if (profile.gains.size != 8 || profile.gains.any { !it.isFinite() || it !in -12f..12f }) {
+            _importMessage.value = "This profile can't be shared: its saved values are invalid."
+            return
+        }
+        _shareDraft.value = ShareDraft(
+            name = profile.displayName,
+            tone = List(8) { 0f },
+            correction = SharedCorrection(SharedCorrection.Kind.CUSTOM, profile.displayName, profile.gains),
+            bass = null,
+            correctionOnly = true
+        )
+    }
+
+    fun closeShare() { _shareDraft.value = null }
+
+    fun onCodeCopied() {
+        _importMessage.value = "Profile code copied. Paste it anywhere to share."
+        _shareDraft.value = null
+    }
+
+    fun exportShareToFile(uri: Uri) {
+        val draft = _shareDraft.value ?: return
+        viewModelScope.launch {
+            _importMessage.value = try {
+                withContext(Dispatchers.IO) {
+                    ProfileShareIo.writeJsonFile(getApplication(), uri, draft.profile)
+                }
+                "Saved \"${draft.name}\" to a file."
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                "Could not save the file: ${e.message ?: "unknown error"}"
+            }
+        }
+    }
+
     fun toggleFavorite(name: String) {
         viewModelScope.launch { repository.toggleFavoriteHeadphone(name) }
     }
@@ -232,6 +282,29 @@ fun HeadphonesScreen(
     var renameDraft by remember(renameProfile) { mutableStateOf(renameProfile?.displayName ?: "") }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) vm.importGraphicEq(uri)
+    }
+    val shareDraft by vm.shareDraft.collectAsState()
+    val context = LocalContext.current
+    val clipboard = LocalClipboardManager.current
+    val saveShareFile = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json")
+    ) { uri -> if (uri != null) vm.exportShareToFile(uri) }
+    shareDraft?.let { draft ->
+        ShareProfileDialog(
+            draft = draft,
+            onIncludeCorrection = {},
+            onIncludeBass = {},
+            onCopy = {
+                clipboard.setText(AnnotatedString(draft.code))
+                vm.onCodeCopied()
+            },
+            onShareText = {
+                context.startActivity(ProfileShareIo.shareTextChooser(draft.name, draft.code))
+                vm.closeShare()
+            },
+            onSaveFile = { saveShareFile.launch(draft.suggestedFileName) },
+            onDismiss = vm::closeShare
+        )
     }
     val correctionStatusText = when (val status = correctionStatus) {
         is HeadphoneCorrectionStatus.Loading ->
@@ -434,6 +507,7 @@ fun HeadphonesScreen(
                                     Text((if (selection == HeadphoneCorrectionSelection.Custom(profile.id)) "✓ " else "") +
                                         profile.displayName + " · GraphicEQ", color = TextPrimary)
                                 }
+                                TextButton(onClick = { vm.openShareCustomProfile(profile.id) }) { Text("Share") }
                                 TextButton(onClick = { renameProfile = profile }) { Text("Rename") }
                                 TextButton(onClick = { deleteProfile = profile }) { Text("Delete") }
                             }

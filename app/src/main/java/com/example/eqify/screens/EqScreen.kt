@@ -20,6 +20,7 @@ import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.setProgress
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -27,7 +28,6 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.eqify.ui.theme.*
-import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -56,13 +56,15 @@ data class ShareDraft(
     val correction: SharedCorrection?,
     val bass: Float?,
     val isBuiltIn: Boolean = false,
+    /** Sharing an imported correction by itself: flat tone, correction always included. */
+    val correctionOnly: Boolean = false,
     val includeCorrection: Boolean = true,
     val includeBass: Boolean = true
 ) {
     val profile: SharedEqProfile
         get() = SharedEqProfile(
             name, tone,
-            correction.takeIf { includeCorrection },
+            correction.takeIf { includeCorrection || correctionOnly },
             bass.takeIf { includeBass }
         )
     val code: String get() = EqProfileCodec.encode(profile)
@@ -345,11 +347,8 @@ class EqScreenViewModel(application: Application) : AndroidViewModel(application
         val draft = _shareDraft.value ?: return
         viewModelScope.launch {
             _shareMessage.value = try {
-                val json = EqProfileCodec.encodeJson(draft.profile)
                 withContext(Dispatchers.IO) {
-                    getApplication<Application>().contentResolver.openOutputStream(uri, "wt")?.use {
-                        it.write(json.toByteArray(Charsets.UTF_8))
-                    } ?: error("Could not open the chosen file.")
+                    ProfileShareIo.writeJsonFile(getApplication(), uri, draft.profile)
                 }
                 "Saved \"${draft.name}\" to a file."
             } catch (e: CancellationException) {
@@ -639,14 +638,7 @@ fun EqScreen(vm: EqScreenViewModel = viewModel()) {
                 vm.onCodeCopied()
             },
             onShareText = {
-                val send = Intent(Intent.ACTION_SEND).apply {
-                    type = "text/plain"
-                    putExtra(Intent.EXTRA_SUBJECT, "EQify profile: ${draft.name}")
-                    putExtra(Intent.EXTRA_TEXT,
-                        "EQify profile \"${draft.name}\". To use it, open EQify → Equalizer → " +
-                            "presets → Import shared profile, and paste this code:\n\n${draft.code}")
-                }
-                context.startActivity(Intent.createChooser(send, "Share EQ profile"))
+                context.startActivity(ProfileShareIo.shareTextChooser(draft.name, draft.code))
                 vm.closeShare()
             },
             onSaveFile = { saveFileLauncher.launch(draft.suggestedFileName) },
@@ -972,6 +964,7 @@ fun ShareProfileDialog(
     onSaveFile: () -> Unit,
     onDismiss: () -> Unit
 ) {
+    var showQr by remember { mutableStateOf(false) }
     AlertDialog(
         onDismissRequest = onDismiss, containerColor = Surface2Dark,
         title = { Text("Share \"${draft.name}\"", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 16.sp) },
@@ -982,9 +975,16 @@ fun ShareProfileDialog(
                         color = TextSecondary, fontSize = 11.sp)
                     Spacer(Modifier.height(8.dp))
                 }
-                ToneCurvePreview(draft.tone)
+                if (draft.correctionOnly) {
+                    Text("Headphone correction only (flat tone). The receiver can save it to " +
+                        "their custom headphone profiles.", color = TextSecondary, fontSize = 11.sp)
+                    Spacer(Modifier.height(8.dp))
+                    draft.correction?.let { ToneCurvePreview(it.gains) }
+                } else {
+                    ToneCurvePreview(draft.tone)
+                }
                 Spacer(Modifier.height(10.dp))
-                draft.correction?.let { c ->
+                if (!draft.correctionOnly) draft.correction?.let { c ->
                     CheckRow(
                         checked = draft.includeCorrection,
                         onChange = onIncludeCorrection,
@@ -1002,9 +1002,22 @@ fun ShareProfileDialog(
                     )
                 }
                 Spacer(Modifier.height(10.dp))
-                Text("Profile code", color = TextSecondary, fontSize = 10.sp)
-                SelectionContainer {
-                    Text(draft.code, color = TextPrimary, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically) {
+                    Text(if (showQr) "QR code" else "Profile code", color = TextSecondary, fontSize = 10.sp)
+                    TextButton(onClick = { showQr = !showQr }) {
+                        Text(if (showQr) "Show code" else "Show QR", color = AccentPurpleLight, fontSize = 12.sp)
+                    }
+                }
+                if (showQr) {
+                    ProfileQrImage(draft.code)
+                    Spacer(Modifier.height(4.dp))
+                    Text("Scan with another phone, then paste the result into Import shared profile.",
+                        color = TextSecondary, fontSize = 10.sp)
+                } else {
+                    SelectionContainer {
+                        Text(draft.code, color = TextPrimary, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+                    }
                 }
                 Spacer(Modifier.height(6.dp))
                 Text("Contains only EQ values and names. No listening history or device details.",
@@ -1083,7 +1096,9 @@ fun ImportPreviewDialog(
     onDismiss: () -> Unit
 ) {
     val profile = preview.profile
-    var saveTone by remember(preview) { mutableStateOf(true) }
+    // A correction-only share has a flat tone; saving it as a preset would just add clutter.
+    val flatTone = profile.tone.all { it == 0f }
+    var saveTone by remember(preview) { mutableStateOf(!(flatTone && profile.correction != null)) }
     var useCorrection by remember(preview) { mutableStateOf(profile.correction != null) }
     var applyBass by remember(preview) { mutableStateOf(false) }
     val nothingSelected = !saveTone && !(useCorrection && profile.correction != null) &&
@@ -1152,6 +1167,47 @@ private fun CheckRow(
         Column {
             Text(label, color = TextPrimary, fontSize = 13.sp)
             Text(detail, color = TextSecondary, fontSize = 10.sp)
+        }
+    }
+}
+
+/**
+ * Draws the QR modules directly (no Bitmap). Always black on white with the
+ * spec's quiet zone, regardless of the dark theme, so scanners can read it.
+ */
+@Composable
+private fun ProfileQrImage(code: String) {
+    val matrix = remember(code) { runCatching { ProfileQrCode.matrix(code) }.getOrNull() }
+    if (matrix == null) {
+        Text("This code is too long to show as a QR code. Copy or share it as text instead.",
+            color = Color(0xFFFF5252), fontSize = 11.sp)
+        return
+    }
+    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+        Canvas(
+            Modifier
+                .widthIn(max = 260.dp)
+                .fillMaxWidth()
+                .aspectRatio(1f)
+                .semantics { contentDescription = "QR code for this EQ profile" }
+        ) {
+            val modules = matrix.width + 2 * ProfileQrCode.QUIET_ZONE_MODULES
+            val cell = size.minDimension / modules
+            drawRect(Color.White)
+            for (y in 0 until matrix.height) {
+                for (x in 0 until matrix.width) {
+                    if (!matrix.get(x, y)) continue
+                    drawRect(
+                        Color.Black,
+                        topLeft = androidx.compose.ui.geometry.Offset(
+                            (x + ProfileQrCode.QUIET_ZONE_MODULES) * cell,
+                            (y + ProfileQrCode.QUIET_ZONE_MODULES) * cell
+                        ),
+                        // Slight overlap avoids hairline gaps between modules.
+                        size = androidx.compose.ui.geometry.Size(cell + 0.5f, cell + 0.5f)
+                    )
+                }
+            }
         }
     }
 }

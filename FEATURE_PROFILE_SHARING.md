@@ -1,8 +1,16 @@
 # Feature Plan: Shareable EQ Profiles (code, QR, file)
 
-Status: **Phase 1 implemented in source (2026-11-20)**. `assembleDebug` and
-`testDebugUnitTest` pass (33 new JVM tests). Not yet validated on a device.
-Phases 2–3 are not started.
+Status: **Phases 1–2 implemented in source.**
+- Phase 1 was done on 2026-11-20 and phase 2 on 2026-11-21.
+- `assembleDebug` and `testDebugUnitTest` pass. That is 38 new JVM tests, including a ZXing encode→decode QR round trip.
+- Not yet validated on a device. Phase 3 is not started.
+
+Phase 2 is implemented in these files:
+- `ProfileQrCode.kt` (pure ZXing `core:3.5.3`, M error correction)
+- The Show QR toggle in `ShareProfileDialog`. It draws black modules on white with a 4-module quiet zone, independent of the theme.
+- `ProfileShareIo.kt`: the file write and share-intent helpers, now shared by both screens.
+- A Share button on HeadphonesScreen's "My custom profiles" rows. It shares the correction only, with a flat tone, using `ShareDraft.correctionOnly`.
+- `ProfileQrCodeTest.kt`
 
 Phase 1 is implemented in these files:
 - `EqProfileCodec.kt`, `PresetNameRules.kt`, `BoundedTextReader.kt` (new)
@@ -268,3 +276,4 @@ of the correction handling and the name-collision fixes.
 |---|---|---|---|
 | 2026-11-20 | Claude | Initial plan from a source read of the files listed at the top. | — |
 | 2026-11-20 | Claude | Implemented phase 1 and changed the plan in three places. (1) Existing `createNewProfile` now uses `PresetNameRules.validateNew` with the same messages. The new 40-character cap applies only to imported names, so existing flows are unchanged. (2) Imported bass is snapped to 0/3/6/9 dB, because Home only offers those levels. (3) A dataset name not found in the cached catalog (or a lookup that takes over 5 s) falls back to the embedded gains as an imported correction. A Gradle run needed `JAVA_HOME=D:\ANDROID\jbr` and `-Djdk.net.unixdomain.tmpdir=<short path>` because the user temp path contains a space. Open question 4 (catalog vs embedded gains differ) is not handled yet: the catalog version is used silently. | Record the actual source state and decisions. |
+| 2026-11-21 | Claude | Implemented phase 2 and added one thing the plan didn't cover. The import preview now defaults "Save tone as a preset" to **off** when the tone is flat and a correction is present, so a correction-only share doesn't create an empty preset. The receiver can still tick it. Dedup of identical corrections was already done in phase 1. There is no in-app scanner yet: the QR is meant for a phone camera app, and its decoded text is pasted into Import (phase 3 adds deep links and scanning). | Record the actual source state. |
