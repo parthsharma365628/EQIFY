@@ -41,6 +41,8 @@ class ProfileShareException(val reason: Reason, message: String) : Exception(mes
  */
 object EqProfileCodec {
     const val PREFIX = "EQIFY1:"
+    /** Deep link handled by MainActivity; the code is URL-safe so it is appended as-is. */
+    const val LINK_PREFIX = "eqify://import?p="
     const val SCHEMA_VERSION = 1
     const val MAX_INPUT_CHARS = 8 * 1024
     const val MAX_JSON_BYTES = 8 * 1024
@@ -52,10 +54,17 @@ object EqProfileCodec {
     private const val MAX_GAIN = 12f
 
     private val codeChars = Regex("[A-Za-z0-9_-]+")
+    private val encodedPrefix = Regex("EQIFY1%3A", RegexOption.IGNORE_CASE)
 
     fun encode(profile: SharedEqProfile): String {
         val json = toJsonObject(profile).toString().toByteArray(Charsets.UTF_8)
         return PREFIX + Base64.getUrlEncoder().withoutPadding().encodeToString(deflate(json))
+    }
+
+    /** `eqify://import?p=EQIFY1:…`. [decode] accepts the link text directly. */
+    fun importLink(code: String): String {
+        require(code.startsWith(PREFIX)) { "Not a profile code" }
+        return LINK_PREFIX + code
     }
 
     /** Human-readable JSON for files. [decode] accepts it unchanged. */
@@ -65,7 +74,9 @@ object EqProfileCodec {
     /** Parses a code, text containing a code, or plain JSON. Throws [ProfileShareException]. */
     fun decode(input: String): SharedEqProfile {
         if (input.length > MAX_INPUT_CHARS) fail(ProfileShareException.Reason.TOO_LARGE, "This profile is too large.")
-        val text = input.removePrefix("﻿").trim()
+        val raw = input.removePrefix("﻿").trim()
+        // A link re-encoded by another app may carry "EQIFY1%3A"; Base64-URL itself needs no escaping.
+        val text = if (raw.contains(PREFIX)) raw else raw.replace(encodedPrefix, PREFIX)
         val json: String = when {
             text.startsWith("{") -> {
                 if (text.toByteArray(Charsets.UTF_8).size > MAX_JSON_BYTES)

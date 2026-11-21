@@ -41,6 +41,19 @@ class ProfileQrCodeTest {
         assertEquals(profile, EqProfileCodec.decode(scanned))
     }
 
+    @Test fun qrOfImportLinkRoundTrips() {
+        val link = EqProfileCodec.importLink(EqProfileCodec.encode(profile))
+        val scanned = scan(ProfileQrCode.matrix(link))
+        assertEquals(link, scanned)
+        assertEquals(profile, EqProfileCodec.decode(scanned))
+    }
+
+    @Test fun longestNameLinkStaysScannable() {
+        val long = profile.copy(name = "A".repeat(PresetNameRules.MAX_LENGTH))
+        val m = ProfileQrCode.matrix(EqProfileCodec.importLink(EqProfileCodec.encode(long)))
+        assertTrue("QR version too dense: ${m.width} modules", m.width <= 73)
+    }
+
     @Test fun matrixIsSquareWithoutMargin() {
         val m = ProfileQrCode.matrix(EqProfileCodec.encode(profile))
         assertEquals(m.width, m.height)

@@ -81,6 +81,22 @@ class EqProfileCodecTest {
         assertEquals(full, decoded)
     }
 
+    @Test fun importLinkRoundTrips() {
+        val link = EqProfileCodec.importLink(EqProfileCodec.encode(full))
+        assertTrue(link.startsWith("eqify://import?p=EQIFY1:"))
+        assertEquals(full, EqProfileCodec.decode(link))
+    }
+
+    @Test fun percentEncodedLinkIsAccepted() {
+        val code = EqProfileCodec.encode(full)
+        val encoded = "eqify://import?p=" + code.replace("EQIFY1:", "EQIFY1%3a")
+        assertEquals(full, EqProfileCodec.decode(encoded))
+    }
+
+    @Test fun importLinkRequiresACode() {
+        assertThrows(IllegalArgumentException::class.java) { EqProfileCodec.importLink("hello") }
+    }
+
     @Test fun unknownFieldsAreIgnored() {
         val decoded = EqProfileCodec.decode(json(extra = ""","future":{"a":1},"genre":"Rock""""))
         assertEquals(List(8) { 0f }, decoded.tone)

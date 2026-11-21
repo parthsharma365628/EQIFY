@@ -1,9 +1,21 @@
 # Feature Plan: Shareable EQ Profiles (code, QR, file)
 
-Status: **Phases 1–2 implemented in source.**
-- Phase 1 was done on 2026-11-20 and phase 2 on 2026-11-21.
-- `assembleDebug` and `testDebugUnitTest` pass. That is 38 new JVM tests, including a ZXing encode→decode QR round trip.
-- Not yet validated on a device. Phase 3 is not started.
+Status: **Phases 1–3 implemented in source.**
+- Phase 1 was done on 2026-11-20. Phases 2 and 3 were done on 2026-11-21.
+- `assembleDebug` and `testDebugUnitTest` pass (43 sharing-related JVM tests).
+- **Phase 1 was device-tested by the user and works.** Phases 2–3 are not yet validated on a device.
+
+Phase 3 is implemented in these files:
+- `ProfileQrScanner.kt`: Google code scanner `play-services-code-scanner:16.1.0`. Play services shows its own camera UI, so there is no CAMERA permission. The UI module is pre-downloaded via `com.google.mlkit.vision.DEPENDENCIES=barcode_ui`. Without Play services, a fallback message is shown.
+- A Scan QR button in `ImportProfileDialog`.
+- QR content is now the link `eqify://import?p=EQIFY1:…` (`EqProfileCodec.importLink`). The decoder accepts link text and a percent-encoded `EQIFY1%3A`.
+- `PendingProfileImport.kt`: extracts the text from an `eqify://import` VIEW intent or a `text/*` SEND intent.
+- `MainActivity`:
+  - is now `launchMode="singleTask"`
+  - offers the intent on a fresh launch and in `onNewIntent`
+  - navigates to the EQ tab
+- `EqScreenViewModel` (its last `init` block) consumes the pending text once, opens the import dialog and shows the preview. **Nothing is ever auto-applied.**
+- New merged-manifest permission: `ACCESS_NETWORK_STATE`, which comes from Play services. It's a normal permission with no user prompt.
 
 Phase 2 is implemented in these files:
 - `ProfileQrCode.kt` (pure ZXing `core:3.5.3`, M error correction)
@@ -265,7 +277,7 @@ of the correction handling and the name-collision fixes.
 | # | Question | Recommendation |
 |---|---|---|
 | 1 | Include bass boost in the payload? | Include it, but opt-in on import (default off), because bass is a global setting. |
-| 2 | QR scanning library | Google `play-services-code-scanner`: no camera permission and little code, but it needs Google Play services. The alternative is CameraX + ML Kit/ZXing (needs the camera permission and more code). If this is undecided, ship phases 1–2 without scanning. Scanning a QR with the phone's camera app also works once the phase 3 deep link exists. |
+| 2 | QR scanning library (**resolved 2026-11-21: Google code scanner**) | Google `play-services-code-scanner`: no camera permission and little code, but it needs Google Play services. The alternative is CameraX + ML Kit/ZXing (needs the camera permission and more code). If this is undecided, ship phases 1–2 without scanning. Scanning a QR with the phone's camera app also works once the phase 3 deep link exists. |
 | 3 | "Save & use" with Auto-Genre on | v1: apply it and show the note. Don't change the Auto-Genre setting automatically. Per-app pinning or custom genre profiles are the real fix later. |
 | 4 | Dataset correction found in catalog, but the embedded gains differ (dataset updated) | Prefer the receiver's catalog version. Note it in the preview if the difference is above 0.5 dB on any band. |
 | 5 | Sharing built-in presets | Allow it (harmless). Low value, so no special UI. |
@@ -277,3 +289,4 @@ of the correction handling and the name-collision fixes.
 | 2026-11-20 | Claude | Initial plan from a source read of the files listed at the top. | — |
 | 2026-11-20 | Claude | Implemented phase 1 and changed the plan in three places. (1) Existing `createNewProfile` now uses `PresetNameRules.validateNew` with the same messages. The new 40-character cap applies only to imported names, so existing flows are unchanged. (2) Imported bass is snapped to 0/3/6/9 dB, because Home only offers those levels. (3) A dataset name not found in the cached catalog (or a lookup that takes over 5 s) falls back to the embedded gains as an imported correction. A Gradle run needed `JAVA_HOME=D:\ANDROID\jbr` and `-Djdk.net.unixdomain.tmpdir=<short path>` because the user temp path contains a space. Open question 4 (catalog vs embedded gains differ) is not handled yet: the catalog version is used silently. | Record the actual source state and decisions. |
 | 2026-11-21 | Claude | Implemented phase 2 and added one thing the plan didn't cover. The import preview now defaults "Save tone as a preset" to **off** when the tone is flat and a correction is present, so a correction-only share doesn't create an empty preset. The receiver can still tick it. Dedup of identical corrections was already done in phase 1. There is no in-app scanner yet: the QR is meant for a phone camera app, and its decoded text is pasted into Import (phase 3 adds deep links and scanning). | Record the actual source state. |
+| 2026-11-21 | Claude | Implemented phase 3 with the plan's recommended scanner (open question 2 resolved: Google code scanner). Additions beyond the plan text: (1) `MainActivity` became `singleTask`, so links don't stack a second copy of the app inside the sender's task. (2) The pending-import collector must be the last `init` in `EqScreenViewModel`, because `Main.immediate` can run it before later properties are initialized. (3) Phase-2 QR codes containing a bare code still import through Scan QR. Not unit-tested: intent extraction (`PendingProfileImport`, which depends on Android `Intent`) and the scanner. Both need device checks. | Record the actual source state and the invariants. |

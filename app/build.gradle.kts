@@ -67,6 +67,8 @@ dependencies {
     implementation("androidx.datastore:datastore-preferences:1.1.1")
     // QR generation only (pure Java, no camera/permissions) for profile sharing.
     implementation("com.google.zxing:core:3.5.3")
+    // QR scanning via Google Play services' own camera UI: no CAMERA permission.
+    implementation("com.google.android.gms:play-services-code-scanner:16.1.0")
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)

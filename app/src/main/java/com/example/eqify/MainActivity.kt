@@ -48,6 +48,9 @@ class MainActivity : ComponentActivity() {
         }
         startForegroundService(serviceIntent)
 
+        // Only on a fresh launch: a recreated Activity would replay the same link.
+        if (savedInstanceState == null) PendingProfileImport.offer(intent)
+
         setContent {
             EQifyTheme {
                 val onboardingPrefs = remember {
@@ -89,6 +92,13 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    // singleTask: a link or share while EQify is running arrives here.
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        PendingProfileImport.offer(intent)
     }
 
     // Do not unregister global receivers or release [EqEngine] here — the foreground
@@ -191,6 +201,12 @@ fun EqifyApp() {
             launchSingleTop = true
             restoreState = true
         }
+    }
+
+    // An incoming profile link/share opens the EQ tab, whose view model shows the preview.
+    val pendingImport by PendingProfileImport.text.collectAsState()
+    LaunchedEffect(pendingImport) {
+        if (pendingImport != null && currentRoute != "eq") navigateToTopLevel("eq")
     }
 
     Scaffold(

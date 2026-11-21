@@ -68,6 +68,8 @@ data class ShareDraft(
             bass.takeIf { includeBass }
         )
     val code: String get() = EqProfileCodec.encode(profile)
+    /** QR content: a phone camera can open it in EQify; the in-app scanner reads it too. */
+    val link: String get() = EqProfileCodec.importLink(code)
     val suggestedFileName: String
         get() = name.replace(Regex("[^A-Za-z0-9 _.-]"), "_").trim().ifEmpty { "profile" } + ".eqify.json"
 }
@@ -397,6 +399,11 @@ class EqScreenViewModel(application: Application) : AndroidViewModel(application
 
     fun importFromText(text: String) = startPreview { text }
 
+    /** Reported by the QR scanner (unavailable, failed); shown in the import dialog. */
+    fun showImportError(message: String) {
+        _importError.value = message
+    }
+
     fun importFromFile(uri: Uri) = startPreview {
         withContext(Dispatchers.IO) {
             BoundedTextReader.read(getApplication(), uri, maxBytes = 64 * 1024, limitLabel = "64 KB").text
@@ -552,6 +559,20 @@ class EqScreenViewModel(application: Application) : AndroidViewModel(application
         customGainsCache[name]?.copyOf()
             ?: EqProfileManager.defaultProfiles[name]?.copyOf()
             ?: EqProfileManager.defaultProfiles["Flat"]!!.copyOf()
+
+    // Must stay the LAST member: viewModelScope uses Main.immediate, so this can
+    // run synchronously and needs every import/share property above initialized.
+    // Profile text from an eqify:// link or "Share to EQify": open the import
+    // dialog (so errors are visible) and decode into the preview. Never auto-apply.
+    init {
+        viewModelScope.launch {
+            PendingProfileImport.text.filterNotNull().collect {
+                val text = PendingProfileImport.consume() ?: return@collect
+                openImport()
+                importFromText(text)
+            }
+        }
+    }
 }
 
 // ── EqScreen ──────────────────────────────────────────────────────────
@@ -654,6 +675,9 @@ fun EqScreen(vm: EqScreenViewModel = viewModel()) {
             onImportText = vm::importFromText,
             onOpenFile = {
                 openFileLauncher.launch(arrayOf("application/json", "text/plain", "application/octet-stream"))
+            },
+            onScanQr = {
+                ProfileQrScanner.scan(context, onResult = vm::importFromText, onError = vm::showImportError)
             },
             onDismiss = vm::closeImport
         )
@@ -1010,10 +1034,10 @@ fun ShareProfileDialog(
                     }
                 }
                 if (showQr) {
-                    ProfileQrImage(draft.code)
+                    ProfileQrImage(draft.link)
                     Spacer(Modifier.height(4.dp))
-                    Text("Scan with another phone, then paste the result into Import shared profile.",
-                        color = TextSecondary, fontSize = 10.sp)
+                    Text("On another phone, use Scan QR in Import shared profile, or scan with the camera app " +
+                        "to open it in EQify.", color = TextSecondary, fontSize = 10.sp)
                 } else {
                     SelectionContainer {
                         Text(draft.code, color = TextPrimary, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
@@ -1042,6 +1066,7 @@ fun ImportProfileDialog(
     onPasteFromClipboard: () -> String,
     onImportText: (String) -> Unit,
     onOpenFile: () -> Unit,
+    onScanQr: () -> Unit,
     onDismiss: () -> Unit
 ) {
     var text by remember { mutableStateOf("") }
@@ -1050,7 +1075,7 @@ fun ImportProfileDialog(
         title = { Text("Import shared profile", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 16.sp) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
-                Text("Paste an EQify code (it starts with EQIFY1:) or open a .eqify.json file. " +
+                Text("Paste an EQify code (it starts with EQIFY1:), scan its QR code, or open a .eqify.json file. " +
                     "You'll see a preview before anything is saved.",
                     color = TextSecondary, fontSize = 12.sp)
                 Spacer(Modifier.height(10.dp))
@@ -1067,6 +1092,9 @@ fun ImportProfileDialog(
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     TextButton(enabled = !busy, onClick = { text = onPasteFromClipboard().take(EqProfileCodec.MAX_INPUT_CHARS) }) {
                         Text("Paste", color = AccentPurpleLight)
+                    }
+                    TextButton(enabled = !busy, onClick = onScanQr) {
+                        Text("Scan QR", color = AccentPurpleLight)
                     }
                     TextButton(enabled = !busy, onClick = onOpenFile) {
                         Text("Open file…", color = AccentPurpleLight)

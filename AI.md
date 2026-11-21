@@ -35,7 +35,7 @@ EQIFY/
 │     │  ├─ EqifyApi.kt, HeadphoneDataRepository.kt, HeadphoneEqDiskCache.kt
 │     │  ├─ GraphicEqImporter.kt, CustomEqProfileRepository.kt, HeadphoneCorrectionSelection.kt
 │     │  ├─ EqProfileCodec.kt, PresetNameRules.kt, BoundedTextReader.kt
-│     │  ├─ ProfileQrCode.kt, ProfileShareIo.kt
+│     │  ├─ ProfileQrCode.kt, ProfileShareIo.kt, ProfileQrScanner.kt, PendingProfileImport.kt
 │     │  ├─ MediaListenerService.kt, NowPlayingState.kt
 │     │  ├─ GenreCoordinator.kt, GenreHistoryRepository.kt
 │     │  ├─ Bluetoothheadphonedetector.kt, Localgenredetector.kt
@@ -198,6 +198,8 @@ Paths are relative to `app/src/main/java/com/example/eqify/`. “Owns” means l
 | `PresetNameRules.kt` (pure rules) | Reserved/duplicate checks and collision-free import names. | `EqProfileManager.defaultProfiles`; used by `EqScreen` and `saveNewCustomPreset`. | Changing tone-preset naming rules. |
 | `ProfileQrCode.kt` (pure QR builder) | ZXing `core` module matrix for a profile code (M error correction, no margin). | Screens draw it black-on-white with `QUIET_ZONE_MODULES`; generation only, no camera. | Changing QR density or limits. |
 | `ProfileShareIo.kt` (Android helpers) | Writes the `.eqify.json` file and builds the text share chooser. | Used by `EqScreen` and `HeadphonesScreen`; call file writes off the main thread. | Changing export wording or file output. |
+| `ProfileQrScanner.kt` (Play services scanner) | Starts Google's code scanner and returns the QR text or a user-facing error. | No CAMERA permission (Play services owns the camera UI); devices without Play services get a fallback message. | Changing in-app scanning. |
+| `PendingProfileImport.kt` (process bridge) | Holds profile text from an `eqify://import` link or a "Share to EQify" intent until the EQ screen consumes it once. | `MainActivity` (`singleTask`, `onCreate`/`onNewIntent`) offers; `EqScreenViewModel`'s final `init` consumes it and opens the preview only. | Changing incoming link/share handling. |
 | `BoundedTextReader.kt` (SAF helper) | Size-capped strict-UTF-8 read of a picked document. | GraphicEQ import (1 MiB) and profile import (64 KB); call off the main thread. | Changing picked-file reading limits. |
 | `HeadphoneCorrectionSelection.kt` (selection model) | Tags active source as Dataset, Custom, or None. | DataStore and processing service; never treat a custom UUID as a Pages name. | Changing source-selection contract. |
 | `Bluetoothheadphonedetector.kt` (application-registered receiver) | Detects Bluetooth/wired devices, matches catalog names, updates selection/banner. | Headphone repo, preferences, `NowPlayingState`; respect auto-detect setting/manual choice. | Changing device discovery or auto-selection. |
@@ -243,7 +245,7 @@ Paths are relative to `app/src/main/java/com/example/eqify/`. “Owns” means l
 | Durable preferences/presets | `UserPreferencesRepository.kt` | Preferences DataStore, plus legacy output-protection migration |
 | Headphone lookup/correction | `HeadphonesScreen.kt`, `HeadphoneDataRepository.kt`, `EqifyApi.kt`, `EqProcessingService.kt`, `HeadphoneEqDiskCache.kt` | Pages index is cached; only selected gains are downloaded; failure uses favorites/flat correction or cached gains |
 | GraphicEQ import and selection | `GraphicEqImporter.kt`, `CustomEqProfileRepository.kt`, `HeadphoneCorrectionSelection.kt`, `UserPreferencesRepository.kt`, `screens/HeadphonesScreen.kt`, `EqProcessingService.kt` | Imported gains stay local; service owns automatic correction resolution; ParametricEQ remains planned |
-| Profile sharing (code/file/QR export, import preview) | `EqProfileCodec.kt`, `PresetNameRules.kt`, `ProfileQrCode.kt`, `ProfileShareIo.kt`, `screens/EqScreen.kt`, `screens/HeadphonesScreen.kt`, `UserPreferencesRepository.saveNewCustomPreset`, `FEATURE_PROFILE_SHARING.md` | Import never overwrites presets, applies only via `selectPreset`/`EqState` and the tagged correction selection, and stores shared corrections as `graphic_eq` (the custom store rejects other formats) |
+| Profile sharing (code/file/QR export, QR scan, eqify:// links, import preview) | `EqProfileCodec.kt`, `PresetNameRules.kt`, `ProfileQrCode.kt`, `ProfileShareIo.kt`, `ProfileQrScanner.kt`, `PendingProfileImport.kt`, `MainActivity.kt`, `AndroidManifest.xml`, `screens/EqScreen.kt`, `screens/HeadphonesScreen.kt`, `UserPreferencesRepository.saveNewCustomPreset`, `FEATURE_PROFILE_SHARING.md` | Import never overwrites presets, applies only via `selectPreset`/`EqState` and the tagged correction selection, and stores shared corrections as `graphic_eq` (the custom store rejects other formats) |
 | Quick Settings control | `EqQuickSettingsTileService.kt`, `EqProcessingSnapshot.kt` | Snapshot in DataStore plus live service-running flag; no home-screen widget exists |
 | Settings and output protection | `SettingsScreen.kt`, `SettingsViewModel.kt`, `OutputProtectionMode.kt` | Balanced falls back to Safe on unsupported/failed limiter |
 | Backend API | `eqify-backend/index.js` | Keep JSON responses compatible with Retrofit |
