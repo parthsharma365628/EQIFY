@@ -7,7 +7,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -45,6 +44,17 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.abs
 import kotlin.math.roundToInt
+import androidx.annotation.DrawableRes
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.platform.LocalDensity
+import com.example.eqify.ui.components.*
 
 /** Matches the Home screen's Bass Booster buttons. */
 private val BASS_LEVELS = listOf(0f, 3f, 6f, 9f)
@@ -576,9 +586,13 @@ class EqScreenViewModel(application: Application) : AndroidViewModel(application
 }
 
 // ── EqScreen ──────────────────────────────────────────────────────────
+//
+// UI only (UI_REDESIGN.md §6 "EQ"). All state and actions come from
+// EqScreenViewModel / EqState exactly as before; nothing here touches EqEngine.
 
 @Composable
 fun EqScreen(vm: EqScreenViewModel = viewModel()) {
+    val c = EqifyTheme.colors
     val bands             by vm.bands.collectAsState()
     val activePreset      by vm.activePreset.collectAsState()
     val showPicker        by vm.showPresetPicker.collectAsState()
@@ -593,11 +607,13 @@ fun EqScreen(vm: EqScreenViewModel = viewModel()) {
     var renameDraft by remember { mutableStateOf("") }
     var renameError by remember { mutableStateOf<String?>(null) }
     var renaming by remember { mutableStateOf(false) }
+    var preciseBand by remember { mutableStateOf<Int?>(null) }
     val scope = rememberCoroutineScope()
+
     renameTarget?.let { oldName ->
         AlertDialog(
             onDismissRequest = { if (!renaming) renameTarget = null },
-            title = { Text("Rename profile") },
+            title = { Text("Rename profile", style = MaterialTheme.typography.titleMedium) },
             text = {
                 OutlinedTextField(
                     value = renameDraft,
@@ -610,18 +626,16 @@ fun EqScreen(vm: EqScreenViewModel = viewModel()) {
                 )
             },
             confirmButton = {
-                TextButton(enabled = !renaming, onClick = {
+                TextAction("Rename", enabled = !renaming, onClick = {
                     renaming = true
                     scope.launch {
                         renameError = vm.renameProfile(oldName, renameDraft)
                         renaming = false
                         if (renameError == null) renameTarget = null
                     }
-                }) { Text("Rename") }
+                })
             },
-            dismissButton = {
-                TextButton(enabled = !renaming, onClick = { renameTarget = null }) { Text("Cancel") }
-            }
+            dismissButton = { TextAction("Cancel", enabled = !renaming, onClick = { renameTarget = null }) }
         )
     }
 
@@ -702,109 +716,255 @@ fun EqScreen(vm: EqScreenViewModel = viewModel()) {
         DeleteConfirmDialog(presetName = name, onConfirm = { vm.confirmDelete(name) }, onDismiss = { vm.cancelDelete() })
     }
 
-    Column(modifier = Modifier.fillMaxSize().background(EqifyTheme.colors.background)) {
+    preciseBand?.let { index ->
+        PreciseGainDialog(
+            band = EqProfileManager.BAND_LABELS[index],
+            gainDb = bands.getOrElse(index) { 0f },
+            onChange = { vm.updateBand(index, it) },
+            onDismiss = { preciseBand = null }
+        )
+    }
 
-        // Header
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
-            horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text("Equalizer", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = EqifyTheme.colors.textPrimary)
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
-                if (hasUnsavedChanges) {
-                    TextButton(onClick = { vm.saveToCurrentPreset() }) {
-                        Text("Save", color = EqifyTheme.colors.accent, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                    }
-                }
-                TextButton(onClick = { vm.resetCurrentPreset() }) {
-                    Text("Reset", color = EqifyTheme.colors.textMuted, fontSize = 12.sp)
-                }
-                TextButton(onClick = { vm.openShare() }) {
-                    Text("Share", color = EqifyTheme.colors.textMuted, fontSize = 12.sp)
-                }
-                TextButton(onClick = { EqState.setBypassed(!isBypassed) }) {
-                    Text(
-                        if (isBypassed) "Original" else "A/B",
-                        color = if (isBypassed) EqifyTheme.colors.textPrimary else EqifyTheme.colors.textMuted,
-                        fontSize = 12.sp
-                    )
+    Column(
+        Modifier.fillMaxSize().background(c.background).padding(horizontal = EqSpacing.screen),
+        verticalArrangement = Arrangement.spacedBy(EqSpacing.m)
+    ) {
+        // Header: title, Save (only with unsaved changes), overflow menu
+        Row(Modifier.fillMaxWidth().padding(top = EqSpacing.m), verticalAlignment = Alignment.CenterVertically) {
+            Text("Equalizer", style = MaterialTheme.typography.headlineSmall, color = c.textPrimary,
+                modifier = Modifier.weight(1f))
+            if (hasUnsavedChanges) TonalButton("Save", onClick = { vm.saveToCurrentPreset() }, icon = EqIcons.Save)
+            var menuOpen by remember { mutableStateOf(false) }
+            Box {
+                IconAction(EqIcons.More, "More options", onClick = { menuOpen = true })
+                DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false },
+                    containerColor = c.surfaceHighest) {
+                    MenuItem("Save as new profile", EqIcons.Add) { menuOpen = false; vm.openNewProfile() }
+                    MenuItem("Reset to saved", EqIcons.Reset) { menuOpen = false; vm.resetCurrentPreset() }
+                    MenuItem("Share", EqIcons.Share) { menuOpen = false; vm.openShare() }
+                    MenuItem("Import shared profile", EqIcons.Download) { menuOpen = false; vm.openImport() }
                 }
             }
         }
 
-        // Preset selector row
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 10.dp),
-            horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically
-        ) {
-            Surface(
-                shape = RoundedCornerShape(20.dp),
-                color = if (activePreset == "Custom") EqifyTheme.colors.accent.copy(alpha = 0.08f) else EqifyTheme.colors.accent.copy(alpha = 0.18f),
-                modifier = Modifier.clickable { vm.openPresetPicker() }
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp),
-                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Text(activePreset, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
-                        color = if (activePreset == "Custom") EqifyTheme.colors.textMuted else EqifyTheme.colors.accent)
-                    Text("▾", fontSize = 10.sp, color = if (activePreset == "Custom") EqifyTheme.colors.textMuted else EqifyTheme.colors.accent)
-                }
-            }
-            Surface(
-                shape = RoundedCornerShape(20.dp), color = EqifyTheme.colors.surfaceRaised,
-                modifier = Modifier.clickable { vm.openNewProfile() }
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
-                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Text("+", fontSize = 14.sp, color = EqifyTheme.colors.accent, fontWeight = FontWeight.Bold)
-                    Text("New profile", fontSize = 11.sp, color = EqifyTheme.colors.accent)
-                }
-            }
+        // Preset chip + EQ ⇄ Original comparison
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(EqSpacing.m)) {
+            PillChip(
+                text = activePreset,
+                selected = activePreset != "Custom",
+                trailingIcon = EqIcons.Expand,
+                onClick = { vm.openPresetPicker() },
+                modifier = Modifier.weight(1f, fill = false)
+                    .semantics { contentDescription = "Preset: $activePreset. Choose preset" }
+            )
+            SegmentedToggle(
+                options = listOf(false, true),
+                selected = isBypassed,
+                onSelect = { EqState.setBypassed(it) },
+                label = { if (it) "Original" else "EQ" },
+                modifier = Modifier.width(184.dp)
+            )
         }
 
         shareMessage?.let { message ->
-            Surface(
-                shape = RoundedCornerShape(10.dp),
-                color = EqifyTheme.colors.accent.copy(alpha = 0.12f),
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 10.dp)
-                    .clickable { vm.dismissShareMessage() }
-            ) {
-                Row(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(message, color = EqifyTheme.colors.textPrimary, fontSize = 11.sp, modifier = Modifier.weight(1f))
-                    Text("✕", color = EqifyTheme.colors.textMuted, fontSize = 12.sp, modifier = Modifier.padding(start = 8.dp))
+            StatusBanner(message, StatusKind.NEUTRAL, onDismiss = { vm.dismissShareMessage() })
+        }
+
+        // Sliders on top of the live tone curve
+        EqCard(modifier = Modifier.weight(1f), contentPadding = PaddingValues(vertical = EqSpacing.m, horizontal = EqSpacing.s)) {
+            EqBandsPanel(
+                bands = bands,
+                dimmed = isBypassed,
+                onChange = { index, gain -> vm.updateBand(index, gain) },
+                onReadoutClick = { preciseBand = it },
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+        if (isBypassed) {
+            Text("Comparing with the original sound. EQ is temporarily off.",
+                style = MaterialTheme.typography.bodySmall, color = c.textMuted,
+                modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
+        }
+        Spacer(Modifier.height(EqSpacing.s))
+    }
+}
+
+@Composable
+private fun MenuItem(text: String, @DrawableRes icon: Int, onClick: () -> Unit) {
+    DropdownMenuItem(
+        text = { Text(text, style = MaterialTheme.typography.bodyMedium, color = EqifyTheme.colors.textPrimary) },
+        leadingIcon = { EqIcon(icon, null, size = 20.dp) },
+        onClick = onClick
+    )
+}
+
+// ── Bands panel ───────────────────────────────────────────────────────
+//
+// Three aligned rows share the same eight weight(1f) columns (readouts,
+// tracks, labels), so the curve behind the tracks lines up with every thumb
+// at any font size.
+
+/** Vertical inset of the thumb travel inside a track; the curve uses the same inset. */
+private val TrackInset = 12.dp
+
+@Composable
+private fun EqBandsPanel(
+    bands: List<Float>,
+    dimmed: Boolean,
+    onChange: (Int, Float) -> Unit,
+    onReadoutClick: (Int) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val c = EqifyTheme.colors
+    val labels = EqProfileManager.BAND_LABELS
+    // Eight columns are narrow; at large system font sizes drop the decimal so
+    // "+12.0" still fits (exact values remain in the tap-to-edit dialog).
+    val largeFont = LocalDensity.current.fontScale > 1.3f
+    Column(modifier) {
+        Row(Modifier.fillMaxWidth()) {
+            labels.indices.forEach { i ->
+                val gain = bands.getOrElse(i) { 0f }
+                Box(
+                    Modifier.weight(1f).heightIn(min = EqSpacing.touchTarget).clip(EqifyShapes.small)
+                        .clickable(onClickLabel = "Set ${labels[i]} gain precisely") { onReadoutClick(i) },
+                    contentAlignment = Alignment.Center
+                ) {
+                    ValueReadout(gain, "", signed = true, decimals = if (largeFont) 0 else 1,
+                        color = if (gain == 0f) c.textMuted else c.textPrimary, textAlign = TextAlign.Center)
                 }
             }
         }
-
-        // Sliders
-        Card(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).weight(1f),
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = EqifyTheme.colors.surfaceRaised)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp, vertical = 16.dp),
-                horizontalArrangement = Arrangement.SpaceEvenly
-            ) {
-                EqProfileManager.BAND_LABELS.forEachIndexed { index, label ->
-                    VerticalEqSlider(
-                        modifier = Modifier.weight(1f),
-                        gainDb    = bands.getOrElse(index) { 0f },
-                        frequency = label,
-                        onChange  = { vm.updateBand(index, it) }
+        Box(Modifier.fillMaxWidth().weight(1f).padding(vertical = EqSpacing.xs)) {
+            ToneCurve(
+                gains = bands,
+                height = null,
+                contentDescription = null, // the band tracks carry the accessible values
+                modifier = Modifier.fillMaxSize().padding(vertical = TrackInset)
+                    .graphicsLayer { alpha = if (dimmed) 0.35f else 0.9f }
+            )
+            Row(Modifier.fillMaxSize()) {
+                labels.indices.forEach { i ->
+                    EqBandTrack(
+                        gainDb = bands.getOrElse(i) { 0f },
+                        band = labels[i],
+                        dimmed = dimmed,
+                        onChange = { onChange(i, it) },
+                        modifier = Modifier.weight(1f).fillMaxHeight()
                     )
                 }
             }
         }
-
-        Spacer(Modifier.height(12.dp))
+        Row(Modifier.fillMaxWidth()) {
+            labels.forEach { label ->
+                Text(label.removeSuffix("Hz"), style = MaterialTheme.typography.labelMedium,
+                    color = c.textMuted, textAlign = TextAlign.Center, modifier = Modifier.weight(1f), maxLines = 1)
+            }
+        }
+        Text("Hz", style = MaterialTheme.typography.labelSmall, color = c.textFaint,
+            modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
     }
 }
 
-// ── Dialogs ───────────────────────────────────────────────────────────
+/**
+ * One band's track. Bipolar: the fill grows from the 0 dB centre line toward
+ * the thumb, so cuts read as cuts. Drag/step behaviour and the accessibility
+ * set-progress action are unchanged from the previous slider (0.5 dB steps).
+ */
+@Composable
+private fun EqBandTrack(
+    gainDb: Float,
+    band: String,
+    dimmed: Boolean,
+    onChange: (Float) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val currentOnChange by rememberUpdatedState(onChange)
+    val currentGain by rememberUpdatedState(gainDb)
+    val quantize: (Float) -> Float = { ((it * 2).roundToInt() / 2f).coerceIn(-12f, 12f) }
+    // Theme values must be read here: the draw lambda is not composable.
+    val c = EqifyTheme.colors
+    val trackColor = c.surfaceHighest
+    val fillColor = if (dimmed) c.textFaint else c.accent
+    val thumbColor = if (dimmed) c.textFaint else c.accent
+    val ringColor = c.surfaceRaised
+    val zeroTick = c.outlineStrong
+    Canvas(
+        modifier
+            .semantics {
+                contentDescription = "$band band"
+                stateDescription = formatValue(gainDb, "dB", signed = true)
+                progressBarRangeInfo = ProgressBarRangeInfo(gainDb, -12f..12f, 47)
+                setProgress { requested ->
+                    currentOnChange(quantize(requested))
+                    true
+                }
+            }
+            .pointerInput(Unit) {
+                var dragGain = 0f
+                detectVerticalDragGestures(
+                    onDragStart = { dragGain = currentGain },
+                    onVerticalDrag = { change, dragAmount ->
+                        change.consume()
+                        val usableHeight = (size.height - 2 * TrackInset.toPx()).coerceAtLeast(1f)
+                        dragGain = (dragGain - dragAmount * 24f / usableHeight).coerceIn(-12f, 12f)
+                        currentOnChange(quantize(dragGain))
+                    }
+                )
+            }
+    ) {
+        val x = size.width / 2f
+        val inset = TrackInset.toPx()
+        val top = inset
+        val bottom = size.height - inset
+        val mid = (top + bottom) / 2f
+        val thumbY = top + (bottom - top) * ((12f - gainDb) / 24f).coerceIn(0f, 1f)
+        val w = 4.dp.toPx()
+        drawLine(trackColor, Offset(x, top), Offset(x, bottom), w, StrokeCap.Round)
+        drawLine(zeroTick, Offset(x - 6.dp.toPx(), mid), Offset(x + 6.dp.toPx(), mid), 1.5.dp.toPx(), StrokeCap.Round)
+        if (kotlin.math.abs(thumbY - mid) > 0.5f) drawLine(fillColor, Offset(x, mid), Offset(x, thumbY), w, StrokeCap.Round)
+        drawCircle(ringColor, 11.dp.toPx(), Offset(x, thumbY))
+        drawCircle(thumbColor, 8.dp.toPx(), Offset(x, thumbY))
+    }
+}
+
+/** Tap a readout to type an exact value or nudge by 0.5 dB. Same behaviour as before. */
+@Composable
+private fun PreciseGainDialog(band: String, gainDb: Float, onChange: (Float) -> Unit, onDismiss: () -> Unit) {
+    val quantize: (Float) -> Float = { ((it * 2).roundToInt() / 2f).coerceIn(-12f, 12f) }
+    var draft by remember(gainDb) { mutableStateOf(String.format(java.util.Locale.ROOT, "%.1f", gainDb)) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("$band band", style = MaterialTheme.typography.titleMedium) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(EqSpacing.s)) {
+                OutlinedTextField(
+                    value = draft,
+                    onValueChange = { draft = it },
+                    singleLine = true,
+                    label = { Text("Gain (−12 to +12 dB)") },
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                        keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal
+                    )
+                )
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                    TextAction("−0.5", { onChange((gainDb - .5f).coerceAtLeast(-12f)); onDismiss() })
+                    TextAction("0", { onChange(0f); onDismiss() })
+                    TextAction("+0.5", { onChange((gainDb + .5f).coerceAtMost(12f)); onDismiss() })
+                }
+            }
+        },
+        confirmButton = {
+            TextAction("Apply", {
+                draft.replace(',', '.').replace('−', '-').toFloatOrNull()?.let { onChange(quantize(it)) }
+                onDismiss()
+            })
+        },
+        dismissButton = { TextAction("Cancel", onDismiss) }
+    )
+}
+
+// ── Preset picker ─────────────────────────────────────────────────────
 
 @Composable
 fun PresetPickerDialog(
@@ -813,73 +973,35 @@ fun PresetPickerDialog(
     onNewProfile: () -> Unit, onDismiss: () -> Unit,
     onShare: (String) -> Unit = {}, onImport: () -> Unit = {}
 ) {
-    AlertDialog(
-        onDismissRequest = onDismiss, containerColor = EqifyTheme.colors.surfaceRaised,
-        title = {
-            Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.CenterVertically) {
-                Text("EQ Presets", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = EqifyTheme.colors.textPrimary)
-                TextButton(onClick = onDismiss) { Text("✕", color = EqifyTheme.colors.textMuted, fontSize = 14.sp) }
-            }
-        },
-        text = {
-            Column(
-                modifier = Modifier
-                    .heightIn(max = 560.dp)
-                    .verticalScroll(rememberScrollState())
-            ) {
-                Text("DEFAULT", fontSize = 9.sp, color = EqifyTheme.colors.textMuted, letterSpacing = 1.5.sp,
-                    modifier = Modifier.padding(bottom = 4.dp))
-                allPresets.filter { candidate ->
-                    customPresets.none { it.equals(candidate, ignoreCase = true) }
-                }.forEach { name ->
-                    PresetRow(name, name == activePreset, false, { onSelect(name) }, {},
-                        onShare = { onShare(name) })
-                }
-                if (customPresets.isNotEmpty()) {
-                    Spacer(Modifier.height(12.dp))
-                    HorizontalDivider(color = EqifyTheme.colors.accent.copy(alpha = 0.1f))
-                    Spacer(Modifier.height(8.dp))
-                    Text("MY PROFILES", fontSize = 9.sp, color = EqifyTheme.colors.textMuted, letterSpacing = 1.5.sp,
-                        modifier = Modifier.padding(bottom = 4.dp))
-                    customPresets.forEach { name ->
-                        PresetRow(name, name == activePreset, true, { onSelect(name) }, { onDelete(name) },
-                            { onRename(name) }, onShare = { onShare(name) })
-                    }
-                }
-                Spacer(Modifier.height(12.dp))
-                HorizontalDivider(color = EqifyTheme.colors.accent.copy(alpha = 0.1f))
-                Spacer(Modifier.height(8.dp))
-                Surface(
-                    shape = RoundedCornerShape(12.dp), color = EqifyTheme.colors.accent.copy(alpha = 0.1f),
-                    modifier = Modifier.fillMaxWidth().clickable { onNewProfile() }
-                ) {
-                    Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("+", fontSize = 18.sp, color = EqifyTheme.colors.accent, fontWeight = FontWeight.Bold)
-                        Column {
-                            Text("Create new profile", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = EqifyTheme.colors.accent)
-                            Text("Saves current EQ settings", fontSize = 10.sp, color = EqifyTheme.colors.textMuted)
-                        }
-                    }
-                }
-                Spacer(Modifier.height(8.dp))
-                Surface(
-                    shape = RoundedCornerShape(12.dp), color = EqifyTheme.colors.accent.copy(alpha = 0.1f),
-                    modifier = Modifier.fillMaxWidth().clickable { onImport() }
-                ) {
-                    Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("⇩", fontSize = 18.sp, color = EqifyTheme.colors.accent, fontWeight = FontWeight.Bold)
-                        Column {
-                            Text("Import shared profile", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = EqifyTheme.colors.accent)
-                            Text("Paste an EQify code or open a .eqify.json file", fontSize = 10.sp, color = EqifyTheme.colors.textMuted)
-                        }
-                    }
+    EqSheet(
+        title = "EQ presets",
+        subtitle = "Choose a tone. Headphone correction and bass are added on top.",
+        onDismiss = onDismiss,
+        actions = {
+            TextAction("Import", onImport, icon = EqIcons.Download)
+            TonalButton("New profile", onNewProfile, icon = EqIcons.Add)
+        }
+    ) {
+        val builtIn = allPresets.filter { candidate -> customPresets.none { it.equals(candidate, ignoreCase = true) } }
+        if (customPresets.isNotEmpty()) {
+            SectionHeader("My profiles")
+            EqCard(contentPadding = PaddingValues(0.dp)) {
+                customPresets.forEachIndexed { i, name ->
+                    if (i > 0) HorizontalDivider(color = EqifyTheme.colors.outline)
+                    PresetRow(name, name == activePreset, isCustom = true, onSelect = { onSelect(name) },
+                        onDelete = { onDelete(name) }, onRename = { onRename(name) }, onShare = { onShare(name) })
                 }
             }
-        },
-        confirmButton = {}
-    )
+        }
+        SectionHeader("Built-in")
+        EqCard(contentPadding = PaddingValues(0.dp)) {
+            builtIn.forEachIndexed { i, name ->
+                if (i > 0) HorizontalDivider(color = EqifyTheme.colors.outline)
+                PresetRow(name, name == activePreset, isCustom = false, onSelect = { onSelect(name) },
+                    onDelete = {}, onShare = { onShare(name) })
+            }
+        }
+    }
 }
 
 @Composable
@@ -888,42 +1010,31 @@ private fun PresetRow(
     onSelect: () -> Unit, onDelete: () -> Unit, onRename: () -> Unit = {},
     onShare: (() -> Unit)? = null
 ) {
-    Row(
-        modifier = Modifier.fillMaxWidth().clickable { onSelect() }.padding(vertical = 8.dp, horizontal = 2.dp),
-        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp),
-            modifier = Modifier.weight(1f)) {
-            Box(modifier = Modifier.size(18.dp), contentAlignment = Alignment.Center) {
-                if (isActive) {
-                    Surface(shape = RoundedCornerShape(50), color = EqifyTheme.colors.accent) {
-                        Box(Modifier.size(18.dp), contentAlignment = Alignment.Center) {
-                            Box(Modifier.size(8.dp).background(EqifyTheme.colors.onAccent, RoundedCornerShape(50)))
-                        }
+    val c = EqifyTheme.colors
+    var menuOpen by remember { mutableStateOf(false) }
+    SettingRow(
+        title = name,
+        icon = if (isActive) EqIcons.CheckCircle else null,
+        onClick = onSelect,
+        modifier = Modifier.semantics { selected = isActive },
+        trailing = {
+            Box {
+                if (isCustom) {
+                    IconAction(EqIcons.More, "Options for $name", { menuOpen = true })
+                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }, containerColor = c.surfaceHighest) {
+                        if (onShare != null) MenuItem("Share", EqIcons.Share) { menuOpen = false; onShare() }
+                        MenuItem("Rename", EqIcons.Edit) { menuOpen = false; onRename() }
+                        MenuItem("Delete", EqIcons.Delete) { menuOpen = false; onDelete() }
                     }
-                } else {
-                    Box(Modifier.size(18.dp).background(EqifyTheme.colors.textMuted.copy(alpha = 0.2f), RoundedCornerShape(50)))
+                } else if (onShare != null) {
+                    IconAction(EqIcons.Share, "Share $name", onShare)
                 }
             }
-            Text(name, fontSize = 14.sp,
-                color = if (isActive) EqifyTheme.colors.textPrimary else EqifyTheme.colors.textMuted,
-                fontWeight = if (isActive) FontWeight.SemiBold else FontWeight.Normal)
         }
-        if (onShare != null) {
-            TextButton(onClick = onShare, contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)) {
-                Text("Share", fontSize = 12.sp, color = EqifyTheme.colors.accent)
-            }
-        }
-        if (isCustom) {
-            TextButton(onClick = onRename, contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)) {
-                Text("Rename", fontSize = 12.sp, color = EqifyTheme.colors.accent)
-            }
-            TextButton(onClick = onDelete, contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)) {
-                Text("Delete", fontSize = 12.sp, color = EqifyTheme.colors.textMuted)
-            }
-        }
-    }
+    )
 }
+
+// ── Short dialogs ─────────────────────────────────────────────────────
 
 @Composable
 fun NewProfileDialog(
@@ -933,51 +1044,41 @@ fun NewProfileDialog(
 ) {
     var name by remember { mutableStateOf("") }
     AlertDialog(
-        onDismissRequest = onDismiss, containerColor = EqifyTheme.colors.surfaceRaised,
-        title = { Text("New Profile", color = EqifyTheme.colors.textPrimary, fontWeight = FontWeight.Bold, fontSize = 16.sp) },
+        onDismissRequest = onDismiss,
+        title = { Text("New profile", style = MaterialTheme.typography.titleMedium) },
         text = {
-            Column {
+            Column(verticalArrangement = Arrangement.spacedBy(EqSpacing.m)) {
                 Text("Give this EQ setting a name. Your current slider positions will be saved.",
-                    color = EqifyTheme.colors.textMuted, fontSize = 12.sp)
-                Spacer(Modifier.height(14.dp))
+                    style = MaterialTheme.typography.bodyMedium, color = EqifyTheme.colors.textMuted)
                 OutlinedTextField(
                     value = name, onValueChange = { name = it },
-                    placeholder = { Text("e.g. Late Night, Gym, Study…", color = EqifyTheme.colors.textMuted, fontSize = 12.sp) },
+                    placeholder = { Text("e.g. Late Night, Gym, Study…") },
                     singleLine = true, modifier = Modifier.fillMaxWidth(),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = EqifyTheme.colors.accent, unfocusedBorderColor = EqifyTheme.colors.accent.copy(alpha = 0.3f),
-                        cursorColor = EqifyTheme.colors.accent, focusedTextColor = EqifyTheme.colors.textPrimary, unfocusedTextColor = EqifyTheme.colors.textPrimary)
+                    isError = errorMessage != null,
+                    supportingText = errorMessage?.let { { Text(it) } }
                 )
-                errorMessage?.let {
-                    Spacer(Modifier.height(6.dp))
-                    Text(it, color = EqifyTheme.colors.error, fontSize = 11.sp)
-                }
             }
         },
-        confirmButton = {
-            TextButton(onClick = { if (name.isNotBlank()) onConfirm(name.trim()) }, enabled = name.isNotBlank()) {
-                Text("Create", color = EqifyTheme.colors.accent, fontWeight = FontWeight.Bold)
-            }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel", color = EqifyTheme.colors.textMuted) } }
+        confirmButton = { TextAction("Create", { if (name.isNotBlank()) onConfirm(name.trim()) }, enabled = name.isNotBlank()) },
+        dismissButton = { TextAction("Cancel", onDismiss) }
     )
 }
 
 @Composable
 fun DeleteConfirmDialog(presetName: String, onConfirm: () -> Unit, onDismiss: () -> Unit) {
-    AlertDialog(
-        onDismissRequest = onDismiss, containerColor = EqifyTheme.colors.surfaceRaised,
-        title = { Text("Delete Profile", color = EqifyTheme.colors.textPrimary, fontWeight = FontWeight.Bold, fontSize = 16.sp) },
-        text  = { Text("Delete \"$presetName\"? This cannot be undone.", color = EqifyTheme.colors.textMuted, fontSize = 13.sp) },
-        confirmButton = {
-            TextButton(onClick = onConfirm) { Text("Delete", color = EqifyTheme.colors.error, fontWeight = FontWeight.Bold) }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel", color = EqifyTheme.colors.textMuted) } }
+    ConfirmDialog(
+        title = "Delete profile?",
+        message = "Delete \"$presetName\"? This cannot be undone.",
+        confirmLabel = "Delete",
+        destructive = true,
+        onConfirm = onConfirm,
+        onDismiss = onDismiss
     )
 }
 
-// ── Profile sharing dialogs ───────────────────────────────────────────
+// ── Profile sharing sheets ────────────────────────────────────────────
 
+/** Also used by HeadphonesScreen (correction-only shares); keep this signature stable. */
 @Composable
 fun ShareProfileDialog(
     draft: ShareDraft,
@@ -988,77 +1089,64 @@ fun ShareProfileDialog(
     onSaveFile: () -> Unit,
     onDismiss: () -> Unit
 ) {
+    val c = EqifyTheme.colors
     var showQr by remember { mutableStateOf(false) }
-    AlertDialog(
-        onDismissRequest = onDismiss, containerColor = EqifyTheme.colors.surfaceRaised,
-        title = { Text("Share \"${draft.name}\"", color = EqifyTheme.colors.textPrimary, fontWeight = FontWeight.Bold, fontSize = 16.sp) },
-        text = {
-            Column(Modifier.verticalScroll(rememberScrollState())) {
-                if (draft.isBuiltIn) {
-                    Text("This is a built-in preset; everyone with EQify already has it.",
-                        color = EqifyTheme.colors.textMuted, fontSize = 11.sp)
-                    Spacer(Modifier.height(8.dp))
-                }
-                if (draft.correctionOnly) {
-                    Text("Headphone correction only (flat tone). The receiver can save it to " +
-                        "their custom headphone profiles.", color = EqifyTheme.colors.textMuted, fontSize = 11.sp)
-                    Spacer(Modifier.height(8.dp))
-                    draft.correction?.let { ToneCurvePreview(it.gains) }
-                } else {
-                    ToneCurvePreview(draft.tone)
-                }
-                Spacer(Modifier.height(10.dp))
-                if (!draft.correctionOnly) draft.correction?.let { c ->
-                    CheckRow(
-                        checked = draft.includeCorrection,
-                        onChange = onIncludeCorrection,
-                        label = "Include headphone correction",
-                        detail = c.name + if (c.kind == SharedCorrection.Kind.CUSTOM) " (imported)" else ""
-                    )
-                } ?: Text("No headphone correction is loaded, so only the tone is shared.",
-                    color = EqifyTheme.colors.textMuted, fontSize = 11.sp)
-                draft.bass?.let { bass ->
-                    CheckRow(
-                        checked = draft.includeBass,
-                        onChange = onIncludeBass,
-                        label = "Include bass boost",
-                        detail = "+${bass.toInt()} dB (the receiver chooses whether to apply it)"
-                    )
-                }
-                Spacer(Modifier.height(10.dp))
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically) {
-                    Text(if (showQr) "QR code" else "Profile code", color = EqifyTheme.colors.textMuted, fontSize = 10.sp)
-                    TextButton(onClick = { showQr = !showQr }) {
-                        Text(if (showQr) "Show code" else "Show QR", color = EqifyTheme.colors.accent, fontSize = 12.sp)
-                    }
-                }
-                if (showQr) {
-                    ProfileQrImage(draft.link)
-                    Spacer(Modifier.height(4.dp))
-                    Text("On another phone, use Scan QR in Import shared profile, or scan with the camera app " +
-                        "to open it in EQify.", color = EqifyTheme.colors.textMuted, fontSize = 10.sp)
-                } else {
-                    SelectionContainer {
-                        Text(draft.code, color = EqifyTheme.colors.textPrimary, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
-                    }
-                }
-                Spacer(Modifier.height(6.dp))
-                Text("Contains only EQ values and names. No listening history or device details.",
-                    color = EqifyTheme.colors.textMuted, fontSize = 10.sp)
-                Spacer(Modifier.height(8.dp))
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    TextButton(onClick = onCopy) { Text("Copy code", color = EqifyTheme.colors.accent) }
-                    TextButton(onClick = onShareText) { Text("Share…", color = EqifyTheme.colors.accent) }
-                    TextButton(onClick = onSaveFile) { Text("Save file", color = EqifyTheme.colors.accent) }
+    EqSheet(
+        title = "Share \"${draft.name}\"",
+        subtitle = "Only EQ values and names, with no listening history or device details.",
+        onDismiss = onDismiss,
+        actions = {
+            TextAction("Save file", onSaveFile)
+            TonalButton("Copy", onCopy, icon = EqIcons.Copy)
+            PrimaryButton("Share", onShareText, icon = EqIcons.Share)
+        }
+    ) {
+        if (draft.isBuiltIn) StatusBanner("This is a built-in preset; everyone with EQify already has it.", StatusKind.NEUTRAL)
+        if (draft.correctionOnly) {
+            Text("Headphone correction only (flat tone). The receiver can save it to their custom headphone profiles.",
+                style = MaterialTheme.typography.bodyMedium, color = c.textMuted)
+            draft.correction?.let { ToneCurve(it.gains, height = 88.dp) }
+        } else {
+            ToneCurve(draft.tone, height = 88.dp)
+        }
+        if (!draft.correctionOnly) draft.correction?.let { corr ->
+            CheckRow(
+                checked = draft.includeCorrection,
+                onChange = onIncludeCorrection,
+                label = "Include headphone correction",
+                detail = corr.name + if (corr.kind == SharedCorrection.Kind.CUSTOM) " (imported)" else ""
+            )
+        } ?: Text("No headphone correction is loaded, so only the tone is shared.",
+            style = MaterialTheme.typography.bodySmall, color = c.textMuted)
+        draft.bass?.let { bass ->
+            CheckRow(
+                checked = draft.includeBass,
+                onChange = onIncludeBass,
+                label = "Include bass boost",
+                detail = "+${bass.toInt()} dB (the receiver chooses whether to apply it)"
+            )
+        }
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            SectionHeader(if (showQr) "QR code" else "Profile code", modifier = Modifier.weight(1f))
+            TextAction(if (showQr) "Show code" else "Show QR", { showQr = !showQr },
+                icon = if (showQr) EqIcons.Copy else EqIcons.QrCode)
+        }
+        if (showQr) {
+            ProfileQrImage(draft.link)
+            Text("On another phone, use Scan QR in Import shared profile, or scan with the camera app to open it in EQify.",
+                style = MaterialTheme.typography.bodySmall, color = c.textMuted)
+        } else {
+            Surface(shape = EqifyShapes.small, color = c.surfaceHighest, modifier = Modifier.fillMaxWidth()) {
+                SelectionContainer {
+                    Text(draft.code, style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                        color = c.textPrimary, modifier = Modifier.padding(EqSpacing.m))
                 }
             }
-        },
-        confirmButton = {},
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Close", color = EqifyTheme.colors.textMuted) } }
-    )
+        }
+    }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ImportProfileDialog(
     error: String?,
@@ -1069,51 +1157,35 @@ fun ImportProfileDialog(
     onScanQr: () -> Unit,
     onDismiss: () -> Unit
 ) {
+    val c = EqifyTheme.colors
     var text by remember { mutableStateOf("") }
-    AlertDialog(
-        onDismissRequest = onDismiss, containerColor = EqifyTheme.colors.surfaceRaised,
-        title = { Text("Import shared profile", color = EqifyTheme.colors.textPrimary, fontWeight = FontWeight.Bold, fontSize = 16.sp) },
-        text = {
-            Column(Modifier.verticalScroll(rememberScrollState())) {
-                Text("Paste an EQify code (it starts with EQIFY1:), scan its QR code, or open a .eqify.json file. " +
-                    "You'll see a preview before anything is saved.",
-                    color = EqifyTheme.colors.textMuted, fontSize = 12.sp)
-                Spacer(Modifier.height(10.dp))
-                OutlinedTextField(
-                    value = text, onValueChange = { text = it.take(EqProfileCodec.MAX_INPUT_CHARS) },
-                    enabled = !busy,
-                    placeholder = { Text("EQIFY1:…", color = EqifyTheme.colors.textMuted, fontSize = 12.sp) },
-                    minLines = 3, maxLines = 6, modifier = Modifier.fillMaxWidth(),
-                    isError = error != null,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = EqifyTheme.colors.accent, unfocusedBorderColor = EqifyTheme.colors.accent.copy(alpha = 0.3f),
-                        cursorColor = EqifyTheme.colors.accent, focusedTextColor = EqifyTheme.colors.textPrimary, unfocusedTextColor = EqifyTheme.colors.textPrimary)
-                )
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    TextButton(enabled = !busy, onClick = { text = onPasteFromClipboard().take(EqProfileCodec.MAX_INPUT_CHARS) }) {
-                        Text("Paste", color = EqifyTheme.colors.accent)
-                    }
-                    TextButton(enabled = !busy, onClick = onScanQr) {
-                        Text("Scan QR", color = EqifyTheme.colors.accent)
-                    }
-                    TextButton(enabled = !busy, onClick = onOpenFile) {
-                        Text("Open file…", color = EqifyTheme.colors.accent)
-                    }
-                }
-                if (busy) LinearProgressIndicator(Modifier.fillMaxWidth(), color = EqifyTheme.colors.accent)
-                error?.let {
-                    Spacer(Modifier.height(6.dp))
-                    Text(it, color = EqifyTheme.colors.error, fontSize = 11.sp)
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(enabled = !busy && text.isNotBlank(), onClick = { onImportText(text) }) {
-                Text("Preview", color = EqifyTheme.colors.accent, fontWeight = FontWeight.Bold)
-            }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel", color = EqifyTheme.colors.textMuted) } }
-    )
+    EqSheet(
+        title = "Import shared profile",
+        subtitle = "You'll see a preview before anything is saved.",
+        onDismiss = onDismiss,
+        dismissible = !busy,
+        actions = {
+            PrimaryButton("Preview", { onImportText(text) }, enabled = !busy && text.isNotBlank())
+        }
+    ) {
+        FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(EqSpacing.s),
+            verticalArrangement = Arrangement.spacedBy(EqSpacing.s)) {
+            PillChip("Paste", leadingIcon = EqIcons.Paste,
+                onClick = { if (!busy) text = onPasteFromClipboard().take(EqProfileCodec.MAX_INPUT_CHARS) })
+            PillChip("Scan QR", leadingIcon = EqIcons.QrScan, onClick = { if (!busy) onScanQr() })
+            PillChip("Open file", leadingIcon = EqIcons.FileOpen, onClick = { if (!busy) onOpenFile() })
+        }
+        OutlinedTextField(
+            value = text, onValueChange = { text = it.take(EqProfileCodec.MAX_INPUT_CHARS) },
+            enabled = !busy,
+            label = { Text("EQify code") },
+            placeholder = { Text("EQIFY1:…") },
+            minLines = 3, maxLines = 6, modifier = Modifier.fillMaxWidth(),
+            isError = error != null
+        )
+        if (busy) LinearProgressIndicator(Modifier.fillMaxWidth(), color = c.accent, trackColor = c.surfaceHighest)
+        error?.let { StatusBanner(it, StatusKind.ERROR) }
+    }
 }
 
 @Composable
@@ -1123,6 +1195,7 @@ fun ImportPreviewDialog(
     onConfirm: (saveTone: Boolean, useCorrection: Boolean, applyBass: Boolean, useNow: Boolean) -> Unit,
     onDismiss: () -> Unit
 ) {
+    val c = EqifyTheme.colors
     val profile = preview.profile
     // A correction-only share has a flat tone; saving it as a preset would just add clutter.
     val flatTone = profile.tone.all { it == 0f }
@@ -1132,83 +1205,69 @@ fun ImportPreviewDialog(
     val nothingSelected = !saveTone && !(useCorrection && profile.correction != null) &&
         !(applyBass && profile.bass != null)
 
-    AlertDialog(
-        onDismissRequest = { if (!busy) onDismiss() }, containerColor = EqifyTheme.colors.surfaceRaised,
-        title = { Text("Import \"${profile.name}\"", color = EqifyTheme.colors.textPrimary, fontWeight = FontWeight.Bold, fontSize = 16.sp) },
-        text = {
-            Column(Modifier.verticalScroll(rememberScrollState())) {
-                ToneCurvePreview(profile.tone)
-                Spacer(Modifier.height(10.dp))
-                CheckRow(saveTone, { saveTone = it }, "Save tone as a preset",
-                    "Added to My profiles; an existing preset is never replaced.", enabled = !busy)
-                profile.correction?.let { c ->
-                    val detail = when {
-                        c.kind == SharedCorrection.Kind.DATASET && preview.datasetMatch != null ->
-                            "${preview.datasetMatch} (found in your headphone catalog)"
-                        c.kind == SharedCorrection.Kind.DATASET ->
-                            "${c.name}: not found in your catalog, so it will be saved as an imported correction"
-                        else -> "${c.name}: saved to My custom profiles"
-                    }
-                    CheckRow(useCorrection, { useCorrection = it }, "Use headphone correction", detail, enabled = !busy)
-                }
-                profile.bass?.let { bass ->
-                    CheckRow(applyBass, { applyBass = it }, "Also set bass boost",
-                        "Shared level +${bass.toInt()} dB; changes your global Bass Booster setting.", enabled = !busy)
-                }
-                if (preview.autoGenreOn) {
-                    Spacer(Modifier.height(6.dp))
-                    Text("Auto-Genre is on, so a tone you use now will be replaced by the genre preset on the next track.",
-                        color = EqifyTheme.colors.warning, fontSize = 11.sp)
-                }
-                if (busy) {
-                    Spacer(Modifier.height(6.dp))
-                    LinearProgressIndicator(Modifier.fillMaxWidth(), color = EqifyTheme.colors.accent)
-                }
+    EqSheet(
+        title = "Import \"${profile.name}\"",
+        onDismiss = onDismiss,
+        dismissible = !busy,
+        actions = {
+            TonalButton("Save", { onConfirm(saveTone, useCorrection, applyBass, false) }, enabled = !busy && !nothingSelected)
+            PrimaryButton("Save & use", { onConfirm(saveTone, useCorrection, applyBass, true) }, enabled = !busy)
+        }
+    ) {
+        ToneCurve(profile.tone, height = 96.dp)
+        CheckRow(saveTone, { saveTone = it }, "Save tone as a preset",
+            "Added to My profiles; an existing preset is never replaced.", enabled = !busy)
+        profile.correction?.let { corr ->
+            val detail = when {
+                corr.kind == SharedCorrection.Kind.DATASET && preview.datasetMatch != null ->
+                    "${preview.datasetMatch} (found in your headphone catalog)"
+                corr.kind == SharedCorrection.Kind.DATASET ->
+                    "${corr.name}: not found in your catalog, so it will be saved as an imported correction"
+                else -> "${corr.name}: saved to My custom profiles"
             }
-        },
-        confirmButton = {
-            Row {
-                TextButton(enabled = !busy && !nothingSelected,
-                    onClick = { onConfirm(saveTone, useCorrection, applyBass, false) }) {
-                    Text("Save", color = EqifyTheme.colors.accent)
-                }
-                TextButton(enabled = !busy,
-                    onClick = { onConfirm(saveTone, useCorrection, applyBass, true) }) {
-                    Text("Save & use", color = EqifyTheme.colors.accent, fontWeight = FontWeight.Bold)
-                }
-            }
-        },
-        dismissButton = { TextButton(enabled = !busy, onClick = onDismiss) { Text("Cancel", color = EqifyTheme.colors.textMuted) } }
-    )
+            CheckRow(useCorrection, { useCorrection = it }, "Use headphone correction", detail, enabled = !busy)
+        }
+        profile.bass?.let { bass ->
+            CheckRow(applyBass, { applyBass = it }, "Also set bass boost",
+                "Shared level +${bass.toInt()} dB; changes your global Bass Booster setting.", enabled = !busy)
+        }
+        if (preview.autoGenreOn) {
+            StatusBanner("Auto-Genre is on, so a tone you use now will be replaced by the genre preset on the next track.",
+                StatusKind.WARNING)
+        }
+        if (busy) LinearProgressIndicator(Modifier.fillMaxWidth(), color = c.accent, trackColor = c.surfaceHighest)
+    }
 }
 
 @Composable
 private fun CheckRow(
     checked: Boolean, onChange: (Boolean) -> Unit, label: String, detail: String, enabled: Boolean = true
 ) {
+    val c = EqifyTheme.colors
     Row(
-        Modifier.fillMaxWidth().clickable(enabled = enabled) { onChange(!checked) }.padding(vertical = 2.dp),
+        Modifier.fillMaxWidth().clip(EqifyShapes.medium)
+            .toggleable(value = checked, enabled = enabled, role = Role.Checkbox, onValueChange = onChange)
+            .heightIn(min = EqSpacing.touchTarget).padding(vertical = EqSpacing.xs),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Checkbox(checked = checked, onCheckedChange = onChange, enabled = enabled,
-            colors = CheckboxDefaults.colors(checkedColor = EqifyTheme.colors.accent))
-        Column {
-            Text(label, color = EqifyTheme.colors.textPrimary, fontSize = 13.sp)
-            Text(detail, color = EqifyTheme.colors.textMuted, fontSize = 10.sp)
+        Checkbox(checked = checked, onCheckedChange = null, enabled = enabled,
+            modifier = Modifier.padding(horizontal = EqSpacing.m))
+        Column(Modifier.weight(1f)) {
+            Text(label, style = MaterialTheme.typography.titleSmall, color = if (enabled) c.textPrimary else c.textFaint)
+            Text(detail, style = MaterialTheme.typography.bodySmall, color = c.textMuted)
         }
     }
 }
 
 /**
  * Draws the QR modules directly (no Bitmap). Always black on white with the
- * spec's quiet zone, regardless of the dark theme, so scanners can read it.
+ * spec's quiet zone, regardless of the theme, so scanners can read it.
  */
 @Composable
 private fun ProfileQrImage(code: String) {
     val matrix = remember(code) { runCatching { ProfileQrCode.matrix(code) }.getOrNull() }
     if (matrix == null) {
-        Text("This code is too long to show as a QR code. Copy or share it as text instead.",
-            color = EqifyTheme.colors.error, fontSize = 11.sp)
+        StatusBanner("This code is too long to show as a QR code. Copy or share it as text instead.", StatusKind.ERROR)
         return
     }
     Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
@@ -1217,6 +1276,7 @@ private fun ProfileQrImage(code: String) {
                 .widthIn(max = 260.dp)
                 .fillMaxWidth()
                 .aspectRatio(1f)
+                .clip(EqifyShapes.medium)
                 .semantics { contentDescription = "QR code for this EQ profile" }
         ) {
             val modules = matrix.width + 2 * ProfileQrCode.QUIET_ZONE_MODULES
@@ -1227,7 +1287,7 @@ private fun ProfileQrImage(code: String) {
                     if (!matrix.get(x, y)) continue
                     drawRect(
                         Color.Black,
-                        topLeft = androidx.compose.ui.geometry.Offset(
+                        topLeft = Offset(
                             (x + ProfileQrCode.QUIET_ZONE_MODULES) * cell,
                             (y + ProfileQrCode.QUIET_ZONE_MODULES) * cell
                         ),
@@ -1240,146 +1300,32 @@ private fun ProfileQrImage(code: String) {
     }
 }
 
-/** Eight bars around a 0 dB line; ±12 dB fills the half-height. */
+
+// ── Previews (phase 5): the eight narrow band columns at normal and large font sizes ──
+
 @Composable
-private fun ToneCurvePreview(gains: List<Float>) {
-    // Theme values must be read here: Canvas' draw lambda is not composable.
-    val baseline = EqifyTheme.colors.textPrimary.copy(alpha = 0.15f)
-    val bar = EqifyTheme.colors.accent
-    Column {
-        Canvas(Modifier.fillMaxWidth().height(64.dp)) {
-            val mid = size.height / 2f
-            val slot = size.width / gains.size.coerceAtLeast(1)
-            drawLine(baseline,
-                androidx.compose.ui.geometry.Offset(0f, mid), androidx.compose.ui.geometry.Offset(size.width, mid), 1.dp.toPx())
-            gains.forEachIndexed { i, g ->
-                val h = (g.coerceIn(-12f, 12f) / 12f) * (mid - 2.dp.toPx())
-                val x = slot * i + slot / 2f
-                drawLine(bar,
-                    androidx.compose.ui.geometry.Offset(x, mid), androidx.compose.ui.geometry.Offset(x, mid - h),
-                    (slot * 0.45f).coerceAtMost(14.dp.toPx()), StrokeCap.Round)
-            }
-        }
-        Row(Modifier.fillMaxWidth()) {
-            EqProfileManager.BAND_LABELS.forEachIndexed { i, label ->
-                Text("$label\n${"%+.1f".format(gains.getOrElse(i) { 0f })}", color = EqifyTheme.colors.textMuted,
-                    fontSize = 8.sp, lineHeight = 10.sp, modifier = Modifier.weight(1f),
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-            }
+private fun BandsPreviewContent() = EQifyTheme {
+    Box(Modifier.background(EqifyTheme.colors.background).padding(EqSpacing.l)) {
+        EqCard(modifier = Modifier.height(360.dp), contentPadding = PaddingValues(vertical = EqSpacing.m, horizontal = EqSpacing.s)) {
+            EqBandsPanel(
+                bands = listOf(6f, 4f, -1.5f, -12f, 0f, 12f, 3.5f, -6f),
+                dimmed = false,
+                onChange = { _, _ -> },
+                onReadoutClick = {},
+                modifier = Modifier.fillMaxSize()
+            )
         }
     }
 }
 
-// ── Vertical EQ Slider ────────────────────────────────────────────────
-
+@androidx.compose.ui.tooling.preview.Preview(name = "EQ bands · font 1×", widthDp = 360)
 @Composable
-fun VerticalEqSlider(gainDb: Float, frequency: String, onChange: (Float) -> Unit, modifier: Modifier = Modifier) {
-    val currentOnChange by rememberUpdatedState(onChange)
-    val currentGain by rememberUpdatedState(gainDb)
-    val quantize: (Float) -> Float = {
-        ((it * 2).roundToInt() / 2f).coerceIn(-12f, 12f)
-    }
+private fun BandsFont100Preview() = BandsPreviewContent()
 
-    var showPreciseInput by remember { mutableStateOf(false) }
-    var draft by remember(gainDb, showPreciseInput) { mutableStateOf("%.1f".format(gainDb)) }
-    if (showPreciseInput) {
-        AlertDialog(
-            onDismissRequest = { showPreciseInput = false },
-            title = { Text("$frequency band") },
-            text = {
-                Column {
-                    OutlinedTextField(
-                        value = draft,
-                        onValueChange = { draft = it },
-                        singleLine = true,
-                        label = { Text("Gain (-12 to +12 dB)") },
-                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
-                            keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal
-                        )
-                    )
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                        TextButton(onClick = { onChange((gainDb - .5f).coerceAtLeast(-12f)); showPreciseInput = false }) { Text("-0.5") }
-                        TextButton(onClick = { onChange(0f); showPreciseInput = false }) { Text("Zero") }
-                        TextButton(onClick = { onChange((gainDb + .5f).coerceAtMost(12f)); showPreciseInput = false }) { Text("+0.5") }
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    draft.replace(',', '.').toFloatOrNull()?.let { onChange(quantize(it)) }
-                    showPreciseInput = false
-                }) { Text("Apply") }
-            },
-            dismissButton = { TextButton(onClick = { showPreciseInput = false }) { Text("Cancel") } }
-        )
-    }
+@androidx.compose.ui.tooling.preview.Preview(name = "EQ bands · font 1.5×", widthDp = 360, fontScale = 1.5f)
+@Composable
+private fun BandsFont150Preview() = BandsPreviewContent()
 
-    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = modifier.fillMaxHeight()) {
-        Text(
-            "%+.1f".format(gainDb),
-            fontSize = 10.sp,
-            color = EqifyTheme.colors.accent,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.clickable { showPreciseInput = true }
-        )
-        Spacer(Modifier.height(6.dp))
-        // Read outside the draw lambda (not composable). Thumb keeps today's
-        // lighter-than-fill look until the phase 4 slider redesign.
-        val trackColor = EqifyTheme.colors.textPrimary.copy(alpha = 0.12f)
-        val fillColor = EqifyTheme.colors.accent
-        val thumbColor = EqifyTheme.colors.onAccentContainer
-        Canvas(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth()
-                .semantics {
-                    progressBarRangeInfo = ProgressBarRangeInfo(gainDb, -12f..12f, 47)
-                    setProgress { requested ->
-                        currentOnChange(quantize(requested))
-                        true
-                    }
-                }
-                .pointerInput(Unit) {
-                    var dragGain = 0f
-                    detectVerticalDragGestures(
-                        onDragStart = { dragGain = currentGain },
-                        onVerticalDrag = { change, dragAmount ->
-                            change.consume()
-                            val usableHeight = (size.height - 20.dp.toPx()).coerceAtLeast(1f)
-                            dragGain = (dragGain - dragAmount * 24f / usableHeight).coerceIn(-12f, 12f)
-                            currentOnChange(quantize(dragGain))
-                        }
-                    )
-                }
-        ) {
-            val centerX = size.width / 2f
-            val inset = 10.dp.toPx()
-            val top = inset
-            val bottom = size.height - inset
-            val fraction = ((12f - gainDb) / 24f).coerceIn(0f, 1f)
-            val thumbY = top + (bottom - top) * fraction
-
-            drawLine(
-                color = trackColor,
-                start = androidx.compose.ui.geometry.Offset(centerX, top),
-                end = androidx.compose.ui.geometry.Offset(centerX, bottom),
-                strokeWidth = 4.dp.toPx(),
-                cap = StrokeCap.Round
-            )
-            drawLine(
-                color = fillColor,
-                start = androidx.compose.ui.geometry.Offset(centerX, thumbY),
-                end = androidx.compose.ui.geometry.Offset(centerX, bottom),
-                strokeWidth = 4.dp.toPx(),
-                cap = StrokeCap.Round
-            )
-            drawCircle(
-                color = thumbColor,
-                radius = 9.dp.toPx(),
-                center = androidx.compose.ui.geometry.Offset(centerX, thumbY)
-            )
-        }
-        Spacer(Modifier.height(6.dp))
-        Text(frequency, fontSize = 9.sp, color = EqifyTheme.colors.textMuted)
-    }
-}
+@androidx.compose.ui.tooling.preview.Preview(name = "EQ bands · font 2×", widthDp = 360, fontScale = 2f)
+@Composable
+private fun BandsFont200Preview() = BandsPreviewContent()

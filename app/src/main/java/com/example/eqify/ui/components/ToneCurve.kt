@@ -27,7 +27,8 @@ enum class ToneCurveStyle { CURVE, BARS }
 fun ToneCurve(
     gains: List<Float>,
     modifier: Modifier = Modifier,
-    height: Dp = 64.dp,
+    /** Null = size comes from [modifier] (e.g. fillMaxSize behind the EQ sliders). */
+    height: Dp? = 64.dp,
     style: ToneCurveStyle = ToneCurveStyle.CURVE,
     rangeDb: Float = 12f,
     showGrid: Boolean = true,
@@ -39,7 +40,7 @@ fun ToneCurve(
     val zeroLine = EqifyTheme.colors.outlineStrong
     val gridLine = EqifyTheme.colors.outline
     Canvas(
-        modifier.fillMaxWidth().height(height)
+        modifier.fillMaxWidth().then(if (height != null) Modifier.height(height) else Modifier)
             .then(if (contentDescription != null) Modifier.semantics { this.contentDescription = contentDescription } else Modifier)
     ) {
         if (gains.isEmpty()) return@Canvas

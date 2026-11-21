@@ -1,6 +1,9 @@
 package com.example.eqify.ui.components
 
 import androidx.annotation.DrawableRes
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.runtime.getValue
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -176,8 +179,8 @@ fun PillChip(
     onClick: (() -> Unit)? = null
 ) {
     val c = EqifyTheme.colors
-    val bg = if (selected) c.accentContainer else c.surfaceHighest
-    val fg = if (selected) c.onAccentContainer else c.textPrimary
+    val bg by animateColorAsState(if (selected) c.accentContainer else c.surfaceHighest, tween(180), label = "chip-bg")
+    val fg by animateColorAsState(if (selected) c.onAccentContainer else c.textPrimary, tween(180), label = "chip-fg")
     val content: @Composable () -> Unit = {
         Row(
             Modifier.heightIn(min = 32.dp).padding(horizontal = EqSpacing.m),

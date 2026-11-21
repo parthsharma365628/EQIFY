@@ -16,6 +16,7 @@ import com.example.eqify.ui.theme.*
  * light. Open this file in Studio's Split/Design view. Not used at runtime.
  */
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun KitSample() {
     val c = EqifyTheme.colors
@@ -28,7 +29,7 @@ private fun KitSample() {
     ) {
         SectionHeader("Now playing", accent = true)
         EqCard(title = "Sound", action = { IconAction(EqIcons.More, "More options", {}) }) {
-            Row(horizontalArrangement = Arrangement.spacedBy(EqSpacing.s)) {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(EqSpacing.s), verticalArrangement = Arrangement.spacedBy(EqSpacing.xs)) {
                 PillChip("Hip-Hop", selected = true, trailingIcon = EqIcons.Expand, onClick = {})
                 StatusChip("High confidence", StatusKind.SUCCESS)
             }
@@ -49,7 +50,7 @@ private fun KitSample() {
             HorizontalDivider(color = c.outline)
             SettingRow("Clear genre history", icon = EqIcons.Delete, destructive = true, onClick = {})
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(EqSpacing.l)) {
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(EqSpacing.l)) {
             ValueReadout(3.5f, "dB", signed = true)
             ValueReadout(-12f, "dB", signed = true)
             ValueReadout(0f, "dB", signed = true)
@@ -60,7 +61,7 @@ private fun KitSample() {
             onAction = {}, onDismiss = {})
         StatusBanner("Gain values could not be downloaded.", StatusKind.ERROR, actionLabel = "Retry", onAction = {})
         StatusBanner("Auto-Genre will replace this tone on the next track.", StatusKind.WARNING)
-        Row(horizontalArrangement = Arrangement.spacedBy(EqSpacing.s)) {
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(EqSpacing.s), verticalArrangement = Arrangement.spacedBy(EqSpacing.s)) {
             PrimaryButton("Save & use", {}, icon = EqIcons.Check)
             TonalButton("Save", {})
             TextAction("Cancel", {})
@@ -104,3 +105,15 @@ private fun IconsPreview() = EQifyTheme {
         }
     }
 }
+
+// ── Large system font sizes (phase 5) ─────────────────────────────────
+// Android lets users scale text up to 2×. Rows, chips and toggles must wrap
+// or ellipsize, never overlap.
+
+@Preview(name = "Kit · font 1.5×", widthDp = 360, heightDp = 1800, fontScale = 1.5f)
+@Composable
+private fun KitFont150Preview() = EQifyTheme(EqifyPalettes.dark()) { KitSample() }
+
+@Preview(name = "Kit · font 2×", widthDp = 360, heightDp = 2200, fontScale = 2f)
+@Composable
+private fun KitFont200Preview() = EQifyTheme(EqifyPalettes.light()) { KitSample() }

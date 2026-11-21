@@ -15,7 +15,7 @@ import com.example.eqify.ui.theme.EqifyTheme
 /**
  * Material Symbols Rounded icons (Apache 2.0, google/material-design-icons),
  * stored as res/drawable/ic_sym_*.xml so no large icon library is needed.
- * Replaces the text-symbol "icons" (✕ ▾ ⇩ + ★ ✓ ←) and AppGlyph.
+ * Replaces the former text-symbol "icons" (✕ ▾ ⇩ + ★ ✓ ←) and the hand-drawn AppGlyph.
  */
 object EqIcons {
     @DrawableRes val Close = R.drawable.ic_sym_close

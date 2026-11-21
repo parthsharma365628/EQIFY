@@ -1,5 +1,17 @@
 package com.example.eqify
 
+import com.example.eqify.ui.components.EqIcon
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.foundation.background
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextAlign
+import com.example.eqify.ui.components.PrimaryButton
+import com.example.eqify.ui.components.TextAction
+import com.example.eqify.ui.theme.EqSpacing
+import com.example.eqify.ui.theme.PillShape
+import com.example.eqify.ui.components.EqIcons
 import com.example.eqify.ui.theme.EqifyColors
 import com.example.eqify.ui.theme.EqifyTheme
 import com.example.eqify.ui.theme.EQifyTheme
@@ -153,32 +165,48 @@ private fun PermissionWalkthrough(
         else -> "The EQ service is ready. You can change these permissions later in Android Settings."
     }
 
+    val icon = when (step) {
+        0 -> EqIcons.Equalizer
+        1 -> EqIcons.Music
+        2 -> EqIcons.Bluetooth
+        else -> EqIcons.CheckCircle
+    }
+    val primaryLabel = when (step) {
+        0 -> "Start"
+        1 -> "Open settings"
+        2 -> "Grant permissions"
+        else -> "Done"
+    }
+    val c = EqifyTheme.colors
+    // Same steps, texts and actions as before; only the presentation changed (UI_REDESIGN.md phase 5).
     AlertDialog(
         onDismissRequest = {},
-        title = { Text(title) },
+        icon = {
+            Box(Modifier.size(56.dp).clip(PillShape).background(c.accentContainer), contentAlignment = Alignment.Center) {
+                EqIcon(icon, contentDescription = null, tint = c.onAccentContainer, size = 28.dp)
+            }
+        },
+        title = { Text(title, style = MaterialTheme.typography.titleLarge, textAlign = TextAlign.Center) },
         text = {
-            Column {
-                Text(description)
-                Spacer(Modifier.height(16.dp))
+            Column(horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(EqSpacing.l)) {
+                Text(description, style = MaterialTheme.typography.bodyMedium, color = c.textMuted,
+                    textAlign = TextAlign.Center)
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.Center,
+                    Modifier.semantics { contentDescription = "Step ${step + 1} of 4" },
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     repeat(4) { index ->
-                        Surface(
-                            modifier = Modifier.padding(horizontal = 3.dp).size(7.dp),
-                            shape = MaterialTheme.shapes.small,
-                            color = if (index == step)
-                                MaterialTheme.colorScheme.primary
-                            else MaterialTheme.colorScheme.outline
-                        ) {}
+                        val width by animateDpAsState(if (index == step) 20.dp else 8.dp, label = "step-dot")
+                        Box(Modifier.height(8.dp).width(width).clip(PillShape)
+                            .background(if (index == step) c.accent else c.outline))
                     }
                 }
             }
         },
         confirmButton = {
-            TextButton(onClick = {
+            PrimaryButton(primaryLabel, onClick = {
                 when (step) {
                     0 -> step = 1
                     1 -> {
@@ -191,21 +219,10 @@ private fun PermissionWalkthrough(
                     }
                     else -> onFinish()
                 }
-            }) {
-                Text(
-                    when (step) {
-                        0 -> "Start"
-                        1 -> "Open settings"
-                        2 -> "Grant permissions"
-                        else -> "Done"
-                    }
-                )
-            }
+            })
         },
         dismissButton = {
-            if (step > 0 && step < 3) {
-                TextButton(onClick = { step += 1 }) { Text("Skip") }
-            }
+            if (step > 0 && step < 3) TextAction("Skip", { step += 1 })
         }
     )
 }
@@ -240,18 +257,29 @@ fun EqifyApp() {
     Scaffold(
         bottomBar = {
             if (currentRoute == "home" || currentRoute == "eq") {
-                NavigationBar(containerColor = EqifyTheme.colors.surface, tonalElevation = 0.dp) {
+                val c = EqifyTheme.colors
+                // Accent-container indicator; icons tinted by NavigationBarItem colors (no hand-drawn glyphs).
+                val itemColors = NavigationBarItemDefaults.colors(
+                    selectedIconColor = c.onAccentContainer,
+                    selectedTextColor = c.textPrimary,
+                    indicatorColor = c.accentContainer,
+                    unselectedIconColor = c.textMuted,
+                    unselectedTextColor = c.textMuted
+                )
+                NavigationBar(containerColor = c.surface, tonalElevation = 0.dp) {
                     NavigationBarItem(
-                        icon     = { AppGlyph("Home", if (currentRoute == "home") EqifyTheme.colors.textPrimary else EqifyTheme.colors.textMuted) },
-                        label    = { Text("Home") },
+                        icon     = { EqIcon(EqIcons.Home, contentDescription = null, tint = LocalContentColor.current) },
+                        label    = { Text("Home", style = MaterialTheme.typography.labelMedium) },
                         selected = currentRoute == "home",
-                        onClick  = { navigateToTopLevel("home") }
+                        onClick  = { navigateToTopLevel("home") },
+                        colors   = itemColors
                     )
                     NavigationBarItem(
-                        icon     = { AppGlyph("Equalizer", if (currentRoute == "eq") EqifyTheme.colors.textPrimary else EqifyTheme.colors.textMuted) },
-                        label    = { Text("EQ") },
+                        icon     = { EqIcon(EqIcons.Equalizer, contentDescription = null, tint = LocalContentColor.current) },
+                        label    = { Text("EQ", style = MaterialTheme.typography.labelMedium) },
                         selected = currentRoute == "eq",
-                        onClick  = { navigateToTopLevel("eq") }
+                        onClick  = { navigateToTopLevel("eq") },
+                        colors   = itemColors
                     )
                 }
             }

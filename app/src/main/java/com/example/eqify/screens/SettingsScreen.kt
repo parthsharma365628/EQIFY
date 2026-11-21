@@ -1,6 +1,5 @@
 package com.example.eqify
 
-import com.example.eqify.*
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
@@ -8,28 +7,33 @@ import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import android.text.TextUtils
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.annotation.DrawableRes
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.example.eqify.NowPlayingState
-import com.example.eqify.SettingsViewModel
+import com.example.eqify.ui.components.*
 import com.example.eqify.ui.theme.*
+
+/*
+ * Settings (UI_REDESIGN.md §6 "Settings"). UI only: every value and action
+ * goes through SettingsViewModel exactly as before, including the
+ * notification-access check and auto-enable when access is granted.
+ */
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -37,6 +41,7 @@ fun SettingsScreen(
     onNavigateBack: () -> Unit = {},
     vm: SettingsViewModel = viewModel()
 ) {
+    val c = EqifyTheme.colors
     val context       = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
 
@@ -62,9 +67,7 @@ fun SettingsScreen(
     val customProfilesMessage by vm.customProfilesMessage.collectAsState()
     val crashReportingEnabled by vm.crashReportingEnabled.collectAsState()
     val crashReportMessage by vm.crashReportMessage.collectAsState()
-    var lastFmApiKeyDraft by remember(savedLastFmApiKey) {
-        mutableStateOf(savedLastFmApiKey)
-    }
+    val themeSettings by vm.themeSettings.collectAsState()
 
     // ── Runtime / permission state ────────────────────────────────────
     var isPermissionGranted by remember { mutableStateOf(isNotificationServiceEnabled(context)) }
@@ -72,7 +75,9 @@ fun SettingsScreen(
     var showClearCacheDialog by remember { mutableStateOf(false) }
     var showClearHistoryDialog by remember { mutableStateOf(false) }
     var showClearCustomProfilesDialog by remember { mutableStateOf(false) }
-    var showOutputProtectionDialog by remember { mutableStateOf(false) }
+    var showOutputProtectionSheet by remember { mutableStateOf(false) }
+    var showLastFmSheet by remember { mutableStateOf(false) }
+    var showPrivacySheet by remember { mutableStateOf(false) }
 
     // Refresh permission state when user returns from the system settings screen
     DisposableEffect(lifecycleOwner) {
@@ -90,161 +95,95 @@ fun SettingsScreen(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    // ── Permission dialog ─────────────────────────────────────────────
+    // ── Dialogs and sheets ────────────────────────────────────────────
     if (showPermissionDialog) {
-        AlertDialog(
-            onDismissRequest = { showPermissionDialog = false },
-            title = { Text("Permission Required", color = EqifyTheme.colors.textPrimary) },
-            text = {
-                Text(
-                    "To detect music automatically, EQify needs 'Notification Access'. " +
-                            "Please find 'EQify' in the next screen and enable it.",
-                    color = EqifyTheme.colors.textMuted
-                )
+        ConfirmDialog(
+            title = "Notification access needed",
+            message = "To detect music automatically, EQify needs Notification Access. " +
+                "Find EQify on the next screen and turn it on.",
+            confirmLabel = "Open settings",
+            onConfirm = {
+                showPermissionDialog = false
+                context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
             },
-            confirmButton = {
-                TextButton(onClick = {
-                    showPermissionDialog = false
-                    context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
-                }) { Text("Go to Settings", color = EqifyTheme.colors.accent) }
-            },
-            dismissButton = {
-                TextButton(onClick = { showPermissionDialog = false }) {
-                    Text("Cancel", color = EqifyTheme.colors.textMuted)
-                }
-            },
-            containerColor = EqifyTheme.colors.surfaceRaised
+            onDismiss = { showPermissionDialog = false }
         )
     }
-
     if (showClearCacheDialog) {
-        AlertDialog(
-            onDismissRequest = { showClearCacheDialog = false },
-            title = { Text("Clear downloaded corrections?", color = EqifyTheme.colors.textPrimary) },
-            text = {
-                Text(
-                    "Selected AutoEQ corrections will be downloaded again when needed.",
-                    color = EqifyTheme.colors.textMuted
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    showClearCacheDialog = false
-                    vm.clearDownloadedCorrections()
-                }) { Text("Clear", color = EqifyTheme.colors.accent) }
-            },
-            dismissButton = {
-                TextButton(onClick = { showClearCacheDialog = false }) {
-                    Text("Cancel", color = EqifyTheme.colors.textMuted)
-                }
-            },
-            containerColor = EqifyTheme.colors.surfaceRaised
+        ConfirmDialog(
+            title = "Clear downloaded corrections?",
+            message = "Selected AutoEQ corrections will be downloaded again when needed.",
+            confirmLabel = "Clear", destructive = true,
+            onConfirm = { showClearCacheDialog = false; vm.clearDownloadedCorrections() },
+            onDismiss = { showClearCacheDialog = false }
         )
     }
-
     if (showClearHistoryDialog) {
-        AlertDialog(
-            onDismissRequest = { showClearHistoryDialog = false },
-            title = { Text("Clear genre history?", color = EqifyTheme.colors.textPrimary) },
-            text = { Text("Removes local track observations and every saved genre correction. Headphone corrections and EQ presets stay intact.", color = EqifyTheme.colors.textMuted) },
-            confirmButton = {
-                TextButton(onClick = { showClearHistoryDialog = false; vm.clearGenreHistory() }) {
-                    Text("Clear", color = EqifyTheme.colors.accent)
-                }
-            },
-            dismissButton = { TextButton(onClick = { showClearHistoryDialog = false }) { Text("Cancel") } },
-            containerColor = EqifyTheme.colors.surfaceRaised
+        ConfirmDialog(
+            title = "Clear genre history?",
+            message = "Removes local track observations and every saved genre correction. " +
+                "Headphone corrections and EQ presets stay intact.",
+            confirmLabel = "Clear", destructive = true,
+            onConfirm = { showClearHistoryDialog = false; vm.clearGenreHistory() },
+            onDismiss = { showClearHistoryDialog = false }
         )
     }
-
     if (showClearCustomProfilesDialog) {
-        AlertDialog(
-            onDismissRequest = { showClearCustomProfilesDialog = false },
-            title = { Text("Clear imported profiles?", color = EqifyTheme.colors.textPrimary) },
-            text = { Text("Deletes all imported GraphicEQ profiles. If one is active, flat headphone correction will be used.", color = EqifyTheme.colors.textMuted) },
-            confirmButton = { TextButton(onClick = {
-                showClearCustomProfilesDialog = false
-                vm.clearCustomProfiles()
-            }) { Text("Clear") } },
-            dismissButton = { TextButton(onClick = { showClearCustomProfilesDialog = false }) { Text("Cancel") } },
-            containerColor = EqifyTheme.colors.surfaceRaised
+        ConfirmDialog(
+            title = "Clear imported profiles?",
+            message = "Deletes all imported GraphicEQ profiles. If one is active, flat headphone correction will be used.",
+            confirmLabel = "Clear", destructive = true,
+            onConfirm = { showClearCustomProfilesDialog = false; vm.clearCustomProfiles() },
+            onDismiss = { showClearCustomProfilesDialog = false }
         )
     }
-
-    if (showOutputProtectionDialog) {
-        OutputProtectionDialog(
+    if (showOutputProtectionSheet) {
+        OutputProtectionSheet(
             selectedMode = outputProtectionMode,
             limiterStatus = limiterStatus,
             onSelect = { mode ->
                 vm.setOutputProtectionMode(mode)
-                showOutputProtectionDialog = false
+                showOutputProtectionSheet = false
             },
-            onDismiss = { showOutputProtectionDialog = false }
+            onDismiss = { showOutputProtectionSheet = false }
         )
     }
-
-    cacheMessage?.let { message ->
-        AlertDialog(
-            onDismissRequest = vm::dismissCacheMessage,
-            title = { Text("AutoEQ cache", color = EqifyTheme.colors.textPrimary) },
-            text = { Text(message, color = EqifyTheme.colors.textMuted) },
-            confirmButton = {
-                TextButton(onClick = vm::dismissCacheMessage) {
-                    Text("OK", color = EqifyTheme.colors.accent)
-                }
-            },
-            containerColor = EqifyTheme.colors.surfaceRaised
+    if (showLastFmSheet) {
+        LastFmKeySheet(
+            savedKey = savedLastFmApiKey,
+            onSave = { vm.setLastFmApiKey(it); showLastFmSheet = false },
+            onClear = { vm.setLastFmApiKey(""); showLastFmSheet = false },
+            onDismiss = { showLastFmSheet = false }
         )
     }
-    historyMessage?.let { message ->
-        AlertDialog(
-            onDismissRequest = vm::dismissHistoryMessage,
-            title = { Text("Genre history", color = EqifyTheme.colors.textPrimary) },
-            text = { Text(message, color = EqifyTheme.colors.textMuted) },
-            confirmButton = { TextButton(onClick = vm::dismissHistoryMessage) { Text("OK") } },
-            containerColor = EqifyTheme.colors.surfaceRaised
-        )
-    }
-    customProfilesMessage?.let { message ->
-        AlertDialog(onDismissRequest = vm::dismissCustomProfilesMessage,
-            title = { Text("Imported EQ profiles") }, text = { Text(message) },
-            confirmButton = { TextButton(onClick = vm::dismissCustomProfilesMessage) { Text("OK") } })
-    }
+    if (showPrivacySheet) PrivacySheet(onDismiss = { showPrivacySheet = false })
 
     // ── UI ────────────────────────────────────────────────────────────
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
-                title = {
-                    Text(
-                        "Settings",
-                        fontSize   = 18.sp,
-                        fontWeight = FontWeight.Bold,
-                        color      = EqifyTheme.colors.textPrimary
-                    )
-                },
-                navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
-                        Text("←", fontSize = 24.sp, color = EqifyTheme.colors.textPrimary)
-                    }
-                },
-                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
-                    containerColor = EqifyTheme.colors.background
-                )
+                title = { Text("Settings", style = MaterialTheme.typography.titleLarge, color = c.textPrimary) },
+                navigationIcon = { IconAction(EqIcons.Back, "Back", onNavigateBack, tint = c.textPrimary) },
+                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = c.background)
             )
         },
-        containerColor = EqifyTheme.colors.background
+        containerColor = c.background
     ) { padding ->
         Column(
-            modifier = Modifier
+            Modifier
                 .fillMaxSize()
                 .padding(padding)
                 .verticalScroll(rememberScrollState())
+                .padding(horizontal = EqSpacing.screen)
+                .padding(bottom = EqSpacing.xl),
+            verticalArrangement = Arrangement.spacedBy(EqSpacing.s)
         ) {
+            // Results of clear actions (previously separate pop-ups)
+            cacheMessage?.let { StatusBanner(it, StatusKind.NEUTRAL, onDismiss = vm::dismissCacheMessage) }
+            historyMessage?.let { StatusBanner(it, StatusKind.NEUTRAL, onDismiss = vm::dismissHistoryMessage) }
+            customProfilesMessage?.let { StatusBanner(it, StatusKind.NEUTRAL, onDismiss = vm::dismissCustomProfilesMessage) }
 
-            // ── Appearance ────────────────────────────────────────────
-            val themeSettings by vm.themeSettings.collectAsState()
-            SettingsGroup(title = "APPEARANCE") {
+            Group("Appearance") {
                 AppearanceSettings(
                     settings = themeSettings,
                     onMode = vm::setThemeMode,
@@ -254,196 +193,355 @@ fun SettingsScreen(
                 )
             }
 
-            // ── EQ ────────────────────────────────────────────────────
-            SettingsGroup(title = "EQ") {
-                ControlledSettingsItem(
-                    title    = "Auto EQ",
+            Group("Sound") {
+                SwitchRow(
+                    title = "Auto EQ",
                     subtitle = if (isEqEnabled) "Applying genre profiles automatically"
-                    else "EQ is paused — audio is unmodified",
-                    checked  = isEqEnabled,
-                    onCheckedChange = { vm.setEqEnabled(it) }
+                        else "EQ is paused — audio is unmodified",
+                    checked = isEqEnabled,
+                    onCheckedChange = { vm.setEqEnabled(it) },
+                    icon = EqIcons.Equalizer
                 )
-            }
-
-            // ── Audio ─────────────────────────────────────────────────
-            SettingsGroup(title = "AUDIO") {
-                ControlledSettingsItem(
+                RowDivider()
+                SwitchRow(
                     title = "Smooth EQ transitions",
                     subtitle = "Gradually shifts EQ when the genre or headphone correction changes",
                     checked = smoothEqTransitions,
-                    onCheckedChange = vm::setSmoothEqTransitions
+                    onCheckedChange = vm::setSmoothEqTransitions,
+                    icon = EqIcons.Tune
                 )
-                OutputProtectionSettingsItem(
-                    mode = outputProtectionMode,
-                    limiterStatus = limiterStatus,
-                    onClick = { showOutputProtectionDialog = true }
+                RowDivider()
+                ValueRow(
+                    title = "Output protection",
+                    value = outputProtectionMode.label(),
+                    subtitle = outputProtectionStatus(outputProtectionMode, limiterStatus),
+                    onClick = { showOutputProtectionSheet = true },
+                    icon = EqIcons.Warning
                 )
-                ControlledSettingsItem(
-                    title    = "Force Mono",
-                    subtitle = "Combine audio channels",
-                    checked  = forceMono,
-                    onCheckedChange = { vm.setForceMono(it) }
+                RowDivider()
+                SwitchRow(
+                    title = "Force mono",
+                    subtitle = "Combine left and right channels",
+                    checked = forceMono,
+                    onCheckedChange = { vm.setForceMono(it) },
+                    icon = EqIcons.Headphones
                 )
             }
 
-            // ── Integration ───────────────────────────────────────────
-            SettingsGroup(title = "INTEGRATION") {
-                ControlledSettingsItem(
-                    title    = "Media Listener Service",
-                    subtitle = if (isPermissionGranted) "Automatically detecting music"
-                    else "Permission required to detect music",
-                    checked  = mediaListenerEnabled && isPermissionGranted,
+            Group("Detection") {
+                SwitchRow(
+                    title = "Media listener",
+                    subtitle = if (isPermissionGranted) "Reads the song title and artist from supported music apps"
+                        else "Notification access required to detect music",
+                    checked = mediaListenerEnabled && isPermissionGranted,
                     onCheckedChange = { newValue ->
                         if (newValue) {
-                            if (isPermissionGranted) {
-                                vm.setMediaListenerEnabled(true)
-                            } else {
-                                showPermissionDialog = true
-                            }
+                            if (isPermissionGranted) vm.setMediaListenerEnabled(true) else showPermissionDialog = true
                         } else {
                             vm.setMediaListenerEnabled(false)
                         }
-                    }
+                    },
+                    icon = EqIcons.Music
                 )
-                ControlledSettingsItem(
-                    title    = "Auto-Genre Detection",
+                RowDivider()
+                SwitchRow(
+                    title = "Auto-genre detection",
                     subtitle = if (autoGenreDetection) "EQ profile updates with each track"
-                    else "EQ profile stays fixed — switch manually in EQ tab",
-                    checked  = autoGenreDetection,
-                    onCheckedChange = { vm.setAutoGenreDetection(it) }
+                        else "EQ profile stays fixed — switch manually in the EQ tab",
+                    checked = autoGenreDetection,
+                    onCheckedChange = { vm.setAutoGenreDetection(it) },
+                    icon = EqIcons.GraphicEq
                 )
-                ControlledSettingsItem(
-                    title    = "Headphone Auto-Detection",
-                    subtitle = if (headphoneAutoDetect)
-                        "Auto-selects headphone on Bluetooth connect or wired plug-in"
-                    else "Headphone selection stays fixed",
-                    checked  = headphoneAutoDetect,
-                    onCheckedChange = { vm.setHeadphoneAutoDetect(it) }
+                RowDivider()
+                SwitchRow(
+                    title = "Headphone auto-detection",
+                    subtitle = if (headphoneAutoDetect) "Selects your headphone on Bluetooth connect or wired plug-in"
+                        else "Headphone selection stays fixed",
+                    checked = headphoneAutoDetect,
+                    onCheckedChange = { vm.setHeadphoneAutoDetect(it) },
+                    icon = EqIcons.Bluetooth
+                )
+                RowDivider()
+                ValueRow(
+                    title = "Last.fm API key",
+                    value = if (savedLastFmApiKey.isBlank()) "Not set" else "Set",
+                    subtitle = "Optional. Improves genre detection",
+                    onClick = { showLastFmSheet = true },
+                    icon = EqIcons.Edit
                 )
             }
 
-            SettingsGroup(title = "GENRE SERVICE") {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text(
-                        text = "Last.fm API key",
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = EqifyTheme.colors.textPrimary
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = lastFmApiKeyDraft,
-                        onValueChange = { lastFmApiKeyDraft = it },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        placeholder = { Text("Paste your Last.fm API key") },
-                        visualTransformation = PasswordVisualTransformation(),
-                        supportingText = {
-                            Text("Optional. Sent only to Last.fm over HTTPS.")
-                        }
-                    )
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.End
-                    ) {
-                        if (lastFmApiKeyDraft.isNotEmpty()) {
-                            TextButton(onClick = {
-                                lastFmApiKeyDraft = ""
-                                vm.setLastFmApiKey("")
-                            }) { Text("Clear", color = EqifyTheme.colors.textMuted) }
-                        }
-                        TextButton(
-                            enabled = lastFmApiKeyDraft.trim() != savedLastFmApiKey,
-                            onClick = { vm.setLastFmApiKey(lastFmApiKeyDraft) }
-                        ) { Text("Save", color = EqifyTheme.colors.accent) }
-                    }
-                }
+            Group("Data & privacy") {
+                SettingRow(
+                    title = "About your data",
+                    subtitle = "What is sent, what stays on this device",
+                    icon = EqIcons.Info,
+                    onClick = { showPrivacySheet = true },
+                    trailing = { EqIcon(EqIcons.Expand, null, size = 20.dp) }
+                )
+                RowDivider()
+                SettingRow(
+                    title = "Imported EQ profiles",
+                    subtitle = "GraphicEQ imports stored on this device",
+                    icon = EqIcons.GraphicEq,
+                    trailing = { ValueReadout(customProfiles.size.toFloat(), "", decimals = 0, color = c.textMuted) }
+                )
+                RowDivider()
+                SettingRow(
+                    title = "Clear genre history",
+                    subtitle = "Remove local track observations and genre corrections",
+                    icon = EqIcons.Delete, destructive = true,
+                    onClick = { showClearHistoryDialog = true }
+                )
+                RowDivider()
+                SettingRow(
+                    title = "Clear downloaded corrections",
+                    subtitle = "Remove locally cached AutoEQ curves",
+                    icon = EqIcons.Delete, destructive = true,
+                    onClick = { showClearCacheDialog = true }
+                )
+                RowDivider()
+                SettingRow(
+                    title = "Clear imported EQ profiles",
+                    subtitle = "Delete local imports without clearing downloaded corrections",
+                    icon = EqIcons.Delete, destructive = true,
+                    onClick = { showClearCustomProfilesDialog = true }
+                )
             }
 
-            // ── Feedback ──────────────────────────────────────────────
-            SettingsGroup(title = "FEEDBACK") {
-                SimpleSettingsItem(
-                    title    = "Send feedback",
+            Group("Feedback") {
+                SettingRow(
+                    title = "Send feedback",
                     subtitle = "Opens your email app — bug reports and ideas welcome",
-                    onClick  = {
+                    icon = EqIcons.Share,
+                    onClick = {
                         val mail = Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:")).apply {
                             putExtra(Intent.EXTRA_SUBJECT, "EQify Android feedback")
                         }
                         runCatching { context.startActivity(Intent.createChooser(mail, "Send feedback")) }
                     }
                 )
+                RowDivider()
                 if (vm.crashReportingConfigured) {
-                    ControlledSettingsItem(
+                    SwitchRow(
                         title = "Send crash reports",
                         subtitle = "Crash and error details (device model, Android and app version, stack trace) help fix bugs. " +
                             "Song titles, artists, headphone names and keys are removed first.",
                         checked = crashReportingEnabled,
-                        onCheckedChange = { vm.setCrashReportingEnabled(it) }
+                        onCheckedChange = { vm.setCrashReportingEnabled(it) },
+                        icon = EqIcons.Error
                     )
                 } else {
-                    SimpleSettingsItem(
-                        title = "Crash reports",
-                        subtitle = "Not configured in this build",
-                        onClick = {}
-                    )
+                    SettingRow(title = "Crash reports", subtitle = "Not configured in this build",
+                        icon = EqIcons.Error, enabled = false)
                 }
-                if (vm.isDebugBuild) {
-                    SimpleSettingsItem(
-                        title = "Send test error (debug)",
+            }
+
+            Group("About") {
+                SettingRow(title = "Version", icon = EqIcons.Info,
+                    trailing = { Text("1.0.0 (Beta)", style = MaterialTheme.typography.labelLarge, color = c.textMuted) })
+                RowDivider()
+                SettingRow(title = "AutoEQ database", subtitle = "Served from GitHub Pages + on-device cache",
+                    icon = EqIcons.Download)
+            }
+
+            if (vm.isDebugBuild) {
+                Group("Debug") {
+                    SettingRow(
+                        title = "Send test error",
                         subtitle = crashReportMessage ?: "Sends a handled test event to Sentry",
+                        icon = EqIcons.Play,
                         onClick = { vm.sendTestCrashReport() }
                     )
-                    SimpleSettingsItem(
-                        title = "Crash app (debug)",
+                    RowDivider()
+                    SettingRow(
+                        title = "Crash app",
                         subtitle = "Crashes EQify on purpose; reopen it so the report uploads",
+                        icon = EqIcons.Warning, destructive = true,
                         onClick = { vm.crashAppForTest() }
                     )
                 }
             }
+        }
+    }
+}
 
-            // ── About ─────────────────────────────────────────────────
-            SettingsGroup(title = "ABOUT") {
-                SimpleSettingsItem(
-                    title = "Clear genre history",
-                    subtitle = "Remove local track observations and genre corrections",
-                    onClick = { showClearHistoryDialog = true }
-                )
-                SimpleSettingsItem(
-                    title = "Clear downloaded corrections",
-                    subtitle = "Remove locally cached AutoEQ curves",
-                    onClick = { showClearCacheDialog = true }
-                )
-                SimpleSettingsItem(
-                    title = "Imported EQ profiles: ${customProfiles.size}",
-                    subtitle = "GraphicEQ imports are stored on this device",
-                    onClick = {}
-                )
-                SimpleSettingsItem(
-                    title = "Clear imported EQ profiles",
-                    subtitle = "Delete local imports without clearing downloaded corrections",
-                    onClick = { showClearCustomProfilesDialog = true }
-                )
-                SimpleSettingsItem(
-                    title    = "Version",
-                    subtitle = "1.0.0 (Beta)",
-                    onClick  = {}
-                )
-                SimpleSettingsItem(
-                    title    = "AutoEQ Database",
-                    subtitle = "Served from GitHub Pages + on-device cache",
-                    onClick  = {}
-                )
-                SimpleSettingsItem(
-                    title = "Privacy",
-                    subtitle = "Song title and artist may be sent to iTunes, optional Last.fm, and the configured EQify genre service. " +
-                        "Title, artist, timestamp and detected/chosen genre are stored locally for recent tracks and genre mix. " +
-                        "Headphone correction is fetched only after a headphone is selected. " +
-                        "Imported GraphicEQ files are converted and stored locally; they are not uploaded. " +
-                        "If crash reports are on, crash and error details are sent to Sentry without song titles, " +
-                        "artists, headphone names or keys.",
-                    onClick = {}
+// ── Layout helpers ────────────────────────────────────────────────────
+
+@Composable
+private fun Group(title: String, content: @Composable ColumnScope.() -> Unit) {
+    SectionHeader(title, modifier = Modifier.padding(top = EqSpacing.m))
+    EqCard(contentPadding = PaddingValues(0.dp), content = content)
+}
+
+@Composable
+private fun RowDivider() = HorizontalDivider(color = EqifyTheme.colors.outline, modifier = Modifier.padding(start = 56.dp))
+
+// ── Output protection ─────────────────────────────────────────────────
+
+private fun OutputProtectionMode.label() = when (this) {
+    OutputProtectionMode.BALANCED -> "Balanced"
+    OutputProtectionMode.SAFE -> "Safe"
+    OutputProtectionMode.OFF -> "Off"
+}
+
+/** Same status wording as before, describing what is actually active. */
+private fun outputProtectionStatus(mode: OutputProtectionMode, limiter: LimiterDiagnosticStatus): String = when (mode) {
+    OutputProtectionMode.BALANCED -> when (limiter.state) {
+        LimiterDiagnosticState.ENABLED -> "Limiter active"
+        LimiterDiagnosticState.ATTACHED -> "Ready when EQ is active"
+        LimiterDiagnosticState.AVAILABLE -> "Preparing limiter"
+        LimiterDiagnosticState.FAILED,
+        LimiterDiagnosticState.UNSUPPORTED -> "Safe fallback · Balanced unavailable"
+    }
+    OutputProtectionMode.SAFE -> when (limiter.state) {
+        LimiterDiagnosticState.FAILED,
+        LimiterDiagnosticState.UNSUPPORTED -> "Balanced unavailable on this device"
+        else -> "Maximum compatible protection"
+    }
+    OutputProtectionMode.OFF -> "No output protection"
+}
+
+@Composable
+private fun OutputProtectionSheet(
+    selectedMode: OutputProtectionMode,
+    limiterStatus: LimiterDiagnosticStatus,
+    onSelect: (OutputProtectionMode) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val c = EqifyTheme.colors
+    val balancedAvailable = limiterStatus.state != LimiterDiagnosticState.FAILED &&
+        limiterStatus.state != LimiterDiagnosticState.UNSUPPORTED
+    EqSheet(
+        title = "Output protection",
+        subtitle = "How EQify handles peaks created by boosted EQ bands.",
+        onDismiss = onDismiss
+    ) {
+        Column(Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(EqSpacing.s)) {
+            ProtectionOption(
+                mode = OutputProtectionMode.BALANCED, selectedMode = selectedMode, title = "Balanced",
+                description = "Uses Android's real-time limiter to catch peaks while keeping the requested EQ curve.",
+                caution = "Android 9+ only. Very loud peaks may be reduced slightly.",
+                enabled = balancedAvailable, onSelect = onSelect
+            )
+            if (!balancedAvailable) {
+                StatusBanner(
+                    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P)
+                        "Balanced requires Android 9 or newer. Safe is selected automatically."
+                    else "The limiter could not start on this device. Safe is selected automatically.",
+                    StatusKind.WARNING
                 )
             }
+            ProtectionOption(
+                mode = OutputProtectionMode.SAFE, selectedMode = selectedMode, title = "Safe",
+                description = "Reduces EQ band gains proportionally when the strongest boost exceeds +6 dB.",
+                caution = "Large boosts sound less pronounced because the curve is reduced.",
+                onSelect = onSelect
+            )
+            ProtectionOption(
+                mode = OutputProtectionMode.OFF, selectedMode = selectedMode, title = "Off",
+                description = "Applies the EQ curve without output protection.",
+                caution = "High boosts can clip or distort. Lower the gains or listening volume if needed.",
+                onSelect = onSelect
+            )
+        }
+        Text(
+            "Limiter: ${limiterStatus.state.name.lowercase()}" +
+                (limiterStatus.sessionId?.let { " · session $it" } ?: ""),
+            style = MaterialTheme.typography.bodySmall.tabular(), color = c.textFaint
+        )
+    }
+}
+
+@Composable
+private fun ProtectionOption(
+    mode: OutputProtectionMode,
+    selectedMode: OutputProtectionMode,
+    title: String,
+    description: String,
+    caution: String,
+    enabled: Boolean = true,
+    onSelect: (OutputProtectionMode) -> Unit
+) {
+    val c = EqifyTheme.colors
+    val selected = selectedMode == mode
+    Surface(
+        shape = EqifyShapes.medium,
+        color = if (selected) c.accentContainer else c.surfaceHighest,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            Modifier
+                .selectable(selected = selected, enabled = enabled, role = Role.RadioButton) { onSelect(mode) }
+                .padding(EqSpacing.m),
+            verticalAlignment = Alignment.Top
+        ) {
+            RadioButton(selected = selected, onClick = null, enabled = enabled)
+            Spacer(Modifier.width(EqSpacing.m))
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(title, style = MaterialTheme.typography.titleSmall,
+                    color = when { !enabled -> c.textFaint; selected -> c.onAccentContainer; else -> c.textPrimary })
+                Text(description, style = MaterialTheme.typography.bodySmall,
+                    color = if (selected) c.onAccentContainer else c.textMuted)
+                Text("Caution: $caution", style = MaterialTheme.typography.bodySmall,
+                    color = if (selected) c.onAccentContainer else c.textMuted)
+            }
+        }
+    }
+}
+
+// ── Last.fm key ───────────────────────────────────────────────────────
+
+@Composable
+private fun LastFmKeySheet(savedKey: String, onSave: (String) -> Unit, onClear: () -> Unit, onDismiss: () -> Unit) {
+    var draft by remember(savedKey) { mutableStateOf(savedKey) }
+    EqSheet(
+        title = "Last.fm API key",
+        subtitle = "Optional. Sent only to Last.fm over HTTPS.",
+        onDismiss = onDismiss,
+        actions = {
+            if (savedKey.isNotEmpty()) TextAction("Clear", onClear, destructive = true)
+            PrimaryButton("Save", { onSave(draft) }, enabled = draft.trim() != savedKey)
+        }
+    ) {
+        OutlinedTextField(
+            value = draft,
+            onValueChange = { draft = it },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            label = { Text("API key") },
+            placeholder = { Text("Paste your Last.fm API key") },
+            visualTransformation = PasswordVisualTransformation()
+        )
+    }
+}
+
+// ── Privacy ───────────────────────────────────────────────────────────
+
+@Composable
+private fun PrivacySheet(onDismiss: () -> Unit) {
+    EqSheet(title = "About your data", onDismiss = onDismiss) {
+        PrivacyPoint(EqIcons.Music, "Song detection",
+            "The song title and artist may be sent to iTunes, to Last.fm (only if you add a key) and to the configured EQify genre service.")
+        PrivacyPoint(EqIcons.GraphicEq, "Stored on this device",
+            "Title, artist, time and the detected or chosen genre are kept locally for recent tracks and the genre mix. Clear them any time in Data & privacy.")
+        PrivacyPoint(EqIcons.Headphones, "Headphone corrections",
+            "A correction is downloaded only after you select a headphone.")
+        PrivacyPoint(EqIcons.FileOpen, "Imported files",
+            "GraphicEQ files are converted and stored on this device. They are not uploaded.")
+        PrivacyPoint(EqIcons.Error, "Crash reports",
+            "If crash reports are on, crash and error details are sent to Sentry without song titles, artists, headphone names or keys.")
+    }
+}
+
+@Composable
+private fun PrivacyPoint(@DrawableRes icon: Int, title: String, body: String) {
+    val c = EqifyTheme.colors
+    Row(horizontalArrangement = Arrangement.spacedBy(EqSpacing.m)) {
+        EqIcon(icon, null, tint = c.accent, size = 20.dp)
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.titleSmall, color = c.textPrimary)
+            Text(body, style = MaterialTheme.typography.bodyMedium, color = c.textMuted)
         }
     }
 }
@@ -457,232 +555,5 @@ private fun isNotificationServiceEnabled(context: Context): Boolean {
     return packageNames.split(":").any { flat ->
         val cn = ComponentName.unflattenFromString(flat)
         cn != null && TextUtils.equals(context.packageName, cn.packageName)
-    }
-}
-
-@Composable
-fun SettingsGroup(title: String, content: @Composable ColumnScope.() -> Unit) {
-    Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) {
-        Text(
-            text          = title,
-            fontSize      = 11.sp,
-            color         = EqifyTheme.colors.accent,
-            fontWeight    = FontWeight.Bold,
-            letterSpacing = 1.sp
-        )
-        Spacer(Modifier.height(8.dp))
-        Card(
-            shape  = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = EqifyTheme.colors.surfaceRaised)
-        ) {
-            Column(modifier = Modifier.fillMaxWidth()) { content() }
-        }
-    }
-}
-
-@Composable
-fun ControlledSettingsItem(
-    title: String,
-    subtitle: String,
-    checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onCheckedChange(!checked) }
-            .padding(16.dp),
-        verticalAlignment     = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(text = title,    fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = EqifyTheme.colors.textPrimary)
-            Text(text = subtitle, fontSize = 11.sp, color = EqifyTheme.colors.textMuted)
-        }
-        Switch(
-            checked         = checked,
-            onCheckedChange = onCheckedChange,
-            colors          = SwitchDefaults.colors(
-                checkedThumbColor = EqifyTheme.colors.onAccent,
-                checkedTrackColor = EqifyTheme.colors.accent
-            )
-        )
-    }
-}
-
-@Composable
-private fun OutputProtectionSettingsItem(
-    mode: OutputProtectionMode,
-    limiterStatus: LimiterDiagnosticStatus,
-    onClick: () -> Unit
-) {
-    val subtitle = when (mode) {
-        OutputProtectionMode.BALANCED -> when (limiterStatus.state) {
-            LimiterDiagnosticState.ENABLED -> "Balanced - limiter active"
-            LimiterDiagnosticState.ATTACHED -> "Balanced - ready when EQ is active"
-            LimiterDiagnosticState.AVAILABLE -> "Balanced - preparing limiter"
-            LimiterDiagnosticState.FAILED,
-            LimiterDiagnosticState.UNSUPPORTED -> "Safe fallback - Balanced unavailable"
-        }
-        OutputProtectionMode.SAFE -> when (limiterStatus.state) {
-            LimiterDiagnosticState.FAILED,
-            LimiterDiagnosticState.UNSUPPORTED -> "Safe - Balanced unavailable on this device"
-            else -> "Safe - maximum compatible protection"
-        }
-        OutputProtectionMode.OFF -> "Off - no output protection"
-    }
-
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(16.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = "Output protection",
-                fontSize = 14.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = EqifyTheme.colors.textPrimary
-            )
-            Text(text = subtitle, fontSize = 11.sp, color = EqifyTheme.colors.textMuted)
-        }
-        TextButton(onClick = onClick) {
-            Text("Change", color = EqifyTheme.colors.accent)
-        }
-    }
-}
-
-@Composable
-private fun OutputProtectionDialog(
-    selectedMode: OutputProtectionMode,
-    limiterStatus: LimiterDiagnosticStatus,
-    onSelect: (OutputProtectionMode) -> Unit,
-    onDismiss: () -> Unit
-) {
-    val balancedAvailable = limiterStatus.state != LimiterDiagnosticState.FAILED &&
-        limiterStatus.state != LimiterDiagnosticState.UNSUPPORTED
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Output protection", color = EqifyTheme.colors.textPrimary) },
-        text = {
-            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
-                Text(
-                    "Choose how EQify handles peaks created by boosted EQ bands.",
-                    color = EqifyTheme.colors.textMuted,
-                    fontSize = 13.sp
-                )
-                Spacer(Modifier.height(12.dp))
-
-                OutputProtectionOption(
-                    mode = OutputProtectionMode.BALANCED,
-                    selectedMode = selectedMode,
-                    title = "Balanced",
-                    description = "Uses Android's real-time limiter to catch peaks while keeping the requested EQ curve.",
-                    caution = "Android 9+ only. Very loud peaks may be reduced slightly.",
-                    enabled = balancedAvailable,
-                    onSelect = onSelect
-                )
-                if (!balancedAvailable) {
-                    Text(
-                        text = if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
-                            "Balanced requires Android 9 or newer. Safe is selected automatically."
-                        } else {
-                            "The limiter could not start on this device. Safe is selected automatically."
-                        },
-                        modifier = Modifier.padding(start = 48.dp, end = 8.dp, bottom = 8.dp),
-                        color = EqifyTheme.colors.accent,
-                        fontSize = 11.sp
-                    )
-                }
-
-                OutputProtectionOption(
-                    mode = OutputProtectionMode.SAFE,
-                    selectedMode = selectedMode,
-                    title = "Safe",
-                    description = "Reduces EQ band gains proportionally when the strongest boost exceeds +6 dB.",
-                    caution = "Large boosts sound less pronounced because the curve is reduced.",
-                    onSelect = onSelect
-                )
-
-                OutputProtectionOption(
-                    mode = OutputProtectionMode.OFF,
-                    selectedMode = selectedMode,
-                    title = "Off",
-                    description = "Applies the EQ curve without output protection.",
-                    caution = "High boosts can clip or distort. Lower the gains or listening volume if needed.",
-                    onSelect = onSelect
-                )
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Close", color = EqifyTheme.colors.accent)
-            }
-        },
-        containerColor = EqifyTheme.colors.surfaceRaised
-    )
-}
-
-@Composable
-private fun OutputProtectionOption(
-    mode: OutputProtectionMode,
-    selectedMode: OutputProtectionMode,
-    title: String,
-    description: String,
-    caution: String,
-    enabled: Boolean = true,
-    onSelect: (OutputProtectionMode) -> Unit
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(enabled = enabled) { onSelect(mode) }
-            .padding(vertical = 8.dp),
-        verticalAlignment = Alignment.Top
-    ) {
-        RadioButton(
-            selected = selectedMode == mode,
-            onClick = { onSelect(mode) },
-            enabled = enabled
-        )
-        Column(modifier = Modifier.padding(top = 2.dp, end = 4.dp)) {
-            Text(
-                text = title,
-                color = if (enabled) EqifyTheme.colors.textPrimary else EqifyTheme.colors.textMuted,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.SemiBold
-            )
-            Text(
-                text = description,
-                color = EqifyTheme.colors.textMuted,
-                fontSize = 12.sp
-            )
-            Text(
-                text = "Caution: $caution",
-                color = EqifyTheme.colors.textMuted,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Medium
-            )
-        }
-    }
-}
-
-@Composable
-fun SimpleSettingsItem(title: String, subtitle: String, onClick: () -> Unit) {
-    Row(
-        modifier          = Modifier
-            .fillMaxWidth()
-            .clickable { onClick() }
-            .padding(16.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(text = title,    fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = EqifyTheme.colors.textPrimary)
-            Text(text = subtitle, fontSize = 11.sp, color = EqifyTheme.colors.textMuted)
-        }
     }
 }

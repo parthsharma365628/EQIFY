@@ -15,7 +15,7 @@ import com.example.eqify.ui.theme.EqifyTheme
  * tracks, preset picker). Always fully expanded; content scrolls; [actions]
  * stay pinned below the content. [dismissible] = false while work is running.
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun EqSheet(
     title: String,
@@ -39,7 +39,7 @@ fun EqSheet(
         contentColor = c.textPrimary,
         scrimColor = c.background.copy(alpha = 0.6f)
     ) {
-        Column(Modifier.fillMaxWidth().padding(horizontal = EqSpacing.l).padding(bottom = EqSpacing.l)) {
+        Column(Modifier.fillMaxWidth().imePadding().padding(horizontal = EqSpacing.l).padding(bottom = EqSpacing.l)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(title, style = MaterialTheme.typography.titleMedium, color = c.textPrimary)
@@ -55,8 +55,9 @@ fun EqSheet(
             )
             if (actions != null) {
                 Spacer(Modifier.height(EqSpacing.m))
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(EqSpacing.s, Alignment.End),
-                    verticalAlignment = Alignment.CenterVertically, content = actions)
+                // Wraps instead of overflowing at large system font sizes.
+                FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(EqSpacing.s, Alignment.End),
+                    verticalArrangement = Arrangement.spacedBy(EqSpacing.s), content = actions)
             }
         }
     }

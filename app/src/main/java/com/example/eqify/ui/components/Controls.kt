@@ -2,6 +2,9 @@ package com.example.eqify.ui.components
 
 import androidx.annotation.DrawableRes
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.runtime.getValue
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
@@ -99,25 +102,32 @@ fun <T> SegmentedToggle(
     ) {
         options.forEach { option ->
             val isSelected = option == selected
+            // Phase 5: 48 dp touch height per segment and a short colour fade on change.
+            val bg by animateColorAsState(if (isSelected) c.accent else Color.Transparent, tween(180), label = "segment-bg")
+            val fg by animateColorAsState(
+                when {
+                    !enabled -> c.textFaint
+                    isSelected -> c.onAccent
+                    else -> c.textMuted
+                }, tween(180), label = "segment-fg"
+            )
             Box(
                 Modifier
                     .weight(1f)
-                    .heightIn(min = 40.dp)
+                    .heightIn(min = EqSpacing.touchTarget)
                     .clip(PillShape)
-                    .background(if (isSelected) c.accent else Color.Transparent)
+                    .background(bg)
                     .selectable(selected = isSelected, enabled = enabled, role = Role.RadioButton) { onSelect(option) }
-                    .padding(horizontal = EqSpacing.m),
+                    .padding(horizontal = EqSpacing.s),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
                     label(option),
                     style = MaterialTheme.typography.labelLarge,
-                    color = when {
-                        !enabled -> c.textFaint
-                        isSelected -> c.onAccent
-                        else -> c.textMuted
-                    },
-                    maxLines = 1
+                    color = fg,
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                 )
             }
         }

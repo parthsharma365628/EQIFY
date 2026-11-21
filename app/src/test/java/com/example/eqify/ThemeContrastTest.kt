@@ -48,6 +48,32 @@ class ThemeContrastTest {
         assertTrue(failures.joinToString("\n"), failures.isEmpty())
     }
 
+    /**
+     * Pairs that specific components actually draw (phase 5 audit), beyond the
+     * generic text/surface grid: selected rows and chips on accentContainer,
+     * chip/banner text on surfaceHighest, error text on its banner.
+     */
+    @Test fun componentPairsMeetWcagAa() {
+        val failures = EqifyPalettes.all.flatMap { (name, c) ->
+            val f = mutableListOf<String>()
+            // Selected HeadphoneListItem / SettingRow on accentContainer
+            check(f, name, "textPrimary/accentContainer (selected row title)", c.textPrimary, c.accentContainer, Contrast.TEXT_AA)
+            check(f, name, "textMuted/accentContainer (selected row subtitle)", c.textMuted, c.accentContainer, Contrast.TEXT_AA)
+            check(f, name, "textMuted/accentContainer (selected row icon, UI)", c.textMuted, c.accentContainer, Contrast.LARGE_OR_UI_AA)
+            check(f, name, "accent/accentContainer (favourite star, UI)", c.accent, c.accentContainer, Contrast.LARGE_OR_UI_AA)
+            // PillChip, StatusChip, StatusBanner (neutral/warning/success), inputs
+            check(f, name, "textPrimary/surfaceHighest (chip/banner text)", c.textPrimary, c.surfaceHighest, Contrast.TEXT_AA)
+            check(f, name, "textMuted/surfaceHighest (unselected segment)", c.textMuted, c.surfaceHighest, Contrast.TEXT_AA)
+            check(f, name, "onAccent/accent (selected segment)", c.onAccent, c.accent, Contrast.TEXT_AA)
+            check(f, name, "error/surfaceHighest (error chip text)", c.error, c.surfaceHighest, Contrast.TEXT_AA)
+            // EQ band track: fill and thumb against the track and card
+            check(f, name, "accent/surfaceHighest (band fill on track, UI)", c.accent, c.surfaceHighest, Contrast.LARGE_OR_UI_AA)
+            check(f, name, "outlineStrong/surfaceRaised (0 dB tick, UI)", c.outlineStrong, c.surfaceRaised, Contrast.LARGE_OR_UI_AA)
+            f
+        }
+        assertTrue(failures.joinToString("\n"), failures.isEmpty())
+    }
+
     @Test fun shipsEveryAccentInDarkPureBlackAndLight() {
         val names = EqifyPalettes.all.map { it.first }
         assertEquals(ThemeAccent.entries.size * 3, names.size)
