@@ -702,30 +702,30 @@ fun EqScreen(vm: EqScreenViewModel = viewModel()) {
         DeleteConfirmDialog(presetName = name, onConfirm = { vm.confirmDelete(name) }, onDismiss = { vm.cancelDelete() })
     }
 
-    Column(modifier = Modifier.fillMaxSize().background(BgDark)) {
+    Column(modifier = Modifier.fillMaxSize().background(EqifyTheme.colors.background)) {
 
         // Header
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
             horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically
         ) {
-            Text("Equalizer", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+            Text("Equalizer", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = EqifyTheme.colors.textPrimary)
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
                 if (hasUnsavedChanges) {
                     TextButton(onClick = { vm.saveToCurrentPreset() }) {
-                        Text("Save", color = AccentPurpleLight, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Text("Save", color = EqifyTheme.colors.accent, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     }
                 }
                 TextButton(onClick = { vm.resetCurrentPreset() }) {
-                    Text("Reset", color = TextSecondary, fontSize = 12.sp)
+                    Text("Reset", color = EqifyTheme.colors.textMuted, fontSize = 12.sp)
                 }
                 TextButton(onClick = { vm.openShare() }) {
-                    Text("Share", color = TextSecondary, fontSize = 12.sp)
+                    Text("Share", color = EqifyTheme.colors.textMuted, fontSize = 12.sp)
                 }
                 TextButton(onClick = { EqState.setBypassed(!isBypassed) }) {
                     Text(
                         if (isBypassed) "Original" else "A/B",
-                        color = if (isBypassed) TextPrimary else TextSecondary,
+                        color = if (isBypassed) EqifyTheme.colors.textPrimary else EqifyTheme.colors.textMuted,
                         fontSize = 12.sp
                     )
                 }
@@ -739,7 +739,7 @@ fun EqScreen(vm: EqScreenViewModel = viewModel()) {
         ) {
             Surface(
                 shape = RoundedCornerShape(20.dp),
-                color = if (activePreset == "Custom") AccentPurple.copy(alpha = 0.08f) else AccentPurple.copy(alpha = 0.18f),
+                color = if (activePreset == "Custom") EqifyTheme.colors.accent.copy(alpha = 0.08f) else EqifyTheme.colors.accent.copy(alpha = 0.18f),
                 modifier = Modifier.clickable { vm.openPresetPicker() }
             ) {
                 Row(
@@ -747,20 +747,20 @@ fun EqScreen(vm: EqScreenViewModel = viewModel()) {
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     Text(activePreset, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
-                        color = if (activePreset == "Custom") TextSecondary else AccentPurpleLight)
-                    Text("▾", fontSize = 10.sp, color = if (activePreset == "Custom") TextSecondary else AccentPurpleLight)
+                        color = if (activePreset == "Custom") EqifyTheme.colors.textMuted else EqifyTheme.colors.accent)
+                    Text("▾", fontSize = 10.sp, color = if (activePreset == "Custom") EqifyTheme.colors.textMuted else EqifyTheme.colors.accent)
                 }
             }
             Surface(
-                shape = RoundedCornerShape(20.dp), color = Surface2Dark,
+                shape = RoundedCornerShape(20.dp), color = EqifyTheme.colors.surfaceRaised,
                 modifier = Modifier.clickable { vm.openNewProfile() }
             ) {
                 Row(
                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    Text("+", fontSize = 14.sp, color = AccentPurpleLight, fontWeight = FontWeight.Bold)
-                    Text("New profile", fontSize = 11.sp, color = AccentPurpleLight)
+                    Text("+", fontSize = 14.sp, color = EqifyTheme.colors.accent, fontWeight = FontWeight.Bold)
+                    Text("New profile", fontSize = 11.sp, color = EqifyTheme.colors.accent)
                 }
             }
         }
@@ -768,13 +768,13 @@ fun EqScreen(vm: EqScreenViewModel = viewModel()) {
         shareMessage?.let { message ->
             Surface(
                 shape = RoundedCornerShape(10.dp),
-                color = AccentPurple.copy(alpha = 0.12f),
+                color = EqifyTheme.colors.accent.copy(alpha = 0.12f),
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 10.dp)
                     .clickable { vm.dismissShareMessage() }
             ) {
                 Row(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(message, color = TextPrimary, fontSize = 11.sp, modifier = Modifier.weight(1f))
-                    Text("✕", color = TextSecondary, fontSize = 12.sp, modifier = Modifier.padding(start = 8.dp))
+                    Text(message, color = EqifyTheme.colors.textPrimary, fontSize = 11.sp, modifier = Modifier.weight(1f))
+                    Text("✕", color = EqifyTheme.colors.textMuted, fontSize = 12.sp, modifier = Modifier.padding(start = 8.dp))
                 }
             }
         }
@@ -783,7 +783,7 @@ fun EqScreen(vm: EqScreenViewModel = viewModel()) {
         Card(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).weight(1f),
             shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = Surface2Dark)
+            colors = CardDefaults.cardColors(containerColor = EqifyTheme.colors.surfaceRaised)
         ) {
             Row(
                 modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp, vertical = 16.dp),
@@ -814,11 +814,11 @@ fun PresetPickerDialog(
     onShare: (String) -> Unit = {}, onImport: () -> Unit = {}
 ) {
     AlertDialog(
-        onDismissRequest = onDismiss, containerColor = Surface2Dark,
+        onDismissRequest = onDismiss, containerColor = EqifyTheme.colors.surfaceRaised,
         title = {
             Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.CenterVertically) {
-                Text("EQ Presets", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                TextButton(onClick = onDismiss) { Text("✕", color = TextSecondary, fontSize = 14.sp) }
+                Text("EQ Presets", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = EqifyTheme.colors.textPrimary)
+                TextButton(onClick = onDismiss) { Text("✕", color = EqifyTheme.colors.textMuted, fontSize = 14.sp) }
             }
         },
         text = {
@@ -827,7 +827,7 @@ fun PresetPickerDialog(
                     .heightIn(max = 560.dp)
                     .verticalScroll(rememberScrollState())
             ) {
-                Text("DEFAULT", fontSize = 9.sp, color = TextSecondary, letterSpacing = 1.5.sp,
+                Text("DEFAULT", fontSize = 9.sp, color = EqifyTheme.colors.textMuted, letterSpacing = 1.5.sp,
                     modifier = Modifier.padding(bottom = 4.dp))
                 allPresets.filter { candidate ->
                     customPresets.none { it.equals(candidate, ignoreCase = true) }
@@ -837,9 +837,9 @@ fun PresetPickerDialog(
                 }
                 if (customPresets.isNotEmpty()) {
                     Spacer(Modifier.height(12.dp))
-                    HorizontalDivider(color = AccentPurple.copy(alpha = 0.1f))
+                    HorizontalDivider(color = EqifyTheme.colors.accent.copy(alpha = 0.1f))
                     Spacer(Modifier.height(8.dp))
-                    Text("MY PROFILES", fontSize = 9.sp, color = TextSecondary, letterSpacing = 1.5.sp,
+                    Text("MY PROFILES", fontSize = 9.sp, color = EqifyTheme.colors.textMuted, letterSpacing = 1.5.sp,
                         modifier = Modifier.padding(bottom = 4.dp))
                     customPresets.forEach { name ->
                         PresetRow(name, name == activePreset, true, { onSelect(name) }, { onDelete(name) },
@@ -847,32 +847,32 @@ fun PresetPickerDialog(
                     }
                 }
                 Spacer(Modifier.height(12.dp))
-                HorizontalDivider(color = AccentPurple.copy(alpha = 0.1f))
+                HorizontalDivider(color = EqifyTheme.colors.accent.copy(alpha = 0.1f))
                 Spacer(Modifier.height(8.dp))
                 Surface(
-                    shape = RoundedCornerShape(12.dp), color = AccentPurple.copy(alpha = 0.1f),
+                    shape = RoundedCornerShape(12.dp), color = EqifyTheme.colors.accent.copy(alpha = 0.1f),
                     modifier = Modifier.fillMaxWidth().clickable { onNewProfile() }
                 ) {
                     Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("+", fontSize = 18.sp, color = AccentPurpleLight, fontWeight = FontWeight.Bold)
+                        Text("+", fontSize = 18.sp, color = EqifyTheme.colors.accent, fontWeight = FontWeight.Bold)
                         Column {
-                            Text("Create new profile", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = AccentPurpleLight)
-                            Text("Saves current EQ settings", fontSize = 10.sp, color = TextSecondary)
+                            Text("Create new profile", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = EqifyTheme.colors.accent)
+                            Text("Saves current EQ settings", fontSize = 10.sp, color = EqifyTheme.colors.textMuted)
                         }
                     }
                 }
                 Spacer(Modifier.height(8.dp))
                 Surface(
-                    shape = RoundedCornerShape(12.dp), color = AccentPurple.copy(alpha = 0.1f),
+                    shape = RoundedCornerShape(12.dp), color = EqifyTheme.colors.accent.copy(alpha = 0.1f),
                     modifier = Modifier.fillMaxWidth().clickable { onImport() }
                 ) {
                     Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("⇩", fontSize = 18.sp, color = AccentPurpleLight, fontWeight = FontWeight.Bold)
+                        Text("⇩", fontSize = 18.sp, color = EqifyTheme.colors.accent, fontWeight = FontWeight.Bold)
                         Column {
-                            Text("Import shared profile", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = AccentPurpleLight)
-                            Text("Paste an EQify code or open a .eqify.json file", fontSize = 10.sp, color = TextSecondary)
+                            Text("Import shared profile", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = EqifyTheme.colors.accent)
+                            Text("Paste an EQify code or open a .eqify.json file", fontSize = 10.sp, color = EqifyTheme.colors.textMuted)
                         }
                     }
                 }
@@ -896,30 +896,30 @@ private fun PresetRow(
             modifier = Modifier.weight(1f)) {
             Box(modifier = Modifier.size(18.dp), contentAlignment = Alignment.Center) {
                 if (isActive) {
-                    Surface(shape = RoundedCornerShape(50), color = AccentPurple) {
+                    Surface(shape = RoundedCornerShape(50), color = EqifyTheme.colors.accent) {
                         Box(Modifier.size(18.dp), contentAlignment = Alignment.Center) {
-                            Box(Modifier.size(8.dp).background(Color.White, RoundedCornerShape(50)))
+                            Box(Modifier.size(8.dp).background(EqifyTheme.colors.onAccent, RoundedCornerShape(50)))
                         }
                     }
                 } else {
-                    Box(Modifier.size(18.dp).background(TextSecondary.copy(alpha = 0.2f), RoundedCornerShape(50)))
+                    Box(Modifier.size(18.dp).background(EqifyTheme.colors.textMuted.copy(alpha = 0.2f), RoundedCornerShape(50)))
                 }
             }
             Text(name, fontSize = 14.sp,
-                color = if (isActive) TextPrimary else TextSecondary,
+                color = if (isActive) EqifyTheme.colors.textPrimary else EqifyTheme.colors.textMuted,
                 fontWeight = if (isActive) FontWeight.SemiBold else FontWeight.Normal)
         }
         if (onShare != null) {
             TextButton(onClick = onShare, contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)) {
-                Text("Share", fontSize = 12.sp, color = AccentPurpleLight)
+                Text("Share", fontSize = 12.sp, color = EqifyTheme.colors.accent)
             }
         }
         if (isCustom) {
             TextButton(onClick = onRename, contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)) {
-                Text("Rename", fontSize = 12.sp, color = AccentPurpleLight)
+                Text("Rename", fontSize = 12.sp, color = EqifyTheme.colors.accent)
             }
             TextButton(onClick = onDelete, contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)) {
-                Text("Delete", fontSize = 12.sp, color = TextSecondary)
+                Text("Delete", fontSize = 12.sp, color = EqifyTheme.colors.textMuted)
             }
         }
     }
@@ -933,46 +933,46 @@ fun NewProfileDialog(
 ) {
     var name by remember { mutableStateOf("") }
     AlertDialog(
-        onDismissRequest = onDismiss, containerColor = Surface2Dark,
-        title = { Text("New Profile", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 16.sp) },
+        onDismissRequest = onDismiss, containerColor = EqifyTheme.colors.surfaceRaised,
+        title = { Text("New Profile", color = EqifyTheme.colors.textPrimary, fontWeight = FontWeight.Bold, fontSize = 16.sp) },
         text = {
             Column {
                 Text("Give this EQ setting a name. Your current slider positions will be saved.",
-                    color = TextSecondary, fontSize = 12.sp)
+                    color = EqifyTheme.colors.textMuted, fontSize = 12.sp)
                 Spacer(Modifier.height(14.dp))
                 OutlinedTextField(
                     value = name, onValueChange = { name = it },
-                    placeholder = { Text("e.g. Late Night, Gym, Study…", color = TextSecondary, fontSize = 12.sp) },
+                    placeholder = { Text("e.g. Late Night, Gym, Study…", color = EqifyTheme.colors.textMuted, fontSize = 12.sp) },
                     singleLine = true, modifier = Modifier.fillMaxWidth(),
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = AccentPurple, unfocusedBorderColor = AccentPurple.copy(alpha = 0.3f),
-                        cursorColor = AccentPurple, focusedTextColor = TextPrimary, unfocusedTextColor = TextPrimary)
+                        focusedBorderColor = EqifyTheme.colors.accent, unfocusedBorderColor = EqifyTheme.colors.accent.copy(alpha = 0.3f),
+                        cursorColor = EqifyTheme.colors.accent, focusedTextColor = EqifyTheme.colors.textPrimary, unfocusedTextColor = EqifyTheme.colors.textPrimary)
                 )
                 errorMessage?.let {
                     Spacer(Modifier.height(6.dp))
-                    Text(it, color = Color(0xFFFF5252), fontSize = 11.sp)
+                    Text(it, color = EqifyTheme.colors.error, fontSize = 11.sp)
                 }
             }
         },
         confirmButton = {
             TextButton(onClick = { if (name.isNotBlank()) onConfirm(name.trim()) }, enabled = name.isNotBlank()) {
-                Text("Create", color = AccentPurpleLight, fontWeight = FontWeight.Bold)
+                Text("Create", color = EqifyTheme.colors.accent, fontWeight = FontWeight.Bold)
             }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel", color = TextSecondary) } }
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel", color = EqifyTheme.colors.textMuted) } }
     )
 }
 
 @Composable
 fun DeleteConfirmDialog(presetName: String, onConfirm: () -> Unit, onDismiss: () -> Unit) {
     AlertDialog(
-        onDismissRequest = onDismiss, containerColor = Surface2Dark,
-        title = { Text("Delete Profile", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 16.sp) },
-        text  = { Text("Delete \"$presetName\"? This cannot be undone.", color = TextSecondary, fontSize = 13.sp) },
+        onDismissRequest = onDismiss, containerColor = EqifyTheme.colors.surfaceRaised,
+        title = { Text("Delete Profile", color = EqifyTheme.colors.textPrimary, fontWeight = FontWeight.Bold, fontSize = 16.sp) },
+        text  = { Text("Delete \"$presetName\"? This cannot be undone.", color = EqifyTheme.colors.textMuted, fontSize = 13.sp) },
         confirmButton = {
-            TextButton(onClick = onConfirm) { Text("Delete", color = Color(0xFFFF5252), fontWeight = FontWeight.Bold) }
+            TextButton(onClick = onConfirm) { Text("Delete", color = EqifyTheme.colors.error, fontWeight = FontWeight.Bold) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel", color = TextSecondary) } }
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel", color = EqifyTheme.colors.textMuted) } }
     )
 }
 
@@ -990,18 +990,18 @@ fun ShareProfileDialog(
 ) {
     var showQr by remember { mutableStateOf(false) }
     AlertDialog(
-        onDismissRequest = onDismiss, containerColor = Surface2Dark,
-        title = { Text("Share \"${draft.name}\"", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 16.sp) },
+        onDismissRequest = onDismiss, containerColor = EqifyTheme.colors.surfaceRaised,
+        title = { Text("Share \"${draft.name}\"", color = EqifyTheme.colors.textPrimary, fontWeight = FontWeight.Bold, fontSize = 16.sp) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 if (draft.isBuiltIn) {
                     Text("This is a built-in preset; everyone with EQify already has it.",
-                        color = TextSecondary, fontSize = 11.sp)
+                        color = EqifyTheme.colors.textMuted, fontSize = 11.sp)
                     Spacer(Modifier.height(8.dp))
                 }
                 if (draft.correctionOnly) {
                     Text("Headphone correction only (flat tone). The receiver can save it to " +
-                        "their custom headphone profiles.", color = TextSecondary, fontSize = 11.sp)
+                        "their custom headphone profiles.", color = EqifyTheme.colors.textMuted, fontSize = 11.sp)
                     Spacer(Modifier.height(8.dp))
                     draft.correction?.let { ToneCurvePreview(it.gains) }
                 } else {
@@ -1016,7 +1016,7 @@ fun ShareProfileDialog(
                         detail = c.name + if (c.kind == SharedCorrection.Kind.CUSTOM) " (imported)" else ""
                     )
                 } ?: Text("No headphone correction is loaded, so only the tone is shared.",
-                    color = TextSecondary, fontSize = 11.sp)
+                    color = EqifyTheme.colors.textMuted, fontSize = 11.sp)
                 draft.bass?.let { bass ->
                     CheckRow(
                         checked = draft.includeBass,
@@ -1028,34 +1028,34 @@ fun ShareProfileDialog(
                 Spacer(Modifier.height(10.dp))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically) {
-                    Text(if (showQr) "QR code" else "Profile code", color = TextSecondary, fontSize = 10.sp)
+                    Text(if (showQr) "QR code" else "Profile code", color = EqifyTheme.colors.textMuted, fontSize = 10.sp)
                     TextButton(onClick = { showQr = !showQr }) {
-                        Text(if (showQr) "Show code" else "Show QR", color = AccentPurpleLight, fontSize = 12.sp)
+                        Text(if (showQr) "Show code" else "Show QR", color = EqifyTheme.colors.accent, fontSize = 12.sp)
                     }
                 }
                 if (showQr) {
                     ProfileQrImage(draft.link)
                     Spacer(Modifier.height(4.dp))
                     Text("On another phone, use Scan QR in Import shared profile, or scan with the camera app " +
-                        "to open it in EQify.", color = TextSecondary, fontSize = 10.sp)
+                        "to open it in EQify.", color = EqifyTheme.colors.textMuted, fontSize = 10.sp)
                 } else {
                     SelectionContainer {
-                        Text(draft.code, color = TextPrimary, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+                        Text(draft.code, color = EqifyTheme.colors.textPrimary, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
                     }
                 }
                 Spacer(Modifier.height(6.dp))
                 Text("Contains only EQ values and names. No listening history or device details.",
-                    color = TextSecondary, fontSize = 10.sp)
+                    color = EqifyTheme.colors.textMuted, fontSize = 10.sp)
                 Spacer(Modifier.height(8.dp))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    TextButton(onClick = onCopy) { Text("Copy code", color = AccentPurpleLight) }
-                    TextButton(onClick = onShareText) { Text("Share…", color = AccentPurpleLight) }
-                    TextButton(onClick = onSaveFile) { Text("Save file", color = AccentPurpleLight) }
+                    TextButton(onClick = onCopy) { Text("Copy code", color = EqifyTheme.colors.accent) }
+                    TextButton(onClick = onShareText) { Text("Share…", color = EqifyTheme.colors.accent) }
+                    TextButton(onClick = onSaveFile) { Text("Save file", color = EqifyTheme.colors.accent) }
                 }
             }
         },
         confirmButton = {},
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Close", color = TextSecondary) } }
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Close", color = EqifyTheme.colors.textMuted) } }
     )
 }
 
@@ -1071,48 +1071,48 @@ fun ImportProfileDialog(
 ) {
     var text by remember { mutableStateOf("") }
     AlertDialog(
-        onDismissRequest = onDismiss, containerColor = Surface2Dark,
-        title = { Text("Import shared profile", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 16.sp) },
+        onDismissRequest = onDismiss, containerColor = EqifyTheme.colors.surfaceRaised,
+        title = { Text("Import shared profile", color = EqifyTheme.colors.textPrimary, fontWeight = FontWeight.Bold, fontSize = 16.sp) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 Text("Paste an EQify code (it starts with EQIFY1:), scan its QR code, or open a .eqify.json file. " +
                     "You'll see a preview before anything is saved.",
-                    color = TextSecondary, fontSize = 12.sp)
+                    color = EqifyTheme.colors.textMuted, fontSize = 12.sp)
                 Spacer(Modifier.height(10.dp))
                 OutlinedTextField(
                     value = text, onValueChange = { text = it.take(EqProfileCodec.MAX_INPUT_CHARS) },
                     enabled = !busy,
-                    placeholder = { Text("EQIFY1:…", color = TextSecondary, fontSize = 12.sp) },
+                    placeholder = { Text("EQIFY1:…", color = EqifyTheme.colors.textMuted, fontSize = 12.sp) },
                     minLines = 3, maxLines = 6, modifier = Modifier.fillMaxWidth(),
                     isError = error != null,
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = AccentPurple, unfocusedBorderColor = AccentPurple.copy(alpha = 0.3f),
-                        cursorColor = AccentPurple, focusedTextColor = TextPrimary, unfocusedTextColor = TextPrimary)
+                        focusedBorderColor = EqifyTheme.colors.accent, unfocusedBorderColor = EqifyTheme.colors.accent.copy(alpha = 0.3f),
+                        cursorColor = EqifyTheme.colors.accent, focusedTextColor = EqifyTheme.colors.textPrimary, unfocusedTextColor = EqifyTheme.colors.textPrimary)
                 )
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     TextButton(enabled = !busy, onClick = { text = onPasteFromClipboard().take(EqProfileCodec.MAX_INPUT_CHARS) }) {
-                        Text("Paste", color = AccentPurpleLight)
+                        Text("Paste", color = EqifyTheme.colors.accent)
                     }
                     TextButton(enabled = !busy, onClick = onScanQr) {
-                        Text("Scan QR", color = AccentPurpleLight)
+                        Text("Scan QR", color = EqifyTheme.colors.accent)
                     }
                     TextButton(enabled = !busy, onClick = onOpenFile) {
-                        Text("Open file…", color = AccentPurpleLight)
+                        Text("Open file…", color = EqifyTheme.colors.accent)
                     }
                 }
-                if (busy) LinearProgressIndicator(Modifier.fillMaxWidth(), color = AccentPurple)
+                if (busy) LinearProgressIndicator(Modifier.fillMaxWidth(), color = EqifyTheme.colors.accent)
                 error?.let {
                     Spacer(Modifier.height(6.dp))
-                    Text(it, color = Color(0xFFFF5252), fontSize = 11.sp)
+                    Text(it, color = EqifyTheme.colors.error, fontSize = 11.sp)
                 }
             }
         },
         confirmButton = {
             TextButton(enabled = !busy && text.isNotBlank(), onClick = { onImportText(text) }) {
-                Text("Preview", color = AccentPurpleLight, fontWeight = FontWeight.Bold)
+                Text("Preview", color = EqifyTheme.colors.accent, fontWeight = FontWeight.Bold)
             }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel", color = TextSecondary) } }
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel", color = EqifyTheme.colors.textMuted) } }
     )
 }
 
@@ -1133,8 +1133,8 @@ fun ImportPreviewDialog(
         !(applyBass && profile.bass != null)
 
     AlertDialog(
-        onDismissRequest = { if (!busy) onDismiss() }, containerColor = Surface2Dark,
-        title = { Text("Import \"${profile.name}\"", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 16.sp) },
+        onDismissRequest = { if (!busy) onDismiss() }, containerColor = EqifyTheme.colors.surfaceRaised,
+        title = { Text("Import \"${profile.name}\"", color = EqifyTheme.colors.textPrimary, fontWeight = FontWeight.Bold, fontSize = 16.sp) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 ToneCurvePreview(profile.tone)
@@ -1158,11 +1158,11 @@ fun ImportPreviewDialog(
                 if (preview.autoGenreOn) {
                     Spacer(Modifier.height(6.dp))
                     Text("Auto-Genre is on, so a tone you use now will be replaced by the genre preset on the next track.",
-                        color = NeonCyan, fontSize = 11.sp)
+                        color = EqifyTheme.colors.warning, fontSize = 11.sp)
                 }
                 if (busy) {
                     Spacer(Modifier.height(6.dp))
-                    LinearProgressIndicator(Modifier.fillMaxWidth(), color = AccentPurple)
+                    LinearProgressIndicator(Modifier.fillMaxWidth(), color = EqifyTheme.colors.accent)
                 }
             }
         },
@@ -1170,15 +1170,15 @@ fun ImportPreviewDialog(
             Row {
                 TextButton(enabled = !busy && !nothingSelected,
                     onClick = { onConfirm(saveTone, useCorrection, applyBass, false) }) {
-                    Text("Save", color = AccentPurpleLight)
+                    Text("Save", color = EqifyTheme.colors.accent)
                 }
                 TextButton(enabled = !busy,
                     onClick = { onConfirm(saveTone, useCorrection, applyBass, true) }) {
-                    Text("Save & use", color = AccentPurpleLight, fontWeight = FontWeight.Bold)
+                    Text("Save & use", color = EqifyTheme.colors.accent, fontWeight = FontWeight.Bold)
                 }
             }
         },
-        dismissButton = { TextButton(enabled = !busy, onClick = onDismiss) { Text("Cancel", color = TextSecondary) } }
+        dismissButton = { TextButton(enabled = !busy, onClick = onDismiss) { Text("Cancel", color = EqifyTheme.colors.textMuted) } }
     )
 }
 
@@ -1191,10 +1191,10 @@ private fun CheckRow(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Checkbox(checked = checked, onCheckedChange = onChange, enabled = enabled,
-            colors = CheckboxDefaults.colors(checkedColor = AccentPurple))
+            colors = CheckboxDefaults.colors(checkedColor = EqifyTheme.colors.accent))
         Column {
-            Text(label, color = TextPrimary, fontSize = 13.sp)
-            Text(detail, color = TextSecondary, fontSize = 10.sp)
+            Text(label, color = EqifyTheme.colors.textPrimary, fontSize = 13.sp)
+            Text(detail, color = EqifyTheme.colors.textMuted, fontSize = 10.sp)
         }
     }
 }
@@ -1208,7 +1208,7 @@ private fun ProfileQrImage(code: String) {
     val matrix = remember(code) { runCatching { ProfileQrCode.matrix(code) }.getOrNull() }
     if (matrix == null) {
         Text("This code is too long to show as a QR code. Copy or share it as text instead.",
-            color = Color(0xFFFF5252), fontSize = 11.sp)
+            color = EqifyTheme.colors.error, fontSize = 11.sp)
         return
     }
     Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
@@ -1243,23 +1243,26 @@ private fun ProfileQrImage(code: String) {
 /** Eight bars around a 0 dB line; ±12 dB fills the half-height. */
 @Composable
 private fun ToneCurvePreview(gains: List<Float>) {
+    // Theme values must be read here: Canvas' draw lambda is not composable.
+    val baseline = EqifyTheme.colors.textPrimary.copy(alpha = 0.15f)
+    val bar = EqifyTheme.colors.accent
     Column {
         Canvas(Modifier.fillMaxWidth().height(64.dp)) {
             val mid = size.height / 2f
             val slot = size.width / gains.size.coerceAtLeast(1)
-            drawLine(Color.White.copy(alpha = 0.15f),
+            drawLine(baseline,
                 androidx.compose.ui.geometry.Offset(0f, mid), androidx.compose.ui.geometry.Offset(size.width, mid), 1.dp.toPx())
             gains.forEachIndexed { i, g ->
                 val h = (g.coerceIn(-12f, 12f) / 12f) * (mid - 2.dp.toPx())
                 val x = slot * i + slot / 2f
-                drawLine(AccentPurpleLight,
+                drawLine(bar,
                     androidx.compose.ui.geometry.Offset(x, mid), androidx.compose.ui.geometry.Offset(x, mid - h),
                     (slot * 0.45f).coerceAtMost(14.dp.toPx()), StrokeCap.Round)
             }
         }
         Row(Modifier.fillMaxWidth()) {
             EqProfileManager.BAND_LABELS.forEachIndexed { i, label ->
-                Text("$label\n${"%+.1f".format(gains.getOrElse(i) { 0f })}", color = TextSecondary,
+                Text("$label\n${"%+.1f".format(gains.getOrElse(i) { 0f })}", color = EqifyTheme.colors.textMuted,
                     fontSize = 8.sp, lineHeight = 10.sp, modifier = Modifier.weight(1f),
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center)
             }
@@ -1315,11 +1318,16 @@ fun VerticalEqSlider(gainDb: Float, frequency: String, onChange: (Float) -> Unit
         Text(
             "%+.1f".format(gainDb),
             fontSize = 10.sp,
-            color = AccentPurpleLight,
+            color = EqifyTheme.colors.accent,
             fontWeight = FontWeight.Bold,
             modifier = Modifier.clickable { showPreciseInput = true }
         )
         Spacer(Modifier.height(6.dp))
+        // Read outside the draw lambda (not composable). Thumb keeps today's
+        // lighter-than-fill look until the phase 4 slider redesign.
+        val trackColor = EqifyTheme.colors.textPrimary.copy(alpha = 0.12f)
+        val fillColor = EqifyTheme.colors.accent
+        val thumbColor = EqifyTheme.colors.onAccentContainer
         Canvas(
             modifier = Modifier
                 .weight(1f)
@@ -1352,26 +1360,26 @@ fun VerticalEqSlider(gainDb: Float, frequency: String, onChange: (Float) -> Unit
             val thumbY = top + (bottom - top) * fraction
 
             drawLine(
-                color = Color.White.copy(alpha = 0.12f),
+                color = trackColor,
                 start = androidx.compose.ui.geometry.Offset(centerX, top),
                 end = androidx.compose.ui.geometry.Offset(centerX, bottom),
                 strokeWidth = 4.dp.toPx(),
                 cap = StrokeCap.Round
             )
             drawLine(
-                color = AccentPurple,
+                color = fillColor,
                 start = androidx.compose.ui.geometry.Offset(centerX, thumbY),
                 end = androidx.compose.ui.geometry.Offset(centerX, bottom),
                 strokeWidth = 4.dp.toPx(),
                 cap = StrokeCap.Round
             )
             drawCircle(
-                color = AccentPurpleLight,
+                color = thumbColor,
                 radius = 9.dp.toPx(),
                 center = androidx.compose.ui.geometry.Offset(centerX, thumbY)
             )
         }
         Spacer(Modifier.height(6.dp))
-        Text(frequency, fontSize = 9.sp, color = TextSecondary)
+        Text(frequency, fontSize = 9.sp, color = EqifyTheme.colors.textMuted)
     }
 }

@@ -41,8 +41,8 @@ EQIFY/
 │     │  ├─ GenreCoordinator.kt, GenreHistoryRepository.kt
 │     │  ├─ Bluetoothheadphonedetector.kt, Localgenredetector.kt
 │     │  ├─ HomeViewModel.kt, SettingsViewModel.kt, EqTestTonePlayer.kt
-│     │  ├─ screens/{HomeScreen,EqScreen,HeadphonesScreen,SettingsScreen}.kt
-│     │  └─ ui/theme/{Color,Theme,Type}.kt
+│     │  ├─ screens/{HomeScreen,EqScreen,HeadphonesScreen,SettingsScreen,AppearanceSettings}.kt
+│     │  └─ ui/theme/{Theme,Palette,ThemeSettings,Type,Dimens,Contrast}.kt
 │     ├─ test/java/com/example/eqify/ # JVM unit tests
 │     └─ androidTest/java/com/example/eqify/ # Device test
 └─ eqify-backend/
@@ -169,7 +169,7 @@ The former `limit_output_gain` Boolean is a migration-only preference. Existing 
 - `HeadphonesScreen` - headphone search and selection.
 - `SettingsScreen` - persisted behavior, integrations, output protection, cache, and privacy information.
 
-Reuse the colors and typography in `ui/theme` and match the existing card-based dark interface. Keep explanations close to unfamiliar audio controls, especially where a mode has compatibility limits or clipping risk.
+Use colour roles from `EqifyTheme.colors` (never hex values or `Color.White` in screens), the `EqifyTypography` roles, and `EqSpacing`/`EqifyShapes`; see `UI_REDESIGN.md`. Theme colours must be read outside `Canvas` draw lambdas (they are not composable). New palettes must pass `ThemeContrastTest`. Keep explanations close to unfamiliar audio controls, especially where a mode has compatibility limits or clipping risk.
 
 ### Kotlin file reference
 
@@ -217,7 +217,7 @@ Paths are relative to `app/src/main/java/com/example/eqify/`. “Owns” means l
 | `screens/EqScreen.kt` (Compose screen + screen AndroidViewModel) | Preset picker/CRUD/rename, eight sliders, EQ controls. | `EqState`, profile manager, preferences; preserve immediate manual path; global tone presets differ from headphone corrections. | Changing EQ UI, presets or sliders. |
 | `screens/HeadphonesScreen.kt` (Compose screen + screen AndroidViewModel) | Catalog search, favorites, selected headphone, GraphicEQ file/paste import and imported-profile selection/rename/delete. | Headphone repo, custom store, preferences, runtime states; typed custom headphone names differ from imported gain profiles. | Changing headphone picker or import UI. |
 | `screens/SettingsScreen.kt` (Compose screen) | Settings, protection explanation/diagnostics, permissions, cache/privacy controls. | Settings VM, limiter diagnostics; describe Safe fallback accurately. | Changing Settings UI/copy. |
-| `AppGlyph.kt`, `ui/theme/{Color,Theme,Type}.kt` (Compose helpers) | App glyph and shared visual tokens; no processing state. | Screens; keep behavior out of theme files. | Changing icons or visual system. |
+| `AppGlyph.kt`, `ui/theme/{Theme,Palette,ThemeSettings,Type,Dimens,Contrast}.kt` (Compose helpers) | App glyph; `EqifyColors` roles and palettes (`LocalEqifyColors`, mapped to Material `ColorScheme`), type scale + `tabular()`, spacing/shapes, WCAG contrast math. | Screens read `EqifyTheme.colors`; keep behaviour out of theme files; palettes are data so themes swap without screen edits; the user's theme lives in `ThemeStore` (SharedPreferences, loaded in `EqifyApplication`, applied live in `MainActivity`). | Changing icons, palettes or the visual system. |
 
 ### State ownership
 

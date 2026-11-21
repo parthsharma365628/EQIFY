@@ -331,7 +331,7 @@ fun HeadphonesScreen(
             text = {
                 Column(Modifier.verticalScroll(rememberScrollState())) {
                     Text("Paste the Frequency (Hz) / Gain (dB) table: one pair per line. It will be converted to EQify's eight bands.",
-                        color = TextSecondary, fontSize = 12.sp)
+                        color = EqifyTheme.colors.textMuted, fontSize = 12.sp)
                     Spacer(Modifier.height(8.dp))
                     OutlinedTextField(value = pastedName, onValueChange = { pastedName = it },
                         label = { Text("Profile name") }, singleLine = true)
@@ -375,11 +375,11 @@ fun HeadphonesScreen(
         var customName by remember { mutableStateOf("") }
         AlertDialog(
             onDismissRequest = { vm.hideCustomDialog() },
-            containerColor = Surface2Dark,
+            containerColor = EqifyTheme.colors.surfaceRaised,
             title = {
                 Text(
                     "Add custom headphone",
-                    color = TextPrimary,
+                    color = EqifyTheme.colors.textPrimary,
                     fontWeight = FontWeight.Bold
                 )
             },
@@ -387,7 +387,7 @@ fun HeadphonesScreen(
                 Column {
                     Text(
                         "Enter a name for your headphone.",
-                        color = TextSecondary,
+                        color = EqifyTheme.colors.textMuted,
                         fontSize = 12.sp
                     )
                     Spacer(Modifier.height(12.dp))
@@ -395,20 +395,20 @@ fun HeadphonesScreen(
                         value = customName,
                         onValueChange = { customName = it },
                         placeholder = {
-                            Text("e.g. My Headphones", color = TextSecondary)
+                            Text("e.g. My Headphones", color = EqifyTheme.colors.textMuted)
                         },
                         singleLine = true,
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = AccentPurple,
-                            unfocusedBorderColor = AccentPurple.copy(alpha = 0.3f),
-                            focusedTextColor = TextPrimary,
-                            unfocusedTextColor = TextPrimary
+                            focusedBorderColor = EqifyTheme.colors.accent,
+                            unfocusedBorderColor = EqifyTheme.colors.accent.copy(alpha = 0.3f),
+                            focusedTextColor = EqifyTheme.colors.textPrimary,
+                            unfocusedTextColor = EqifyTheme.colors.textPrimary
                         )
                     )
                     Spacer(Modifier.height(8.dp))
                     Text(
                         "Custom headphones use flat correction. Adjust the tone from the EQ screen.",
-                        color = TextSecondary,
+                        color = EqifyTheme.colors.textMuted,
                         fontSize = 11.sp
                     )
                 }
@@ -418,12 +418,12 @@ fun HeadphonesScreen(
                     onClick = { if (customName.isNotBlank()) vm.saveCustomHeadphone(customName) },
                     enabled = customName.isNotBlank()
                 ) {
-                    Text("Add", color = AccentPurpleLight, fontWeight = FontWeight.Bold)
+                    Text("Add", color = EqifyTheme.colors.accent, fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { vm.hideCustomDialog() }) {
-                    Text("Cancel", color = TextSecondary)
+                    Text("Cancel", color = EqifyTheme.colors.textMuted)
                 }
             }
         )
@@ -437,12 +437,12 @@ fun HeadphonesScreen(
                         "Select Headphones",
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold,
-                        color = TextPrimary
+                        color = EqifyTheme.colors.textPrimary
                     )
                 },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Text("←", fontSize = 24.sp, color = TextPrimary)
+                        Text("←", fontSize = 24.sp, color = EqifyTheme.colors.textPrimary)
                     }
                 },
                 actions = {
@@ -450,13 +450,13 @@ fun HeadphonesScreen(
                         vm.confirmSelection()
                         onNavigateBack()
                     }) {
-                        Text("Done", color = AccentPurpleLight, fontWeight = FontWeight.Bold)
+                        Text("Done", color = EqifyTheme.colors.accent, fontWeight = FontWeight.Bold)
                     }
                 },
-                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = BgDark)
+                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = EqifyTheme.colors.background)
             )
         },
-        containerColor = BgDark
+        containerColor = EqifyTheme.colors.background
     ) { padding ->
         Column(
             modifier = Modifier
@@ -467,45 +467,45 @@ fun HeadphonesScreen(
                 Text(
                     "6,028 models from AutoEQ database",
                     fontSize = 11.sp,
-                    color = TextSecondary
+                    color = EqifyTheme.colors.textMuted
                 )
                 if (errorMessage == "Offline favorites") {
-                    Text("Server unavailable · showing saved favorites", fontSize = 10.sp, color = NeonCyan)
+                    Text("Server unavailable · showing saved favorites", fontSize = 10.sp, color = EqifyTheme.colors.warning)
                 }
                 Spacer(Modifier.height(10.dp))
                 OutlinedTextField(
                     value = searchQuery,
                     onValueChange = { vm.searchQuery.value = it },
                     placeholder = {
-                        Text("Search any headphone...", color = TextSecondary, fontSize = 12.sp)
+                        Text("Search any headphone...", color = EqifyTheme.colors.textMuted, fontSize = 12.sp)
                     },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp),
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = AccentPurple,
-                        unfocusedBorderColor = AccentPurple.copy(alpha = 0.2f),
-                        cursorColor = AccentPurple,
-                        focusedTextColor = TextPrimary,
-                        unfocusedTextColor = TextPrimary
+                        focusedBorderColor = EqifyTheme.colors.accent,
+                        unfocusedBorderColor = EqifyTheme.colors.accent.copy(alpha = 0.2f),
+                        cursorColor = EqifyTheme.colors.accent,
+                        focusedTextColor = EqifyTheme.colors.textPrimary,
+                        unfocusedTextColor = EqifyTheme.colors.textPrimary
                     ),
                     singleLine = true
                 )
                 Spacer(Modifier.height(12.dp))
                 TextButton(onClick = { picker.launch(arrayOf("text/plain")) }) {
-                    Text("Import GraphicEQ file", color = AccentPurpleLight)
+                    Text("Import GraphicEQ file", color = EqifyTheme.colors.accent)
                 }
                 TextButton(onClick = { showPasteDialog = true }) {
-                    Text("Paste 10-band values", color = AccentPurpleLight)
+                    Text("Paste 10-band values", color = EqifyTheme.colors.accent)
                 }
-                importMessage?.let { Text(it, color = TextSecondary, fontSize = 11.sp) }
+                importMessage?.let { Text(it, color = EqifyTheme.colors.textMuted, fontSize = 11.sp) }
                 if (customProfiles.isNotEmpty()) {
-                    Text("MY CUSTOM PROFILES", color = AccentPurpleLight, fontSize = 11.sp)
+                    Text("MY CUSTOM PROFILES", color = EqifyTheme.colors.accent, fontSize = 11.sp)
                     Column(Modifier.heightIn(max = 220.dp).verticalScroll(rememberScrollState())) {
                         customProfiles.sortedByDescending { it.importedAtEpochMillis }.forEach { profile ->
                             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                                 TextButton(onClick = { vm.selectCustomProfile(profile.id) }, modifier = Modifier.weight(1f)) {
                                     Text((if (selection == HeadphoneCorrectionSelection.Custom(profile.id)) "✓ " else "") +
-                                        profile.displayName + " · GraphicEQ", color = TextPrimary)
+                                        profile.displayName + " · GraphicEQ", color = EqifyTheme.colors.textPrimary)
                                 }
                                 TextButton(onClick = { vm.openShareCustomProfile(profile.id) }) { Text("Share") }
                                 TextButton(onClick = { renameProfile = profile }) { Text("Rename") }
@@ -518,27 +518,27 @@ fun HeadphonesScreen(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp),
                     colors = CardDefaults.cardColors(
-                        containerColor = AccentPurple.copy(alpha = 0.15f)
+                        containerColor = EqifyTheme.colors.accent.copy(alpha = 0.15f)
                     )
                 ) {
                     Row(
                         modifier = Modifier.padding(12.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        AppGlyph("Headphones", AccentPurpleLight)
+                        AppGlyph("Headphones", EqifyTheme.colors.accent)
                         Spacer(Modifier.width(10.dp))
                         Column {
                             Text(
                                 "Currently selected",
                                 fontSize = 9.sp,
-                                color = AccentPurpleLight,
+                                color = EqifyTheme.colors.accent,
                                 letterSpacing = 1.sp
                             )
                             Text(
                                 localSelectedHeadphone,
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.SemiBold,
-                                color = TextPrimary
+                                color = EqifyTheme.colors.textPrimary
                             )
                             correctionStatusText?.let { statusText ->
                                 Text(
@@ -549,9 +549,9 @@ fun HeadphonesScreen(
                                             MaterialTheme.colorScheme.error
                                         is HeadphoneCorrectionStatus.Downloaded,
                                         is HeadphoneCorrectionStatus.Cached,
-                                        is HeadphoneCorrectionStatus.Imported -> NeonCyan
+                                        is HeadphoneCorrectionStatus.Imported -> EqifyTheme.colors.success
                                         is HeadphoneCorrectionStatus.ImportFailed -> MaterialTheme.colorScheme.error
-                                        else -> TextSecondary
+                                        else -> EqifyTheme.colors.textMuted
                                     }
                                 )
                             }
@@ -567,9 +567,9 @@ fun HeadphonesScreen(
                         verticalArrangement = Arrangement.Center,
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        CircularProgressIndicator(color = AccentPurple)
+                        CircularProgressIndicator(color = EqifyTheme.colors.accent)
                         Spacer(Modifier.height(12.dp))
-                        Text("Searching...", color = TextSecondary, fontSize = 13.sp)
+                        Text("Searching...", color = EqifyTheme.colors.textMuted, fontSize = 13.sp)
                     }
                 }
                 results.isEmpty() -> {
@@ -582,14 +582,14 @@ fun HeadphonesScreen(
                     ) {
                         Text(
                             errorMessage ?: "No matches",
-                            color = TextSecondary,
+                            color = EqifyTheme.colors.textMuted,
                             fontSize = 13.sp
                         )
                         if (errorMessage != null) {
                             Spacer(Modifier.height(12.dp))
                             Button(
                                 onClick = { vm.retry() },
-                                colors = ButtonDefaults.buttonColors(containerColor = AccentPurple)
+                                colors = ButtonDefaults.buttonColors(containerColor = EqifyTheme.colors.accent)
                             ) {
                                 Text("Retry")
                             }
@@ -620,27 +620,27 @@ fun HeadphonesScreen(
                                     .clickable { vm.showCustomDialog() },
                                 shape = RoundedCornerShape(12.dp),
                                 border = BorderStroke(
-                                    1.dp, AccentPurple.copy(alpha = 0.3f)
+                                    1.dp, EqifyTheme.colors.accent.copy(alpha = 0.3f)
                                 ),
-                                colors = CardDefaults.cardColors(containerColor = Surface2Dark)
+                                colors = CardDefaults.cardColors(containerColor = EqifyTheme.colors.surfaceRaised)
                             ) {
                                 Row(
                                     modifier = Modifier.padding(14.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Text("+", fontSize = 24.sp, color = AccentPurpleLight)
+                                    Text("+", fontSize = 24.sp, color = EqifyTheme.colors.accent)
                                     Spacer(Modifier.width(12.dp))
                                     Column {
                                         Text(
                                             "Add custom headphone",
                                             fontSize = 13.sp,
                                             fontWeight = FontWeight.SemiBold,
-                                            color = AccentPurpleLight
+                                            color = EqifyTheme.colors.accent
                                         )
                                         Text(
                                             "Use a manually named flat profile",
                                             fontSize = 10.sp,
-                                            color = TextSecondary
+                                            color = EqifyTheme.colors.textMuted
                                         )
                                     }
                                 }
@@ -670,10 +670,10 @@ fun HeadphoneListItem(
         shape = RoundedCornerShape(12.dp),
         border = BorderStroke(
             1.dp,
-            if (isSelected) AccentPurple else AccentPurple.copy(alpha = 0.1f)
+            if (isSelected) EqifyTheme.colors.accent else EqifyTheme.colors.accent.copy(alpha = 0.1f)
         ),
         colors = CardDefaults.cardColors(
-            containerColor = if (isSelected) AccentPurple.copy(alpha = 0.1f) else Surface2Dark
+            containerColor = if (isSelected) EqifyTheme.colors.accent.copy(alpha = 0.1f) else EqifyTheme.colors.surfaceRaised
         )
     ) {
         Row(
@@ -686,14 +686,14 @@ fun HeadphoneListItem(
                 Text(
                     type.replaceFirstChar { it.uppercase() },
                     fontSize = 9.sp,
-                    color = TextSecondary,
+                    color = EqifyTheme.colors.textMuted,
                     letterSpacing = 0.5.sp
                 )
                 Text(
                     name,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.SemiBold,
-                    color = TextPrimary
+                    color = EqifyTheme.colors.textPrimary
                 )
             }
             TextButton(
@@ -701,14 +701,14 @@ fun HeadphoneListItem(
                 contentPadding = PaddingValues(4.dp),
                 modifier = Modifier.size(36.dp)
             ) {
-                Text(if (isFavorite) "★" else "☆", color = if (isFavorite) AccentPurpleLight else TextSecondary)
+                Text(if (isFavorite) "★" else "☆", color = if (isFavorite) EqifyTheme.colors.accent else EqifyTheme.colors.textMuted)
             }
             if (isSelected) {
-                Surface(shape = RoundedCornerShape(50), color = AccentPurple) {
+                Surface(shape = RoundedCornerShape(50), color = EqifyTheme.colors.accent) {
                     Text(
                         "✓",
                         fontSize = 11.sp,
-                        color = androidx.compose.ui.graphics.Color.White,
+                        color = EqifyTheme.colors.onAccent,
                         modifier = Modifier.padding(6.dp)
                     )
                 }

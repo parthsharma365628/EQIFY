@@ -1,44 +1,78 @@
-package com.example.eqify
+package com.example.eqify.ui.theme
 
-import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.ui.graphics.Color
 
-// Existing token names retained so every screen shares the new palette.
-val AccentPurple = Color(0xFF557B70)
-val AccentPurpleLight = Color(0xFFB6CEC4)
-val NeonCyan = Color(0xFFA0BDB1)
-val BgDark = Color(0xFF101212)
-val SurfaceDark = Color(0xFF171A19)
-val Surface2Dark = Color(0xFF202423)
-val TextPrimary = Color(0xFFEAEDEB)
-val TextSecondary = Color(0xFFA4ADA8)
+/** Read colour roles in composables: `EqifyTheme.colors.accent`. */
+object EqifyTheme {
+    val colors: EqifyColors
+        @Composable @ReadOnlyComposable get() = LocalEqifyColors.current
+}
 
-private val DarkColorScheme = darkColorScheme(
-    primary = AccentPurple,
-    secondary = AccentPurpleLight,
-    tertiary = NeonCyan,
-    background = BgDark,
-    surface = SurfaceDark,
-    onPrimary = Color.White,
-    onBackground = TextPrimary,
-    onSurface = TextPrimary,
-    surfaceVariant = Surface2Dark,
-    onSurfaceVariant = TextSecondary,
-    outline = Color(0xFF646F69),
-    outlineVariant = Color(0xFF343D38),
-    primaryContainer = Color(0xFF30433B),
-    onPrimaryContainer = TextPrimary,
-    secondaryContainer = Color(0xFF30433B),
-    onSecondaryContainer = TextPrimary,
-    surfaceTint = Color.Transparent,
-)
-
+/**
+ * App theme. [colors] is swappable at runtime (phase 2b adds the picker);
+ * Material components follow it through the derived [ColorScheme].
+ */
 @Composable
-fun EQifyTheme(content: @Composable () -> Unit) {
-    MaterialTheme(
-        colorScheme = DarkColorScheme,
-        content = content
+fun EQifyTheme(
+    colors: EqifyColors = EqifyPalettes.dark(),
+    content: @Composable () -> Unit
+) {
+    CompositionLocalProvider(LocalEqifyColors provides colors) {
+        MaterialTheme(
+            colorScheme = colors.toColorScheme(),
+            typography = EqifyTypography,
+            shapes = EqifyShapes,
+            content = content
+        )
+    }
+}
+
+/** Maps our roles onto Material 3 so stock components (Switch, dialogs, fields) match. */
+fun EqifyColors.toColorScheme(): ColorScheme {
+    val base = if (isDark) darkColorScheme() else lightColorScheme()
+    return base.copy(
+        primary = accent,
+        onPrimary = onAccent,
+        primaryContainer = accentContainer,
+        onPrimaryContainer = onAccentContainer,
+        secondary = accent,
+        onSecondary = onAccent,
+        secondaryContainer = accentContainer,
+        onSecondaryContainer = onAccentContainer,
+        tertiary = accent,
+        onTertiary = onAccent,
+        tertiaryContainer = accentContainer,
+        onTertiaryContainer = onAccentContainer,
+        background = background,
+        onBackground = textPrimary,
+        surface = surface,
+        onSurface = textPrimary,
+        surfaceVariant = surfaceHighest,
+        onSurfaceVariant = textMuted,
+        surfaceTint = Color.Transparent,
+        surfaceDim = background,
+        surfaceBright = surfaceHighest,
+        surfaceContainerLowest = background,
+        surfaceContainerLow = surface,
+        surfaceContainer = surface,
+        surfaceContainerHigh = surfaceRaised,
+        surfaceContainerHighest = surfaceHighest,
+        inverseSurface = textPrimary,
+        inverseOnSurface = background,
+        inversePrimary = accentContainer,
+        outline = outlineStrong,
+        outlineVariant = outline,
+        error = error,
+        onError = onError,
+        errorContainer = errorContainer,
+        onErrorContainer = onErrorContainer,
+        scrim = Color.Black
     )
 }

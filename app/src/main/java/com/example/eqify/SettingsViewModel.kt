@@ -11,6 +11,9 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
+import com.example.eqify.ui.theme.ThemeAccent
+import com.example.eqify.ui.theme.ThemeMode
+import com.example.eqify.ui.theme.ThemeStore
 
 /**
  * ViewModel for [com.example.eqify.screens.SettingsScreen].
@@ -154,6 +157,20 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     fun dismissCacheMessage() {
         _cacheMessage.value = null
     }
+
+    // ── Appearance (applies live; see ThemeStore) ─────────────────────
+
+    val themeSettings = ThemeStore.settings
+
+    fun setThemeMode(mode: ThemeMode) = ThemeStore.update(getApplication()) { it.copy(mode = mode) }
+
+    /** Picking a fixed accent turns Dynamic colour off. */
+    fun setThemeAccent(accent: ThemeAccent) =
+        ThemeStore.update(getApplication()) { it.copy(accent = accent, dynamic = false) }
+
+    fun setDynamicColor(enabled: Boolean) = ThemeStore.update(getApplication()) { it.copy(dynamic = enabled) }
+
+    fun setPureBlack(enabled: Boolean) = ThemeStore.update(getApplication()) { it.copy(pureBlack = enabled) }
 
     // ── Crash reporting ───────────────────────────────────────────────
 

@@ -1,5 +1,13 @@
 package com.example.eqify
 
+import com.example.eqify.ui.theme.EqifyColors
+import com.example.eqify.ui.theme.EqifyTheme
+import com.example.eqify.ui.theme.EQifyTheme
+import com.example.eqify.ui.theme.ThemeStore
+import com.example.eqify.ui.theme.rememberEqifyColors
+import android.graphics.drawable.ColorDrawable
+import androidx.compose.ui.graphics.toArgb
+import androidx.core.view.WindowCompat
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -52,7 +60,12 @@ class MainActivity : ComponentActivity() {
         if (savedInstanceState == null) PendingProfileImport.offer(intent)
 
         setContent {
-            EQifyTheme {
+            // Live theme: ThemeStore was loaded synchronously in EqifyApplication,
+            // so the first frame already uses the user's choice.
+            val themeSettings by ThemeStore.settings.collectAsState()
+            val colors = rememberEqifyColors(themeSettings)
+            SideEffect { applySystemBars(colors) }
+            EQifyTheme(colors = colors) {
                 val onboardingPrefs = remember {
                     getSharedPreferences("eqify_onboarding", MODE_PRIVATE)
                 }
@@ -91,6 +104,21 @@ class MainActivity : ComponentActivity() {
                     )
                 }
             }
+        }
+    }
+
+    /** Status/navigation bar icons and window background follow the theme (light icons on dark, etc.). */
+    @Suppress("DEPRECATION") // bar colours are ignored (edge-to-edge) on Android 15+, icon appearance still applies
+    private fun applySystemBars(colors: EqifyColors) {
+        val background = colors.background.toArgb()
+        window.setBackgroundDrawable(ColorDrawable(background))
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+            window.statusBarColor = background
+            window.navigationBarColor = colors.surface.toArgb()
+        }
+        WindowCompat.getInsetsController(window, window.decorView).apply {
+            isAppearanceLightStatusBars = !colors.isDark
+            isAppearanceLightNavigationBars = !colors.isDark
         }
     }
 
@@ -212,15 +240,15 @@ fun EqifyApp() {
     Scaffold(
         bottomBar = {
             if (currentRoute == "home" || currentRoute == "eq") {
-                NavigationBar(containerColor = SurfaceDark, tonalElevation = 0.dp) {
+                NavigationBar(containerColor = EqifyTheme.colors.surface, tonalElevation = 0.dp) {
                     NavigationBarItem(
-                        icon     = { AppGlyph("Home", if (currentRoute == "home") TextPrimary else TextSecondary) },
+                        icon     = { AppGlyph("Home", if (currentRoute == "home") EqifyTheme.colors.textPrimary else EqifyTheme.colors.textMuted) },
                         label    = { Text("Home") },
                         selected = currentRoute == "home",
                         onClick  = { navigateToTopLevel("home") }
                     )
                     NavigationBarItem(
-                        icon     = { AppGlyph("Equalizer", if (currentRoute == "eq") TextPrimary else TextSecondary) },
+                        icon     = { AppGlyph("Equalizer", if (currentRoute == "eq") EqifyTheme.colors.textPrimary else EqifyTheme.colors.textMuted) },
                         label    = { Text("EQ") },
                         selected = currentRoute == "eq",
                         onClick  = { navigateToTopLevel("eq") }

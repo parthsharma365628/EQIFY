@@ -73,7 +73,7 @@ fun HomeScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(BgDark)
+            .background(EqifyTheme.colors.background)
             .verticalScroll(rememberScrollState())
     ) {
         TopBar(onSettingsClick = onNavigateToSettings)
@@ -137,7 +137,7 @@ fun BassBoosterCard(onLevelChange: (Float) -> Unit) {
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 6.dp),
         shape  = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = Surface2Dark)
+        colors = CardDefaults.cardColors(containerColor = EqifyTheme.colors.surfaceRaised)
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
             Row(
@@ -150,12 +150,12 @@ fun BassBoosterCard(onLevelChange: (Float) -> Unit) {
                         text       = "Bass Booster",
                         fontSize   = 14.sp,
                         fontWeight = FontWeight.SemiBold,
-                        color      = TextPrimary
+                        color      = EqifyTheme.colors.textPrimary
                     )
                     Text(
                         text     = if (bassLevel == 0f) "Off" else "+${bassLevel.toInt()}dB sub-bass",
                         fontSize = 10.sp,
-                        color    = if (bassLevel > 0f) AccentPurpleLight else TextSecondary
+                        color    = if (bassLevel > 0f) EqifyTheme.colors.accent else EqifyTheme.colors.textMuted
                     )
                 }
 
@@ -164,10 +164,10 @@ fun BassBoosterCard(onLevelChange: (Float) -> Unit) {
                         val isActive = bassLevel == level
                         Surface(
                             shape  = RoundedCornerShape(8.dp),
-                            color  = if (isActive) AccentPurple else Surface2Dark,
+                            color  = if (isActive) EqifyTheme.colors.accent else EqifyTheme.colors.surfaceRaised,
                             border = BorderStroke(
                                 1.dp,
-                                if (isActive) AccentPurple else AccentPurple.copy(alpha = 0.2f)
+                                if (isActive) EqifyTheme.colors.accent else EqifyTheme.colors.accent.copy(alpha = 0.2f)
                             ),
                             modifier = Modifier.clickable {
                                 // Write via ViewModel → EqState + DataStore
@@ -178,7 +178,7 @@ fun BassBoosterCard(onLevelChange: (Float) -> Unit) {
                             Text(
                                 text       = if (level == 0f) "Off" else "+${level.toInt()}",
                                 fontSize   = 10.sp,
-                                color      = if (isActive) Color.White else TextSecondary,
+                                color      = if (isActive) EqifyTheme.colors.onAccent else EqifyTheme.colors.textMuted,
                                 fontWeight = FontWeight.SemiBold,
                                 modifier   = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
                             )
@@ -199,7 +199,7 @@ fun WiredHeadphoneBanner(onChangeClick: () -> Unit, onDismissClick: () -> Unit) 
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 6.dp),
         shape  = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = AccentPurple.copy(alpha = 0.12f))
+        colors = CardDefaults.cardColors(containerColor = EqifyTheme.colors.accent.copy(alpha = 0.12f))
     ) {
         Row(
             modifier          = Modifier.fillMaxWidth().padding(14.dp),
@@ -212,12 +212,12 @@ fun WiredHeadphoneBanner(onChangeClick: () -> Unit, onDismissClick: () -> Unit) 
                     text       = "Wired headphones detected",
                     fontSize   = 13.sp,
                     fontWeight = FontWeight.SemiBold,
-                    color      = TextPrimary
+                    color      = EqifyTheme.colors.textPrimary
                 )
                 Text(
                     text     = "Is your headphone selection still correct?",
                     fontSize = 11.sp,
-                    color    = TextSecondary
+                    color    = EqifyTheme.colors.textMuted
                 )
             }
             Column(horizontalAlignment = Alignment.End) {
@@ -225,13 +225,13 @@ fun WiredHeadphoneBanner(onChangeClick: () -> Unit, onDismissClick: () -> Unit) 
                     onClick        = onChangeClick,
                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
                 ) {
-                    Text("Change", color = AccentPurpleLight, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                    Text("Change", color = EqifyTheme.colors.accent, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                 }
                 TextButton(
                     onClick        = onDismissClick,
                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
                 ) {
-                    Text("Dismiss", color = TextSecondary, fontSize = 11.sp)
+                    Text("Dismiss", color = EqifyTheme.colors.textMuted, fontSize = 11.sp)
                 }
             }
         }
@@ -253,7 +253,7 @@ fun TopBar(onSettingsClick: () -> Unit = {}) {
             text       = "EQify",
             fontSize   = 22.sp,
             fontWeight = FontWeight.Bold,
-            color      = AccentPurpleLight
+            color      = EqifyTheme.colors.accent
         )
         IconButton(onClick = onSettingsClick) {
             AppGlyph("Settings")
@@ -273,13 +273,13 @@ fun NowPlayingCard(
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 6.dp),
         shape  = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = Surface2Dark)
+        colors = CardDefaults.cardColors(containerColor = EqifyTheme.colors.surfaceRaised)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
                 text          = "NOW PLAYING",
                 fontSize      = 9.sp,
-                color         = NeonCyan,
+                color         = EqifyTheme.colors.accent,
                 letterSpacing = 2.sp
             )
             Spacer(Modifier.height(6.dp))
@@ -287,10 +287,10 @@ fun NowPlayingCard(
                 text       = trackName,
                 fontSize   = 16.sp,
                 fontWeight = FontWeight.Bold,
-                color      = TextPrimary
+                color      = EqifyTheme.colors.textPrimary
             )
             if (artistName.isNotBlank()) {
-                Text(text = artistName, fontSize = 12.sp, color = TextSecondary)
+                Text(text = artistName, fontSize = 12.sp, color = EqifyTheme.colors.textMuted)
             }
             Spacer(Modifier.height(10.dp))
             when (genreUiState) {
@@ -301,7 +301,7 @@ fun NowPlayingCard(
                 is GenreUiState.Idle         -> {}
             }
             if (artistName.isNotBlank()) {
-                TextButton(onClick = onCorrect) { Text("Change genre", color = AccentPurpleLight) }
+                TextButton(onClick = onCorrect) { Text("Change genre", color = EqifyTheme.colors.accent) }
             }
         }
     }
@@ -312,32 +312,32 @@ private fun GenreMixCard(mix: GenreMix, onRecent: () -> Unit) {
     Card(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = Surface2Dark)
+        colors = CardDefaults.cardColors(containerColor = EqifyTheme.colors.surfaceRaised)
     ) {
         Column(Modifier.padding(16.dp)) {
-            Text("GENRE MIX FROM DETECTED TRACKS", fontSize = 10.sp, color = NeonCyan)
+            Text("GENRE MIX FROM DETECTED TRACKS", fontSize = 10.sp, color = EqifyTheme.colors.accent)
             Text("Past 7 days • ${mix.total} track observations (not listening time)",
-                fontSize = 11.sp, color = TextSecondary)
+                fontSize = 11.sp, color = EqifyTheme.colors.textMuted)
             Text("Only tracks detected while the listener and Auto-Genre were active are counted.",
-                fontSize = 10.sp, color = TextSecondary)
+                fontSize = 10.sp, color = EqifyTheme.colors.textMuted)
             if (mix.total == 0) {
                 Text("No tracks observed yet. Enable notification access and Media Listener to start.",
-                    fontSize = 12.sp, color = TextSecondary, modifier = Modifier.padding(vertical = 12.dp))
+                    fontSize = 12.sp, color = EqifyTheme.colors.textMuted, modifier = Modifier.padding(vertical = 12.dp))
             } else {
                 mix.items.forEach { item ->
                     Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text(item.genre, color = TextPrimary, fontSize = 12.sp)
-                        Text("${item.percent}% (${item.count})", color = AccentPurpleLight, fontSize = 12.sp)
+                        Text(item.genre, color = EqifyTheme.colors.textPrimary, fontSize = 12.sp)
+                        Text("${item.percent}% (${item.count})", color = EqifyTheme.colors.accent, fontSize = 12.sp)
                     }
                     LinearProgressIndicator(
                         progress = { item.count.toFloat() / mix.total },
                         modifier = Modifier.fillMaxWidth().padding(top = 3.dp),
-                        color = AccentPurple,
-                        trackColor = BgDark
+                        color = EqifyTheme.colors.accent,
+                        trackColor = EqifyTheme.colors.background
                     )
                 }
             }
-            TextButton(onClick = onRecent) { Text("Recent tracks", color = AccentPurpleLight) }
+            TextButton(onClick = onRecent) { Text("Recent tracks", color = EqifyTheme.colors.accent) }
         }
     }
 }
@@ -392,19 +392,19 @@ private fun GenreCorrectionDialog(
 @Composable
 private fun GenreChip(state: GenreUiState.Detected) {
     AnimatedVisibility(visible = true, enter = fadeIn(), exit = fadeOut()) {
-        Surface(shape = RoundedCornerShape(20.dp), color = AccentPurple.copy(alpha = 0.15f)) {
+        Surface(shape = RoundedCornerShape(20.dp), color = EqifyTheme.colors.accent.copy(alpha = 0.15f)) {
             Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)) {
                 Text(
                     text = "● ${state.genre}",
                     fontSize = 10.sp,
-                    color = AccentPurpleLight
+                    color = EqifyTheme.colors.accent
                 )
                 Text(
                     text = if (state.source == "Manual correction") "Source: Manual correction"
                         else "Source: ${state.source} • Confidence: ${state.confidence}" +
                             if (state.isFallback) " • fallback" else "",
                     fontSize = 9.sp,
-                    color = TextSecondary
+                    color = EqifyTheme.colors.textMuted
                 )
             }
         }
@@ -420,11 +420,11 @@ private fun DetectingChip() {
         animationSpec = infiniteRepeatable(tween(700), RepeatMode.Reverse),
         label         = "alpha"
     )
-    Surface(shape = RoundedCornerShape(20.dp), color = TextSecondary.copy(alpha = 0.1f)) {
+    Surface(shape = RoundedCornerShape(20.dp), color = EqifyTheme.colors.textMuted.copy(alpha = 0.1f)) {
         Text(
             text     = "◌ Detecting genre…",
             fontSize = 10.sp,
-            color    = TextSecondary,
+            color    = EqifyTheme.colors.textMuted,
             modifier = Modifier.alpha(alpha).padding(horizontal = 10.dp, vertical = 4.dp)
         )
     }
@@ -432,11 +432,11 @@ private fun DetectingChip() {
 
 @Composable
 private fun DetectionOffChip() {
-    Surface(shape = RoundedCornerShape(20.dp), color = TextSecondary.copy(alpha = 0.1f)) {
+    Surface(shape = RoundedCornerShape(20.dp), color = EqifyTheme.colors.textMuted.copy(alpha = 0.1f)) {
         Text(
             text     = "◌ Auto-detect off",
             fontSize = 10.sp,
-            color    = TextSecondary,
+            color    = EqifyTheme.colors.textMuted,
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
         )
     }
@@ -444,11 +444,11 @@ private fun DetectionOffChip() {
 
 @Composable
 private fun ErrorChip() {
-    Surface(shape = RoundedCornerShape(20.dp), color = Color(0x22FF5252)) {
+    Surface(shape = RoundedCornerShape(20.dp), color = EqifyTheme.colors.errorContainer) {
         Text(
             text     = "⚠ Genre detection failed",
             fontSize = 10.sp,
-            color    = Color(0xFFFF5252),
+            color    = EqifyTheme.colors.error,
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
         )
     }
@@ -470,7 +470,7 @@ fun EqStatusCard(
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 6.dp),
         shape  = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = Surface2Dark)
+        colors = CardDefaults.cardColors(containerColor = EqifyTheme.colors.surfaceRaised)
     ) {
         Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
             Row(
@@ -482,7 +482,7 @@ fun EqStatusCard(
                 Text(
                     text          = "AUTO EQ",
                     fontSize      = 10.sp,
-                    color         = TextSecondary,
+                    color         = EqifyTheme.colors.textMuted,
                     letterSpacing = 1.5.sp
                 )
                 Text(
@@ -492,7 +492,7 @@ fun EqStatusCard(
                         else            -> "Paused"
                     },
                     fontSize   = 12.sp,
-                    color      = if (enabled && serviceRunning) AccentPurpleLight else TextSecondary,
+                    color      = if (enabled && serviceRunning) EqifyTheme.colors.accent else EqifyTheme.colors.textMuted,
                     fontWeight = FontWeight.SemiBold
                 )
             }
@@ -500,8 +500,8 @@ fun EqStatusCard(
                     checked = enabled,
                     onCheckedChange = onToggle,
                     colors = SwitchDefaults.colors(
-                        checkedThumbColor = Color.White,
-                        checkedTrackColor = AccentPurple
+                        checkedThumbColor = EqifyTheme.colors.onAccent,
+                        checkedTrackColor = EqifyTheme.colors.accent
                     )
                 )
             }
@@ -514,7 +514,7 @@ fun EqStatusCard(
                 Text(
                     testToneMessage ?: "Test EQ",
                     fontSize = 11.sp,
-                    color = if (serviceRunning) AccentPurpleLight else TextSecondary
+                    color = if (serviceRunning) EqifyTheme.colors.accent else EqifyTheme.colors.textMuted
                 )
             }
         }
@@ -555,35 +555,35 @@ fun HeadphoneCard(
             .padding(horizontal = 16.dp, vertical = 6.dp)
             .clickable { onClick() },
         shape  = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = Surface2Dark)
+        colors = CardDefaults.cardColors(containerColor = EqifyTheme.colors.surfaceRaised)
     ) {
         Row(
             modifier          = Modifier.padding(14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            AppGlyph("Headphones", AccentPurpleLight)
+            AppGlyph("Headphones", EqifyTheme.colors.accent)
             Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text       = headphoneName,
                     fontSize   = 14.sp,
                     fontWeight = FontWeight.SemiBold,
-                    color      = TextPrimary
+                    color      = EqifyTheme.colors.textPrimary
                 )
-                Text(text = "Manage headphone correction", fontSize = 12.sp, color = TextSecondary)
+                Text(text = "Manage headphone correction", fontSize = 12.sp, color = EqifyTheme.colors.textMuted)
                 statusText?.let {
                     Text(
                         text = it,
                         fontSize = 10.sp,
                         color = if (correctionStatus is HeadphoneCorrectionStatus.Failed ||
                             correctionStatus is HeadphoneCorrectionStatus.ImportFailed)
-                            MaterialTheme.colorScheme.error else NeonCyan
+                            MaterialTheme.colorScheme.error else EqifyTheme.colors.accent
                     )
                 }
             }
             Text(
                 text       = "Change",
-                color      = AccentPurpleLight,
+                color      = EqifyTheme.colors.accent,
                 fontSize   = 11.sp,
                 fontWeight = FontWeight.SemiBold
             )

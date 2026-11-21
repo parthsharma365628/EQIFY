@@ -94,80 +94,80 @@ fun SettingsScreen(
     if (showPermissionDialog) {
         AlertDialog(
             onDismissRequest = { showPermissionDialog = false },
-            title = { Text("Permission Required", color = TextPrimary) },
+            title = { Text("Permission Required", color = EqifyTheme.colors.textPrimary) },
             text = {
                 Text(
                     "To detect music automatically, EQify needs 'Notification Access'. " +
                             "Please find 'EQify' in the next screen and enable it.",
-                    color = TextSecondary
+                    color = EqifyTheme.colors.textMuted
                 )
             },
             confirmButton = {
                 TextButton(onClick = {
                     showPermissionDialog = false
                     context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
-                }) { Text("Go to Settings", color = AccentPurpleLight) }
+                }) { Text("Go to Settings", color = EqifyTheme.colors.accent) }
             },
             dismissButton = {
                 TextButton(onClick = { showPermissionDialog = false }) {
-                    Text("Cancel", color = TextSecondary)
+                    Text("Cancel", color = EqifyTheme.colors.textMuted)
                 }
             },
-            containerColor = Surface2Dark
+            containerColor = EqifyTheme.colors.surfaceRaised
         )
     }
 
     if (showClearCacheDialog) {
         AlertDialog(
             onDismissRequest = { showClearCacheDialog = false },
-            title = { Text("Clear downloaded corrections?", color = TextPrimary) },
+            title = { Text("Clear downloaded corrections?", color = EqifyTheme.colors.textPrimary) },
             text = {
                 Text(
                     "Selected AutoEQ corrections will be downloaded again when needed.",
-                    color = TextSecondary
+                    color = EqifyTheme.colors.textMuted
                 )
             },
             confirmButton = {
                 TextButton(onClick = {
                     showClearCacheDialog = false
                     vm.clearDownloadedCorrections()
-                }) { Text("Clear", color = AccentPurpleLight) }
+                }) { Text("Clear", color = EqifyTheme.colors.accent) }
             },
             dismissButton = {
                 TextButton(onClick = { showClearCacheDialog = false }) {
-                    Text("Cancel", color = TextSecondary)
+                    Text("Cancel", color = EqifyTheme.colors.textMuted)
                 }
             },
-            containerColor = Surface2Dark
+            containerColor = EqifyTheme.colors.surfaceRaised
         )
     }
 
     if (showClearHistoryDialog) {
         AlertDialog(
             onDismissRequest = { showClearHistoryDialog = false },
-            title = { Text("Clear genre history?", color = TextPrimary) },
-            text = { Text("Removes local track observations and every saved genre correction. Headphone corrections and EQ presets stay intact.", color = TextSecondary) },
+            title = { Text("Clear genre history?", color = EqifyTheme.colors.textPrimary) },
+            text = { Text("Removes local track observations and every saved genre correction. Headphone corrections and EQ presets stay intact.", color = EqifyTheme.colors.textMuted) },
             confirmButton = {
                 TextButton(onClick = { showClearHistoryDialog = false; vm.clearGenreHistory() }) {
-                    Text("Clear", color = AccentPurpleLight)
+                    Text("Clear", color = EqifyTheme.colors.accent)
                 }
             },
             dismissButton = { TextButton(onClick = { showClearHistoryDialog = false }) { Text("Cancel") } },
-            containerColor = Surface2Dark
+            containerColor = EqifyTheme.colors.surfaceRaised
         )
     }
 
     if (showClearCustomProfilesDialog) {
         AlertDialog(
             onDismissRequest = { showClearCustomProfilesDialog = false },
-            title = { Text("Clear imported profiles?", color = TextPrimary) },
-            text = { Text("Deletes all imported GraphicEQ profiles. If one is active, flat headphone correction will be used.", color = TextSecondary) },
+            title = { Text("Clear imported profiles?", color = EqifyTheme.colors.textPrimary) },
+            text = { Text("Deletes all imported GraphicEQ profiles. If one is active, flat headphone correction will be used.", color = EqifyTheme.colors.textMuted) },
             confirmButton = { TextButton(onClick = {
                 showClearCustomProfilesDialog = false
                 vm.clearCustomProfiles()
             }) { Text("Clear") } },
             dismissButton = { TextButton(onClick = { showClearCustomProfilesDialog = false }) { Text("Cancel") } },
-            containerColor = Surface2Dark
+            containerColor = EqifyTheme.colors.surfaceRaised
         )
     }
 
@@ -186,23 +186,23 @@ fun SettingsScreen(
     cacheMessage?.let { message ->
         AlertDialog(
             onDismissRequest = vm::dismissCacheMessage,
-            title = { Text("AutoEQ cache", color = TextPrimary) },
-            text = { Text(message, color = TextSecondary) },
+            title = { Text("AutoEQ cache", color = EqifyTheme.colors.textPrimary) },
+            text = { Text(message, color = EqifyTheme.colors.textMuted) },
             confirmButton = {
                 TextButton(onClick = vm::dismissCacheMessage) {
-                    Text("OK", color = AccentPurpleLight)
+                    Text("OK", color = EqifyTheme.colors.accent)
                 }
             },
-            containerColor = Surface2Dark
+            containerColor = EqifyTheme.colors.surfaceRaised
         )
     }
     historyMessage?.let { message ->
         AlertDialog(
             onDismissRequest = vm::dismissHistoryMessage,
-            title = { Text("Genre history", color = TextPrimary) },
-            text = { Text(message, color = TextSecondary) },
+            title = { Text("Genre history", color = EqifyTheme.colors.textPrimary) },
+            text = { Text(message, color = EqifyTheme.colors.textMuted) },
             confirmButton = { TextButton(onClick = vm::dismissHistoryMessage) { Text("OK") } },
-            containerColor = Surface2Dark
+            containerColor = EqifyTheme.colors.surfaceRaised
         )
     }
     customProfilesMessage?.let { message ->
@@ -220,20 +220,20 @@ fun SettingsScreen(
                         "Settings",
                         fontSize   = 18.sp,
                         fontWeight = FontWeight.Bold,
-                        color      = TextPrimary
+                        color      = EqifyTheme.colors.textPrimary
                     )
                 },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Text("←", fontSize = 24.sp, color = TextPrimary)
+                        Text("←", fontSize = 24.sp, color = EqifyTheme.colors.textPrimary)
                     }
                 },
                 colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
-                    containerColor = BgDark
+                    containerColor = EqifyTheme.colors.background
                 )
             )
         },
-        containerColor = BgDark
+        containerColor = EqifyTheme.colors.background
     ) { padding ->
         Column(
             modifier = Modifier
@@ -241,6 +241,18 @@ fun SettingsScreen(
                 .padding(padding)
                 .verticalScroll(rememberScrollState())
         ) {
+
+            // ── Appearance ────────────────────────────────────────────
+            val themeSettings by vm.themeSettings.collectAsState()
+            SettingsGroup(title = "APPEARANCE") {
+                AppearanceSettings(
+                    settings = themeSettings,
+                    onMode = vm::setThemeMode,
+                    onAccent = vm::setThemeAccent,
+                    onDynamic = vm::setDynamicColor,
+                    onPureBlack = vm::setPureBlack
+                )
+            }
 
             // ── EQ ────────────────────────────────────────────────────
             SettingsGroup(title = "EQ") {
@@ -316,7 +328,7 @@ fun SettingsScreen(
                         text = "Last.fm API key",
                         fontSize = 14.sp,
                         fontWeight = FontWeight.SemiBold,
-                        color = TextPrimary
+                        color = EqifyTheme.colors.textPrimary
                     )
                     Spacer(Modifier.height(8.dp))
                     OutlinedTextField(
@@ -338,12 +350,12 @@ fun SettingsScreen(
                             TextButton(onClick = {
                                 lastFmApiKeyDraft = ""
                                 vm.setLastFmApiKey("")
-                            }) { Text("Clear", color = TextSecondary) }
+                            }) { Text("Clear", color = EqifyTheme.colors.textMuted) }
                         }
                         TextButton(
                             enabled = lastFmApiKeyDraft.trim() != savedLastFmApiKey,
                             onClick = { vm.setLastFmApiKey(lastFmApiKeyDraft) }
-                        ) { Text("Save", color = AccentPurpleLight) }
+                        ) { Text("Save", color = EqifyTheme.colors.accent) }
                     }
                 }
             }
@@ -454,14 +466,14 @@ fun SettingsGroup(title: String, content: @Composable ColumnScope.() -> Unit) {
         Text(
             text          = title,
             fontSize      = 11.sp,
-            color         = AccentPurpleLight,
+            color         = EqifyTheme.colors.accent,
             fontWeight    = FontWeight.Bold,
             letterSpacing = 1.sp
         )
         Spacer(Modifier.height(8.dp))
         Card(
             shape  = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = Surface2Dark)
+            colors = CardDefaults.cardColors(containerColor = EqifyTheme.colors.surfaceRaised)
         ) {
             Column(modifier = Modifier.fillMaxWidth()) { content() }
         }
@@ -484,15 +496,15 @@ fun ControlledSettingsItem(
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
         Column(modifier = Modifier.weight(1f)) {
-            Text(text = title,    fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
-            Text(text = subtitle, fontSize = 11.sp, color = TextSecondary)
+            Text(text = title,    fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = EqifyTheme.colors.textPrimary)
+            Text(text = subtitle, fontSize = 11.sp, color = EqifyTheme.colors.textMuted)
         }
         Switch(
             checked         = checked,
             onCheckedChange = onCheckedChange,
             colors          = SwitchDefaults.colors(
-                checkedThumbColor = androidx.compose.ui.graphics.Color.White,
-                checkedTrackColor = AccentPurple
+                checkedThumbColor = EqifyTheme.colors.onAccent,
+                checkedTrackColor = EqifyTheme.colors.accent
             )
         )
     }
@@ -533,12 +545,12 @@ private fun OutputProtectionSettingsItem(
                 text = "Output protection",
                 fontSize = 14.sp,
                 fontWeight = FontWeight.SemiBold,
-                color = TextPrimary
+                color = EqifyTheme.colors.textPrimary
             )
-            Text(text = subtitle, fontSize = 11.sp, color = TextSecondary)
+            Text(text = subtitle, fontSize = 11.sp, color = EqifyTheme.colors.textMuted)
         }
         TextButton(onClick = onClick) {
-            Text("Change", color = AccentPurpleLight)
+            Text("Change", color = EqifyTheme.colors.accent)
         }
     }
 }
@@ -555,12 +567,12 @@ private fun OutputProtectionDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Output protection", color = TextPrimary) },
+        title = { Text("Output protection", color = EqifyTheme.colors.textPrimary) },
         text = {
             Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                 Text(
                     "Choose how EQify handles peaks created by boosted EQ bands.",
-                    color = TextSecondary,
+                    color = EqifyTheme.colors.textMuted,
                     fontSize = 13.sp
                 )
                 Spacer(Modifier.height(12.dp))
@@ -582,7 +594,7 @@ private fun OutputProtectionDialog(
                             "The limiter could not start on this device. Safe is selected automatically."
                         },
                         modifier = Modifier.padding(start = 48.dp, end = 8.dp, bottom = 8.dp),
-                        color = AccentPurpleLight,
+                        color = EqifyTheme.colors.accent,
                         fontSize = 11.sp
                     )
                 }
@@ -608,10 +620,10 @@ private fun OutputProtectionDialog(
         },
         confirmButton = {
             TextButton(onClick = onDismiss) {
-                Text("Close", color = AccentPurpleLight)
+                Text("Close", color = EqifyTheme.colors.accent)
             }
         },
-        containerColor = Surface2Dark
+        containerColor = EqifyTheme.colors.surfaceRaised
     )
 }
 
@@ -640,18 +652,18 @@ private fun OutputProtectionOption(
         Column(modifier = Modifier.padding(top = 2.dp, end = 4.dp)) {
             Text(
                 text = title,
-                color = if (enabled) TextPrimary else TextSecondary,
+                color = if (enabled) EqifyTheme.colors.textPrimary else EqifyTheme.colors.textMuted,
                 fontSize = 14.sp,
                 fontWeight = FontWeight.SemiBold
             )
             Text(
                 text = description,
-                color = TextSecondary,
+                color = EqifyTheme.colors.textMuted,
                 fontSize = 12.sp
             )
             Text(
                 text = "Caution: $caution",
-                color = TextSecondary,
+                color = EqifyTheme.colors.textMuted,
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Medium
             )
@@ -669,8 +681,8 @@ fun SimpleSettingsItem(title: String, subtitle: String, onClick: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(modifier = Modifier.weight(1f)) {
-            Text(text = title,    fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
-            Text(text = subtitle, fontSize = 11.sp, color = TextSecondary)
+            Text(text = title,    fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = EqifyTheme.colors.textPrimary)
+            Text(text = subtitle, fontSize = 11.sp, color = EqifyTheme.colors.textMuted)
         }
     }
 }

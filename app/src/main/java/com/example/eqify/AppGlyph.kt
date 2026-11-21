@@ -1,5 +1,7 @@
 package com.example.eqify
 
+import com.example.eqify.ui.theme.EqifyTheme
+import com.example.eqify.ui.theme.EQifyTheme
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
@@ -15,7 +17,7 @@ import androidx.compose.ui.unit.dp
 
 /** Consistent line icons, independent of the device's emoji font. */
 @Composable
-fun AppGlyph(name: String, tint: Color = TextSecondary) {
+fun AppGlyph(name: String, tint: Color = EqifyTheme.colors.textMuted) {
     Canvas(Modifier.size(24.dp).semantics { contentDescription = name }) {
         val unit = size.minDimension / 24f
         fun line(x: Float, y: Float, x2: Float, y2: Float) =

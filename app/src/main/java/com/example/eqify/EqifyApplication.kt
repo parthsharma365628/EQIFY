@@ -24,6 +24,8 @@ class EqifyApplication : Application() {
         super.onCreate()
         // First, so crashes during the rest of startup are captured (and scrubbed).
         CrashReporting.start(this)
+        // Synchronous so the first frame uses the saved theme (no colour flash).
+        com.example.eqify.ui.theme.ThemeStore.init(this)
         appScope.launch { repository.lastFmApiKey.collect { CrashReporting.updateApiKey(it) } }
         registerGlobalReceivers()
         restorePersistedState()
