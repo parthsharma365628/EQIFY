@@ -2,8 +2,9 @@
 
 Status: **approved 2026-11-21.** All nine recommendations in §9 were accepted
 as written.
-- **Phases 2 (tokens) and 2b (themes) are done in source.** Build and 80 unit tests pass; `ThemeContrastTest` covers all 18 palettes. Not yet checked on a device.
-- Next is phase 3 (component kit).
+- **Phases 2 and 2b (tokens, themes)** are committed, and the user checked them on a device.
+- **Phase 3 (component kit) is done in source.** Build and 87 unit tests pass. The previews are in `ui/components/ComponentPreviews.kt` (not visually reviewed by Claude: they need Android Studio).
+- No screen uses the kit yet; that is phase 4.
 
 Source surveyed: `Theme.kt`, `ui/theme/{Color,Type}.kt`, `AppGlyph.kt`, and
 `screens/{Home,Eq,Headphones,Settings}Screen.kt` (about 3,400 lines of UI).
@@ -120,8 +121,7 @@ labels and values move to `labelMedium`.
 
 ### 4.4 Iconography
 
-Replace text symbols and `AppGlyph` with **Material Symbols (Rounded)** as
-`ImageVector`s:
+Replace text symbols and `AppGlyph` with **Material Symbols (Rounded)** (implemented as vector drawables, see the correction log):
 - **Basics from `material-icons-core`:** Close, Add, Check, Star/StarBorder, ArrowBack, Share, Search, Delete, Edit, MoreVert, KeyboardArrowDown, Info, Warning, Settings, PlayArrow.
 - **A few copied as vector drawables:** Headphones, Equalizer/Tune, GraphicEq, QrCode/QrCodeScanner, FileOpen/Download, Bluetooth.
 
@@ -309,6 +309,7 @@ almost nothing extra in phase 2.
 ## Correction log
 | Date | Corrected by | What changed | Why |
 |---|---|---|---|
+| 2026-11-21 | Claude | **Phase 3 implemented.**<br>New `ui/components/`:<br>- `EqIcons.kt` (`EqIcons`, `EqIcon`)<br>- `Containers.kt` (`EqCard`, `SectionHeader`, `SettingRow`, `SwitchRow`, `ValueRow`, `PillChip`, `StatusChip`/`StatusKind`)<br>- `Controls.kt` (`PrimaryButton`, `TonalButton`, `TextAction`, `IconAction`, `SegmentedToggle`, `ValueReadout` + pure `formatValue`, `StatusBanner`, `EmptyState`, `EqCrossfade`)<br>- `ToneCurve.kt` (curve/bars, grid, pure `dbToY`/`toneCurvePoints`)<br>- `Overlays.kt` (`EqSheet`, `ConfirmDialog`)<br>- `ComponentPreviews.kt` (Sage dark/light, Amber pure black, Ocean light, icon sheet)<br>- `ComponentMathTest` (7 tests)<br>Deviation from §4.4: **every icon is a Material Symbols Rounded vector drawable** (`res/drawable/ic_sym_*.xml`, 35 icons, Apache 2.0). They were fetched from google/material-design-icons and converted 1:1. `material-icons-core` isn't used, because its older filled style would mix two icon styles. Other decisions: `formatValue` uses `Locale.ROOT` and never prints `-0.0`. A clickable `PillChip` uses Material's clickable Surface, so the 48 dp touch area doesn't stretch the pill. `EqSheet` is always fully expanded, with pinned actions, and can be locked while work runs. `AppGlyph` and the text-symbol icons stay until phase 4 replaces their call sites. | Record the actual source state. |
 | 2026-11-21 | Claude | **Phase 2b implemented.**<br>Palettes: `Palette.kt` builds all 6 accents × dark / pure black / light (18 palettes) from shared neutrals plus per-accent families. Dark surfaces get a 4% accent tint, except Mono and pure black. Amber uses a yellower warning.<br>Theme state: `ThemeSettings.kt` has `ThemeMode`, `ThemeSettings`, `ThemeStore` and `rememberEqifyColors`. Dynamic colour maps `dynamic{Dark,Light}ColorScheme` onto our roles; status colours stay ours.<br>`MainActivity` applies the theme live and sets the status/navigation bar icon appearance. `EqifyApplication` loads the theme synchronously.<br>New `screens/AppearanceSettings.kt` (top of Settings): mode segmented buttons, accent swatches + Dynamic (API 31+ only), pure black (shown only in dark), and a live preview card.<br>`ThemeContrastTest` now has 6 tests.<br>Deviations:<br>(1) **The theme is stored only in SharedPreferences**, not DataStore + mirror as planned. One source of truth, read synchronously before the first frame, with a StateFlow for live updates. Two copies could disagree.<br>(2) Light mode makes `surfaceRaised` white and `surface` `#FAFBFB` on a `#F1F4F2` background. Cards (currently `surfaceRaised`) would otherwise nearly disappear in light mode.<br>(3) Dynamic colour isn't contrast-tested, because it's generated at runtime; Material's tonal palettes guarantee its own pairs.<br>(4) The pre-first-frame launch window is still the static XML theme; only the window background after the first frame follows the theme.<br>Light mode on every screen still needs a visual check on a device. | Record the actual source state. |
 | 2026-11-21 | Claude | **Phase 2 implemented.**<br>New files: `ui/theme/Palette.kt` (`EqifyColors` roles, `EqifyPalettes`, `LocalEqifyColors`), `Theme.kt` (`EqifyTheme.colors`, `EQifyTheme`, roles → Material `ColorScheme`), `Type.kt` (`EqifyTypography`, `tabular()`), `Dimens.kt` (`EqSpacing`, `EqifyShapes`, `PillShape`), `Contrast.kt`, plus `ThemeContrastTest`. Template `Color.kt` deleted.<br>All ~280 old token references migrated.<br>Deviations from this doc:<br>(1) `outlineStrong` raised from `#5C6863` to `#73807A`; the contrast test caught 2.5:1 on raised surfaces.<br>(2) Old `Surface2Dark` cards map to `surfaceRaised` for now, keeping today's card/background separation. Phase 4 reassigns them through the component kit.<br>(3) The slider thumb uses `onAccentContainer`, keeping today's lighter-than-fill look until the phase 4 slider redesign.<br>(4) Icons moved to phase 3, where they're first used, so no unused dependency is added now.<br>(5) Screens still set font sizes by hand; switching them to the type scale is phase 4, as planned.<br>Visible change in this phase: the refined palette (brighter accent, dark-on-accent switch thumbs and bass buttons). Layouts are unchanged. | Record the actual source state. |
 | 2026-11-21 | Claude | Added user-selectable themes (§4.6, phase 2b, decisions 7–9) at the user's request. Light mode moved into scope. | User asked for customisable themes. |

@@ -42,7 +42,8 @@ EQIFY/
 │     │  ├─ Bluetoothheadphonedetector.kt, Localgenredetector.kt
 │     │  ├─ HomeViewModel.kt, SettingsViewModel.kt, EqTestTonePlayer.kt
 │     │  ├─ screens/{HomeScreen,EqScreen,HeadphonesScreen,SettingsScreen,AppearanceSettings}.kt
-│     │  └─ ui/theme/{Theme,Palette,ThemeSettings,Type,Dimens,Contrast}.kt
+│     │  ├─ ui/theme/{Theme,Palette,ThemeSettings,Type,Dimens,Contrast}.kt
+│     │  └─ ui/components/{EqIcons,Containers,Controls,ToneCurve,Overlays,ComponentPreviews}.kt
 │     ├─ test/java/com/example/eqify/ # JVM unit tests
 │     └─ androidTest/java/com/example/eqify/ # Device test
 └─ eqify-backend/
@@ -217,6 +218,7 @@ Paths are relative to `app/src/main/java/com/example/eqify/`. “Owns” means l
 | `screens/EqScreen.kt` (Compose screen + screen AndroidViewModel) | Preset picker/CRUD/rename, eight sliders, EQ controls. | `EqState`, profile manager, preferences; preserve immediate manual path; global tone presets differ from headphone corrections. | Changing EQ UI, presets or sliders. |
 | `screens/HeadphonesScreen.kt` (Compose screen + screen AndroidViewModel) | Catalog search, favorites, selected headphone, GraphicEQ file/paste import and imported-profile selection/rename/delete. | Headphone repo, custom store, preferences, runtime states; typed custom headphone names differ from imported gain profiles. | Changing headphone picker or import UI. |
 | `screens/SettingsScreen.kt` (Compose screen) | Settings, protection explanation/diagnostics, permissions, cache/privacy controls. | Settings VM, limiter diagnostics; describe Safe fallback accurately. | Changing Settings UI/copy. |
+| `ui/components/*.kt` (Compose component kit) | Shared cards, section headers, rows, chips, buttons, segmented toggle, value readout, status banner, empty state, tone curve, bottom sheet, confirm dialog, and `EqIcons` (Material Symbols vector drawables `res/drawable/ic_sym_*.xml`). | Built only on `EqifyTheme.colors`, `EqifyTypography`, `EqSpacing`; no processing state; previews in `ComponentPreviews.kt`. | Changing a shared UI element; prefer the kit over new ad-hoc composables. |
 | `AppGlyph.kt`, `ui/theme/{Theme,Palette,ThemeSettings,Type,Dimens,Contrast}.kt` (Compose helpers) | App glyph; `EqifyColors` roles and palettes (`LocalEqifyColors`, mapped to Material `ColorScheme`), type scale + `tabular()`, spacing/shapes, WCAG contrast math. | Screens read `EqifyTheme.colors`; keep behaviour out of theme files; palettes are data so themes swap without screen edits; the user's theme lives in `ThemeStore` (SharedPreferences, loaded in `EqifyApplication`, applied live in `MainActivity`). | Changing icons, palettes or the visual system. |
 
 ### State ownership
