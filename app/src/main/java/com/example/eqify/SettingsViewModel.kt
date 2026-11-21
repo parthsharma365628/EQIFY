@@ -154,4 +154,36 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     fun dismissCacheMessage() {
         _cacheMessage.value = null
     }
+
+    // ── Crash reporting ───────────────────────────────────────────────
+
+    val crashReportingConfigured = CrashReporting.isConfigured
+    val isDebugBuild = BuildConfig.DEBUG
+    private val _crashReportingEnabled = MutableStateFlow(CrashReporting.isOptedIn(application))
+    val crashReportingEnabled = _crashReportingEnabled.asStateFlow()
+    private val _crashReportMessage = MutableStateFlow<String?>(null)
+    val crashReportMessage = _crashReportMessage.asStateFlow()
+
+    fun setCrashReportingEnabled(enabled: Boolean) {
+        CrashReporting.setOptedIn(getApplication(), enabled)
+        _crashReportingEnabled.value = enabled
+    }
+
+    /** Debug builds only. Sends a handled test event and waits for it to upload. */
+    fun sendTestCrashReport() {
+        if (!BuildConfig.DEBUG) return
+        viewModelScope.launch {
+            val sent = withContext(Dispatchers.IO) { CrashReporting.sendTestEvent() }
+            _crashReportMessage.value = if (sent) "Test error sent. Check the Sentry dashboard."
+                else "Crash reporting is off or not configured in this build."
+        }
+    }
+
+    /** Debug builds only. Deliberately crashes to verify uncaught-crash capture. */
+    fun crashAppForTest() {
+        if (!BuildConfig.DEBUG) return
+        throw RuntimeException("EQify test crash (debug build)")
+    }
+
+    fun dismissCrashReportMessage() { _crashReportMessage.value = null }
 }

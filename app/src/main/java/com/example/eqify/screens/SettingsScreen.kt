@@ -60,6 +60,8 @@ fun SettingsScreen(
     val historyMessage        by vm.historyMessage.collectAsState()
     val customProfiles by vm.customEqProfiles.collectAsState()
     val customProfilesMessage by vm.customProfilesMessage.collectAsState()
+    val crashReportingEnabled by vm.crashReportingEnabled.collectAsState()
+    val crashReportMessage by vm.crashReportMessage.collectAsState()
     var lastFmApiKeyDraft by remember(savedLastFmApiKey) {
         mutableStateOf(savedLastFmApiKey)
     }
@@ -358,6 +360,33 @@ fun SettingsScreen(
                         runCatching { context.startActivity(Intent.createChooser(mail, "Send feedback")) }
                     }
                 )
+                if (vm.crashReportingConfigured) {
+                    ControlledSettingsItem(
+                        title = "Send crash reports",
+                        subtitle = "Crash and error details (device model, Android and app version, stack trace) help fix bugs. " +
+                            "Song titles, artists, headphone names and keys are removed first.",
+                        checked = crashReportingEnabled,
+                        onCheckedChange = { vm.setCrashReportingEnabled(it) }
+                    )
+                } else {
+                    SimpleSettingsItem(
+                        title = "Crash reports",
+                        subtitle = "Not configured in this build",
+                        onClick = {}
+                    )
+                }
+                if (vm.isDebugBuild) {
+                    SimpleSettingsItem(
+                        title = "Send test error (debug)",
+                        subtitle = crashReportMessage ?: "Sends a handled test event to Sentry",
+                        onClick = { vm.sendTestCrashReport() }
+                    )
+                    SimpleSettingsItem(
+                        title = "Crash app (debug)",
+                        subtitle = "Crashes EQify on purpose; reopen it so the report uploads",
+                        onClick = { vm.crashAppForTest() }
+                    )
+                }
             }
 
             // ── About ─────────────────────────────────────────────────
@@ -397,7 +426,9 @@ fun SettingsScreen(
                     subtitle = "Song title and artist may be sent to iTunes, optional Last.fm, and the configured EQify genre service. " +
                         "Title, artist, timestamp and detected/chosen genre are stored locally for recent tracks and genre mix. " +
                         "Headphone correction is fetched only after a headphone is selected. " +
-                        "Imported GraphicEQ files are converted and stored locally; they are not uploaded.",
+                        "Imported GraphicEQ files are converted and stored locally; they are not uploaded. " +
+                        "If crash reports are on, crash and error details are sent to Sentry without song titles, " +
+                        "artists, headphone names or keys.",
                     onClick = {}
                 )
             }

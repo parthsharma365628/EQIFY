@@ -103,7 +103,10 @@ class GenreCoordinator(
                     withContext(NonCancellable) {
                         history.record(obs.title, obs.artist, resolved.genre, correction != null, obs.observedAtEpochMillis)
                     }
-                } catch (e: Exception) { Log.w("GenreCoordinator", "History write failed", e) }
+                } catch (e: Exception) {
+                    Log.w("GenreCoordinator", "History write failed", e)
+                    CrashReporting.recordHandled(CrashReporting.Category.GENRE_HISTORY_WRITE, e)
+                }
             }
         }
     }

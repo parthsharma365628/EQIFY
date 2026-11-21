@@ -10,6 +10,12 @@ val eqifyBaseUrl = providers.gradleProperty("EQIFY_BASE_URL")
 val headphoneDataBaseUrl = providers.gradleProperty("EQIFY_HEADPHONE_DATA_BASE_URL")
     .orElse("https://parthsharma365628.github.io/eqify-data/")
     .get()
+// Sentry DSN from the developer's ~/.gradle/gradle.properties; blank disables crash reporting.
+val sentryDsn = providers.gradleProperty("EQIFY_SENTRY_DSN")
+    .orElse("")
+    .get()
+    .trim()
+    .also { require(!it.contains('"') && !it.contains('\\')) { "EQIFY_SENTRY_DSN must be a plain URL" } }
 
 android {
     namespace = "com.example.eqify"
@@ -40,6 +46,11 @@ android {
         "HEADPHONE_DATA_BASE_URL",
         34.toChar() + headphoneDataBaseUrl + 34.toChar()
     )
+    defaultConfig.buildConfigField(
+        "String",
+        "SENTRY_DSN",
+        34.toChar() + sentryDsn + 34.toChar()
+    )
 
     buildTypes {
         release {
@@ -69,6 +80,8 @@ dependencies {
     implementation("com.google.zxing:core:3.5.3")
     // QR scanning via Google Play services' own camera UI: no CAMERA permission.
     implementation("com.google.android.gms:play-services-code-scanner:16.1.0")
+    // Crash/ANR/native-crash reporting; initialized manually in EqifyApplication.
+    implementation("io.sentry:sentry-android:7.14.0")
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)

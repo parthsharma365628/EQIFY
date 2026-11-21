@@ -22,6 +22,9 @@ class EqifyApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        // First, so crashes during the rest of startup are captured (and scrubbed).
+        CrashReporting.start(this)
+        appScope.launch { repository.lastFmApiKey.collect { CrashReporting.updateApiKey(it) } }
         registerGlobalReceivers()
         restorePersistedState()
         genreCoordinator
@@ -50,6 +53,7 @@ class EqifyApplication : Application() {
             Log.d("EqifyApplication", "Global audio + Bluetooth receivers registered")
         } catch (e: Exception) {
             Log.e("EqifyApplication", "registerReceiver failed: ${e.message}")
+            CrashReporting.recordHandled(CrashReporting.Category.RECEIVER_REGISTRATION, e)
         }
     }
 

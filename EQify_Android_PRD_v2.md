@@ -80,7 +80,7 @@ This is the section the v1.0 PRD didn't have, because nothing was built yet. Sta
 | Custom genre profiles (user-defined tags) | **Not started** | — | Re-scoped in Section 6 below given what's now known about the canonical-genre-list constraint. |
 | Streaming-app deep API integration (official Spotify/Apple Music APIs) | **Not started, re-scoped** | — | See Section 5.3 — this was replaced by notification-metadata detection, not merely deferred. |
 | Cloud account sync | **Not started** | — | Moved to Future Plans (Section 11); no backend/account system exists. |
-| Crash reporting | **Not started** | — | v1.0 PRD assumed Crashlytics; not present in the current dependency list per `AI.md`/`app/build.gradle.kts`. |
+| Crash reporting | **Built, not yet validated on device** (2026-11-21) | `CrashReporting.kt`, `CrashScrubber.kt`, `EqifyApplication.kt` | Sentry (not Crashlytics): crashes, ANRs, native crashes and a few handled EQ failures; opt-out toggle in Settings; listening data scrubbed. DSN comes from the developer's Gradle properties, so builds without it have reporting off. See `FEATURE_CRASH_REPORTING.md`. |
 | Play Store listing / public release | **Not started** | — | No evidence in the repo of a release build, signing config, or store listing work. |
 
 ---
@@ -193,7 +193,7 @@ Researched against Wavelet's current official feature documentation and Play lis
 | **Home-screen widget** | One-tap bypass and current-genre display without opening the app. | **P2** | **S–M** | No home-screen widget exists. A lock-screen toggle is partly covered already by the foreground service notification, so it should not be presented as wholly unbuilt. |
 | **Android Auto / car-audio profile** | Auto-switch to a "car" profile when connected to car Bluetooth audio. | **P3** | **M** | Reuses existing Bluetooth-device-detection logic; car audio is a genuinely different acoustic environment from headphones. |
 | **Onboarding/first-run tutorial** | Brief guided setup: grant notification access, pick a headphone, explain automatic vs. manual mode. | **P1** (pre-launch) | **S** | Not glamorous, but the v1.0 PRD's own KPIs (Day-7/Day-30 retention) depend heavily on a casual user (Persona A) not bouncing off a confusing first run. |
-| **Crash reporting (Crashlytics or equivalent)** | Wire up basic crash reporting before any public beta. | **P0** (pre-launch) | **S** | Assumed already in place by v1.0 PRD; verified absent. Blocking item for the ">99% crash-free sessions" KPI to even be measurable. |
+| **Crash reporting (Crashlytics or equivalent)** | Wire up basic crash reporting before any public beta. | **P0** (pre-launch) | **S** | Assumed already in place by v1.0 PRD; verified absent. Blocking item for the ">99% crash-free sessions" KPI to even be measurable. Implemented with Sentry on 2026-11-21; device validation pending. |
 
 ---
 

@@ -58,6 +58,11 @@
             </intent-filter>
         </activity>
 
+        <!-- Sentry is started manually by CrashReporting so opt-out and scrubbing apply first. -->
+        <meta-data
+            android:name="io.sentry.auto-init"
+            android:value="false" />
+
         <!-- Pre-download the Google code scanner UI module at install time. -->
         <meta-data
             android:name="com.google.mlkit.vision.DEPENDENCIES"

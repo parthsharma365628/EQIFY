@@ -91,6 +91,7 @@ object EqEngine {
             applyCurrentGains()
         } catch (e: Exception) {
             Log.e(TAG, "Failed to attach to session $sessionId: ${e.message}")
+            CrashReporting.recordHandled(CrashReporting.Category.EQUALIZER_ATTACH, e)
             trySessionZeroFallback()
         }
     }
@@ -107,6 +108,7 @@ object EqEngine {
             applyCurrentGains()
         } catch (e: Exception) {
             Log.e(TAG, "Session 0 fallback failed: ${e.message}")
+            CrashReporting.recordHandled(CrashReporting.Category.SESSION_ZERO_FALLBACK, e)
             releaseEqualizer()
         }
     }
@@ -348,6 +350,10 @@ object EqEngine {
             status.state == LimiterDiagnosticState.UNSUPPORTED
         ) {
             Log.w(TAG, message)
+            // UNSUPPORTED is expected on some devices; only a real failure is worth a report.
+            if (status.state == LimiterDiagnosticState.FAILED)
+                CrashReporting.recordHandled(CrashReporting.Category.LIMITER_FAILED,
+                    detail = "detail=${status.detail}")
         } else {
             Log.d(TAG, message)
         }
@@ -463,6 +469,7 @@ object EqEngine {
             Log.d(TAG, "setBandLevel done")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to apply gains: ${e.message}")
+            CrashReporting.recordHandled(CrashReporting.Category.APPLY_GAINS, e)
             // Session went stale — clear so next call retries
             appliedLevels = null
             releaseEqualizer()
