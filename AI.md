@@ -8,7 +8,7 @@ EQify is an Android equalizer that combines genre profiles, headphone-specific A
 
 The Android app supports API 26 and newer. `DynamicsProcessing.Limiter` is only available from API 28 (Android 9), so older or incompatible devices must use the Safe output-protection fallback.
 
-## Repository layout
+## Repository layoutogjaeriofiaerbfuiaew
 
 Representative tree (tracked files and important ignored directories; not every icon
 or Gradle-generated file is shown):
