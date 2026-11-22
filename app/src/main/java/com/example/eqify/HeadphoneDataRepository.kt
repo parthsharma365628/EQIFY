@@ -40,6 +40,10 @@ object HeadphoneDataRepository {
             .toList()
     }
 
+    /** Every model name in the cached catalog; downloads the index only if none is cached. */
+    suspend fun allNames(context: Context): List<String> =
+        getIndex(context.applicationContext).headphones.map { it.name }
+
     /** Catalog spelling of [headphoneName] (case-insensitive exact match), or null. */
     suspend fun findExactName(context: Context, headphoneName: String): String? {
         val term = headphoneName.trim()

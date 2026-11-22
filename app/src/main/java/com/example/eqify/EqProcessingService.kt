@@ -173,8 +173,9 @@ class EqProcessingService : Service() {
                     repository.outputProtectionMode,
                     repository.forceMono,
                     EqState.bassBoostLevel,
-                    repository.smoothEqTransitions
-                ) { l, m, b, smooth -> AudioSettingsState(l, m, b, smooth) },
+                    repository.smoothEqTransitions,
+                    HeadphoneDetector.correctionSuppressed
+                ) { l, m, b, smooth, noHp -> AudioSettingsState(l, m, b, smooth, noHp) },
                 combine(
                     repository.autoGenreDetection,
                     EqState.baseToneGains,
@@ -193,6 +194,7 @@ class EqProcessingService : Service() {
                     mono          = t2.mono,
                     bassBoost     = t2.bassBoost,
                     smoothTransitions = t2.smoothTransitions,
+                    correctionSuppressed = t2.correctionSuppressed,
                     autoGenre     = t3.autoGenre,
                     baseToneGains = t3.baseToneGains,
                     toneName      = t3.toneName,
@@ -244,8 +246,14 @@ class EqProcessingService : Service() {
                     EqEngine.applyGains(previous.outputGains)
                 }
 
-                // Fetch headphone correction (cached after first fetch — no repeated calls)
-                val hpCorrection = when (val selection = pipe.correctionSelection) {
+                // Fetch headphone correction (cached after first fetch — no repeated calls).
+                // Not on headphones (phone speaker / "Not headphones" device): none at all; the
+                // saved selection is kept, so reconnecting restores it (FEATURE_HEADPHONE_DETECTION.md).
+                val hpCorrection = if (pipe.correctionSuppressed) {
+                    EqState.updateHeadphoneCorrectionStatus(HeadphoneCorrectionStatus.NotOnHeadphones(
+                        HeadphoneDetector.output.value?.displayName ?: "Phone speaker"))
+                    FloatArray(8)
+                } else when (val selection = pipe.correctionSelection) {
                     is HeadphoneCorrectionSelection.Dataset -> resolveHeadphoneCorrection(selection.name)
                     is HeadphoneCorrectionSelection.Custom -> {
                         val profile = (application as EqifyApplication).customEqProfiles.find(selection.profileId)
@@ -388,7 +396,8 @@ class EqProcessingService : Service() {
         val mono: Boolean, val bassBoost: Float, val smoothTransitions: Boolean,
         val autoGenre: Boolean, val baseToneGains: FloatArray, val toneName: String,
         val manualOverride: Boolean,
-        val customPresets: Map<String, List<Float>> = emptyMap()
+        val customPresets: Map<String, List<Float>> = emptyMap(),
+        val correctionSuppressed: Boolean = false
     )
 
     private data class SourceState(
@@ -411,7 +420,9 @@ class EqProcessingService : Service() {
         val outputProtectionMode: OutputProtectionMode,
         val mono: Boolean,
         val bassBoost: Float,
-        val smoothTransitions: Boolean
+        val smoothTransitions: Boolean,
+        /** Phone speaker / "Not headphones" device: apply no headphone correction. */
+        val correctionSuppressed: Boolean
     )
 
     private data class AutoSnapshot(

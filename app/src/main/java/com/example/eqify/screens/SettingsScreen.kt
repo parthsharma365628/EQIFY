@@ -257,8 +257,9 @@ fun SettingsScreen(
                 RowDivider()
                 SwitchRow(
                     title = "Headphone auto-detection",
-                    subtitle = if (headphoneAutoDetect) "Selects your headphone on Bluetooth connect or wired plug-in"
-                        else "Headphone selection stays fixed",
+                    subtitle = if (headphoneAutoDetect)
+                        "Picks the correction for Bluetooth, USB-C and wired headphones, remembers your choices, and turns it off on the phone speaker"
+                        else "Headphone selection stays fixed, on every output",
                     checked = headphoneAutoDetect,
                     onCheckedChange = { vm.setHeadphoneAutoDetect(it) },
                     icon = EqIcons.Bluetooth

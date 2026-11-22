@@ -166,6 +166,7 @@ class HeadphonesViewModel(application: Application) : AndroidViewModel(applicati
                 _importMessage.value = "This correction no longer exists."
             } else {
                 repository.selectCustomCorrection(id)
+                HeadphoneDetector.rememberForCurrentOutput(DeviceChoice.Custom(id))
             }
         }
     }
@@ -244,6 +245,7 @@ class HeadphonesViewModel(application: Application) : AndroidViewModel(applicati
         val name = _localSelectedHeadphone.value
         NowPlayingState.updateSelectedHeadphone(name)
         viewModelScope.launch { repository.setSelectedHeadphone(name) }
+        HeadphoneDetector.rememberForCurrentOutput(DeviceChoice.Dataset(name))
         pendingDatasetSelection = false
     }
 
@@ -255,6 +257,7 @@ class HeadphonesViewModel(application: Application) : AndroidViewModel(applicati
             val trimmedName = name.trim()
             repository.setSelectedHeadphone(trimmedName)
             NowPlayingState.updateSelectedHeadphone(trimmedName)
+            HeadphoneDetector.rememberForCurrentOutput(DeviceChoice.Dataset(trimmedName))
             _localSelectedHeadphone.value = trimmedName
             pendingDatasetSelection = false
             _showCustomDialog.value = false
@@ -520,6 +523,8 @@ private fun correctionUi(status: HeadphoneCorrectionStatus, name: String): Corre
         if (status.headphoneName == name) CorrectionUi("Failed", StatusKind.ERROR, status.message) else null
     is HeadphoneCorrectionStatus.Imported -> CorrectionUi("Imported", StatusKind.ACTIVE, "Using imported correction: ${status.displayName}")
     is HeadphoneCorrectionStatus.ImportFailed -> CorrectionUi("Failed", StatusKind.ERROR, status.message)
+    is HeadphoneCorrectionStatus.NotOnHeadphones ->
+        CorrectionUi("Off", StatusKind.NEUTRAL, "${status.outputName}: no headphone correction right now. It returns when these headphones reconnect.")
     HeadphoneCorrectionStatus.Idle -> null
 }
 

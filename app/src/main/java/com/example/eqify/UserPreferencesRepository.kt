@@ -97,6 +97,7 @@ class UserPreferencesRepository(private val context: Context) {
         val PROCESSING_PROFILE    = stringPreferencesKey("processing_profile")
         val LASTFM_API_KEY        = stringPreferencesKey("lastfm_api_key")
         val FAVORITE_HEADPHONES   = stringPreferencesKey("favorite_headphones")
+        val DEVICE_CHOICES        = stringPreferencesKey("device_headphone_choices")
     }
 
     // ── Standard settings ─────────────────────────────────────────────
@@ -175,6 +176,20 @@ class UserPreferencesRepository(private val context: Context) {
 
     val lastFmApiKey: Flow<String> = pref { prefs ->
         prefs[Keys.LASTFM_API_KEY] ?: ""
+    }
+
+    /** What the user chose for each output device (FEATURE_HEADPHONE_DETECTION.md). */
+    val deviceChoices: Flow<Map<String, DeviceChoice>> = pref { prefs ->
+        DeviceHeadphoneMemory.decode(prefs[Keys.DEVICE_CHOICES])
+    }
+
+    /** Remember (or, with null, forget) the choice for one device key. */
+    suspend fun setDeviceChoice(deviceKey: String, choice: DeviceChoice?) {
+        context.dataStore.edit { prefs ->
+            val map = DeviceHeadphoneMemory.decode(prefs[Keys.DEVICE_CHOICES]).toMutableMap()
+            if (choice == null) map.remove(deviceKey) else map[deviceKey] = choice
+            prefs[Keys.DEVICE_CHOICES] = DeviceHeadphoneMemory.encode(map)
+        }
     }
 
     val favoriteHeadphones: Flow<List<String>> = pref { prefs ->

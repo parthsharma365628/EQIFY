@@ -31,7 +31,7 @@ import com.example.eqify.ui.theme.*
 
 /*
  * Home (UI_REDESIGN.md §6 "Home"). UI only: every value and action comes from
- * HomeViewModel, EqState and BluetoothHeadphoneDetector exactly as before.
+ * HomeViewModel, EqState and HeadphoneDetector.
  * Order: Now Playing hero → Sound (EQ + headphone + bass) → Genre mix.
  */
 
@@ -57,7 +57,7 @@ fun HomeScreen(
     // Final applied output (tone + headphone correction + bass, after protection); zeros while paused/bypassed.
     val outputGains          by EqState.activeBandGains.collectAsState()
     val isBypassed           by EqState.isBypassed.collectAsState()
-    val wiredConnected       by BluetoothHeadphoneDetector.wiredConnected.collectAsState()
+    val detectionPrompt      by HeadphoneDetector.prompt.collectAsState()
     val testToneMessage      by viewModel.testToneMessage.collectAsState()
     val genreMix             by viewModel.genreMix.collectAsState()
     val recentTracks         by viewModel.recentTracks.collectAsState()
@@ -95,18 +95,11 @@ fun HomeScreen(
         val gutter = Modifier.padding(horizontal = EqSpacing.screen)
         TopBar(onSettingsClick = onNavigateToSettings, modifier = gutter)
 
-        if (wiredConnected) {
-            StatusBanner(
-                message = "Wired headphones detected. Is your headphone selection still correct?",
-                kind = StatusKind.ACTIVE,
-                actionLabel = "Change",
-                onAction = {
-                    BluetoothHeadphoneDetector.dismissWiredBanner()
-                    onNavigateToHeadphones()
-                },
-                onDismiss = { BluetoothHeadphoneDetector.dismissWiredBanner() },
-                modifier = gutter
-            )
+        detectionPrompt?.let { prompt ->
+            DetectionBanner(prompt, onChoose = {
+                HeadphoneDetector.dismissPrompt()
+                onNavigateToHeadphones()
+            }, modifier = gutter)
         }
         correctionMessage?.let {
             StatusBanner(it, StatusKind.ERROR, gutter, onDismiss = viewModel::dismissCorrectionMessage)
@@ -139,6 +132,51 @@ fun HomeScreen(
         )
 
         GenreMixRow(genreMix, onClick = { showMix = true })
+    }
+}
+
+// ── Headphone detection (FEATURE_HEADPHONE_DETECTION.md) ──────────────
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun DetectionBanner(prompt: HeadphoneDetector.Prompt, onChoose: () -> Unit, modifier: Modifier = Modifier) {
+    val c = EqifyTheme.colors
+    val device = prompt.output.displayName
+    val message = when (prompt) {
+        is HeadphoneDetector.Prompt.AutoSelected -> "Using the ${prompt.model} correction for $device."
+        is HeadphoneDetector.Prompt.Suggest -> "Is $device a ${prompt.model}?"
+        is HeadphoneDetector.Prompt.Unknown ->
+            if (prompt.output.kind == AudioOutputKind.WIRED) "Wired headphones connected. Which model are they?"
+            else "Which headphones are $device?"
+    }
+    Column(
+        modifier.fillMaxWidth().clip(EqifyShapes.medium).background(c.accentContainer)
+            .padding(start = EqSpacing.m, end = EqSpacing.xs, top = EqSpacing.s, bottom = EqSpacing.xs)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(EqSpacing.m)) {
+            EqIcon(EqIcons.Headphones, contentDescription = null, tint = c.onAccentContainer, size = 20.dp)
+            Text(message, style = MaterialTheme.typography.bodyMedium, color = c.onAccentContainer,
+                modifier = Modifier.weight(1f))
+            IconAction(EqIcons.Close, "Dismiss", { HeadphoneDetector.dismissPrompt() }, tint = c.onAccentContainer)
+        }
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(EqSpacing.xs)) {
+            when (prompt) {
+                is HeadphoneDetector.Prompt.AutoSelected -> {
+                    TextAction("Undo", { HeadphoneDetector.undo(prompt) })
+                    TextAction("Choose another", onChoose)
+                }
+                is HeadphoneDetector.Prompt.Suggest -> {
+                    TextAction("Use it", { HeadphoneDetector.useSuggestion(prompt) })
+                    TextAction("Choose…", onChoose)
+                    TextAction("Not headphones", { HeadphoneDetector.markNotHeadphones(prompt.output) })
+                }
+                is HeadphoneDetector.Prompt.Unknown -> {
+                    TextAction("Choose…", onChoose)
+                    if (prompt.output.kind != AudioOutputKind.WIRED)
+                        TextAction("Not headphones", { HeadphoneDetector.markNotHeadphones(prompt.output) })
+                }
+            }
+        }
     }
 }
 
@@ -379,6 +417,8 @@ private fun headphoneStatus(status: HeadphoneCorrectionStatus, headphoneName: St
         if (status.headphoneName == headphoneName) HeadphoneStatusUi("Failed", StatusKind.ERROR, status.message) else null
     is HeadphoneCorrectionStatus.Imported -> HeadphoneStatusUi("Imported", StatusKind.ACTIVE, "Using imported correction: ${status.displayName}")
     is HeadphoneCorrectionStatus.ImportFailed -> HeadphoneStatusUi("Failed", StatusKind.ERROR, status.message)
+    is HeadphoneCorrectionStatus.NotOnHeadphones ->
+        HeadphoneStatusUi("Off", StatusKind.NEUTRAL, "${status.outputName}: no headphone correction")
     HeadphoneCorrectionStatus.Idle -> null
 }
 

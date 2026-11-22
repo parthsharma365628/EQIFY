@@ -11,6 +11,8 @@ sealed class HeadphoneCorrectionStatus {
     data class Failed(val headphoneName: String, val message: String) : HeadphoneCorrectionStatus()
     data class Imported(val displayName: String) : HeadphoneCorrectionStatus()
     data class ImportFailed(val message: String) : HeadphoneCorrectionStatus()
+    /** Auto-detection says the output isn't headphones (phone speaker, or marked "Not headphones"). */
+    data class NotOnHeadphones(val outputName: String) : HeadphoneCorrectionStatus()
 }
 
 /**

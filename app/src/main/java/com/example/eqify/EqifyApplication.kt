@@ -46,13 +46,9 @@ class EqifyApplication : Application() {
                 EqEngine.getSessionIntentFilter(),
                 ContextCompat.RECEIVER_EXPORTED
             )
-            ContextCompat.registerReceiver(
-                this,
-                BluetoothHeadphoneDetector.receiver,
-                BluetoothHeadphoneDetector.getIntentFilter(),
-                ContextCompat.RECEIVER_EXPORTED
-            )
-            Log.d("EqifyApplication", "Global audio + Bluetooth receivers registered")
+            // Bluetooth, USB-C and 3.5 mm outputs (connect and disconnect) via the audio device callback.
+            HeadphoneDetector.start(this)
+            Log.d("EqifyApplication", "Audio-session receiver and headphone detector registered")
         } catch (e: Exception) {
             Log.e("EqifyApplication", "registerReceiver failed: ${e.message}")
             CrashReporting.recordHandled(CrashReporting.Category.RECEIVER_REGISTRATION, e)
