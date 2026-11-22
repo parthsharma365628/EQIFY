@@ -200,7 +200,7 @@ private fun PermissionWalkthrough(
                     repeat(4) { index ->
                         val width by animateDpAsState(if (index == step) 20.dp else 8.dp, label = "step-dot")
                         Box(Modifier.height(8.dp).width(width).clip(PillShape)
-                            .background(if (index == step) c.accent else c.outline))
+                            .background(if (index == step) c.textPrimary else c.outline))
                     }
                 }
             }

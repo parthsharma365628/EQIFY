@@ -28,7 +28,7 @@ class CustomEqProfileRepository(context: Context) {
 
     init {
         try { _profiles.value = read() }
-        catch (e: Exception) { _loadError.value = "Custom profiles could not be read: ${e.message}" }
+        catch (e: Exception) { _loadError.value = "Imported corrections could not be read: ${e.message}" }
     }
 
     fun find(id: String): CustomEqProfile? = _profiles.value.firstOrNull { it.id == id }
@@ -46,7 +46,7 @@ class CustomEqProfileRepository(context: Context) {
         ensureReadable()
         val trimmed = name.trim()
         require(trimmed.isNotEmpty() && trimmed.length <= 100) { "Name must be 1–100 characters." }
-        require(find(id) != null) { "Profile no longer exists." }
+        require(find(id) != null) { "This correction no longer exists." }
         save(_profiles.value.map { if (it.id == id) it.copy(displayName = trimmed) else it })
     }
 
@@ -65,11 +65,11 @@ class CustomEqProfileRepository(context: Context) {
     private fun read(): List<CustomEqProfile> {
         if (!file.baseFile.exists() && !File(file.baseFile.path + ".bak").exists()) return emptyList()
         val root = JSONObject(file.openRead().bufferedReader(Charsets.UTF_8).use { it.readText() })
-        require(root.getInt("schemaVersion") == 1) { "Unsupported custom profile schema" }
+        require(root.getInt("schemaVersion") == 1) { "saved data uses an unsupported version" }
         val items = root.getJSONArray("profiles")
         return List(items.length()) { i ->
             val item = items.getJSONObject(i)
-            require(item.getString("format") == "graphic_eq") { "Unsupported custom profile format" }
+            require(item.getString("format") == "graphic_eq") { "saved data uses an unsupported format" }
             val gainsJson = item.getJSONArray("gains")
             val frequencies = item.getJSONArray("frequenciesHz")
             require(gainsJson.length() == 8 && frequencies.length() == 8)

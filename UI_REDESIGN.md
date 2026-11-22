@@ -299,7 +299,7 @@ almost nothing extra in phase 2.
 | # | Decision | Recommendation |
 |---|---|---|
 | 1 | Default accent (users can change it, §4.6) | Sage `#6FA393` |
-| 2 | Font | System Roboto with tabular figures: no APK growth, and it renders well. Alternative: bundled Inter (~300 KB, more distinctive). |
+| 2 | Font | System Roboto with tabular figures: no APK growth, and it renders well. Alternative: bundled Inter (~300 KB, more distinctive).  **Superseded 2026-11-22 (DESIGN_REVIEW.md item 7): Archivo variable font, normal width for text and condensed for data.** |
 | 3 | Icons | `material-icons-core` + ~8 copied vectors (not the full extended set). |
 | 4 | Long dialogs → bottom sheets | Yes, for share, import, preview, correction, recent tracks and preset picker. |
 | 5 | Home: merge EQ status + headphone + bass into one "Sound" card and move genre mix down | Yes. It reduces 5 cards to 3, and the controls you touch most go first. |

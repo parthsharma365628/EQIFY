@@ -59,7 +59,7 @@ object LocalGenreDetector {
             "arctic monkeys", "the strokes", "green day", "blink-182",
             "acdc", "ac/dc", "led zeppelin", "rolling stones", "queen",
             "oasis", "blur", "the killers", "muse", "tame impala",
-            "vampire weekend", "LCD soundsystem", "pixies", "sonic youth"
+            "vampire weekend", "lcd soundsystem", "pixies", "sonic youth"
         ), "Rock"),
 
         Rule(listOf(
@@ -127,18 +127,29 @@ object LocalGenreDetector {
         ), "Pop"),
     )
 
-    /**
-     * Returns the best-guess genre for [track] + [artist].
-     * Concatenates both strings, lowercases, and checks each rule in order.
-     * Returns "Pop" if nothing matches.
-     */
-    fun detect(track: String, artist: String): String {
-        val combined = "${track.lowercase()} ${artist.lowercase()}"
-        for (rule in rules) {
-            for (keyword in rule.keywords) {
-                if (combined.contains(keyword)) return rule.genre
-            }
+    /** Last-resort result when nothing matched and every online source failed. */
+    const val DEFAULT_GENRE = "Pop"
+
+    // Keywords match as whole words/phrases only, so "ive" (the K-pop group)
+    // no longer matches "Live", "rock" no longer matches "Rocket", "sia" no
+    // longer matches "Asian". Compiled once; keywords are trimmed and lowercased.
+    private val compiled: List<Pair<Regex, String>> = rules.flatMap { rule ->
+        rule.keywords.map { keyword ->
+            val k = Regex.escape(keyword.trim().lowercase())
+            // Boundaries: start/end of text or any character that is not a letter or digit.
+            Regex("""(^|[^\p{L}\p{N}])$k($|[^\p{L}\p{N}])""") to rule.genre
         }
-        return "Pop"
     }
+
+    /**
+     * The genre of the first rule whose keyword appears as a whole word in
+     * [track] + [artist], or null when nothing matches.
+     */
+    fun match(track: String, artist: String): String? {
+        val combined = "${track.lowercase()} ${artist.lowercase()}"
+        return compiled.firstOrNull { (regex, _) -> regex.containsMatchIn(combined) }?.second
+    }
+
+    /** Best guess, falling back to [DEFAULT_GENRE] when nothing matches. */
+    fun detect(track: String, artist: String): String = match(track, artist) ?: DEFAULT_GENRE
 }

@@ -179,8 +179,9 @@ class EqProcessingService : Service() {
                     repository.autoGenreDetection,
                     EqState.baseToneGains,
                     EqState.tonePresetName,
-                    EqState.manualOverrideActive
-                ) { a, bt, tn, manual -> AutoToneState(a, bt, tn, manual) }
+                    EqState.manualOverrideActive,
+                    repository.customPresetGains
+                ) { a, bt, tn, manual, presets -> AutoToneState(a, bt, tn, manual, presets) }
             ) { t1, t2, t3 ->
                 EqPipe(
                     genre         = t1.genre,
@@ -195,7 +196,8 @@ class EqProcessingService : Service() {
                     autoGenre     = t3.autoGenre,
                     baseToneGains = t3.baseToneGains,
                     toneName      = t3.toneName,
-                    manualOverride = t3.manualOverride
+                    manualOverride = t3.manualOverride,
+                    customPresets = t3.customPresets
                 )
             }.collectLatest { pipe ->
                 val previous = lastAutoSnapshot
@@ -249,7 +251,7 @@ class EqProcessingService : Service() {
                         val profile = (application as EqifyApplication).customEqProfiles.find(selection.profileId)
                         if (profile == null) {
                             EqState.updateHeadphoneCorrectionStatus(
-                                HeadphoneCorrectionStatus.ImportFailed("Imported profile is missing or unreadable; flat correction is active.")
+                                HeadphoneCorrectionStatus.ImportFailed("The imported correction is missing or unreadable, so no headphone correction is applied.")
                             )
                             FloatArray(8)
                         } else {
@@ -264,9 +266,15 @@ class EqProcessingService : Service() {
                 }
                 EqState.updateHeadphoneCorrection(hpCorrection)
 
+                // A song corrected to one of the user's presets uses that preset's
+                // curve; a deleted/unknown preset falls back to Flat.
+                val correctedPreset = GenreChoice.presetName(pipe.genre)
                 val tonePart: FloatArray = when {
                     pipe.manualOverride ->
                         pipe.baseToneGains.copyOf()
+                    pipe.autoGenre && correctedPreset != null ->
+                        pipe.customPresets[correctedPreset]?.toFloatArray()
+                            ?: EqProfileManager.defaultProfiles["Flat"]!!.copyOf()
                     pipe.autoGenre && pipe.genre.isNotBlank() ->
                         EqProfileManager.resolveGenreGains(pipe.genre)
                     pipe.autoGenre ->
@@ -291,6 +299,8 @@ class EqProcessingService : Service() {
 
                 val displayName = when {
                     pipe.manualOverride -> pipe.toneName.ifBlank { "Custom" }
+                    pipe.autoGenre && correctedPreset != null ->
+                        if (pipe.customPresets.containsKey(correctedPreset)) correctedPreset else "Flat"
                     pipe.autoGenre && pipe.genre.isNotBlank() ->
                         EqProfileManager.displayNameForGenre(pipe.genre)
                     pipe.autoGenre -> "Flat"
@@ -377,7 +387,8 @@ class EqProcessingService : Service() {
         val outputProtectionMode: OutputProtectionMode,
         val mono: Boolean, val bassBoost: Float, val smoothTransitions: Boolean,
         val autoGenre: Boolean, val baseToneGains: FloatArray, val toneName: String,
-        val manualOverride: Boolean
+        val manualOverride: Boolean,
+        val customPresets: Map<String, List<Float>> = emptyMap()
     )
 
     private data class SourceState(
@@ -392,7 +403,8 @@ class EqProcessingService : Service() {
         val autoGenre: Boolean,
         val baseToneGains: FloatArray,
         val toneName: String,
-        val manualOverride: Boolean
+        val manualOverride: Boolean,
+        val customPresets: Map<String, List<Float>>
     )
 
     private data class AudioSettingsState(

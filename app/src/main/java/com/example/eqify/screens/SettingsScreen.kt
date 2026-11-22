@@ -130,8 +130,8 @@ fun SettingsScreen(
     }
     if (showClearCustomProfilesDialog) {
         ConfirmDialog(
-            title = "Clear imported profiles?",
-            message = "Deletes all imported GraphicEQ profiles. If one is active, flat headphone correction will be used.",
+            title = "Clear imported corrections?",
+            message = "Deletes every imported correction. If one is in use, no headphone correction is applied.",
             confirmLabel = "Clear", destructive = true,
             onConfirm = { showClearCustomProfilesDialog = false; vm.clearCustomProfiles() },
             onDismiss = { showClearCustomProfilesDialog = false }
@@ -174,14 +174,16 @@ fun SettingsScreen(
                 .fillMaxSize()
                 .padding(padding)
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = EqSpacing.screen)
                 .padding(bottom = EqSpacing.xl),
-            verticalArrangement = Arrangement.spacedBy(EqSpacing.s)
+            verticalArrangement = Arrangement.spacedBy(EqSpacing.xs)
         ) {
+            // DESIGN_REVIEW.md item 6: no cards. Full-width rows with hairlines,
+            // grouped by a sentence-case title; banners sit in the screen gutter.
+            val gutter = Modifier.padding(horizontal = EqSpacing.screen)
             // Results of clear actions (previously separate pop-ups)
-            cacheMessage?.let { StatusBanner(it, StatusKind.NEUTRAL, onDismiss = vm::dismissCacheMessage) }
-            historyMessage?.let { StatusBanner(it, StatusKind.NEUTRAL, onDismiss = vm::dismissHistoryMessage) }
-            customProfilesMessage?.let { StatusBanner(it, StatusKind.NEUTRAL, onDismiss = vm::dismissCustomProfilesMessage) }
+            cacheMessage?.let { StatusBanner(it, StatusKind.NEUTRAL, gutter, onDismiss = vm::dismissCacheMessage) }
+            historyMessage?.let { StatusBanner(it, StatusKind.NEUTRAL, gutter, onDismiss = vm::dismissHistoryMessage) }
+            customProfilesMessage?.let { StatusBanner(it, StatusKind.NEUTRAL, gutter, onDismiss = vm::dismissCustomProfilesMessage) }
 
             Group("Appearance") {
                 AppearanceSettings(
@@ -230,7 +232,7 @@ fun SettingsScreen(
 
             Group("Detection") {
                 SwitchRow(
-                    title = "Media listener",
+                    title = "Song detection",
                     subtitle = if (isPermissionGranted) "Reads the song title and artist from supported music apps"
                         else "Notification access required to detect music",
                     checked = mediaListenerEnabled && isPermissionGranted,
@@ -281,7 +283,7 @@ fun SettingsScreen(
                 )
                 RowDivider()
                 SettingRow(
-                    title = "Imported EQ profiles",
+                    title = "Imported corrections",
                     subtitle = "GraphicEQ imports stored on this device",
                     icon = EqIcons.GraphicEq,
                     trailing = { ValueReadout(customProfiles.size.toFloat(), "", decimals = 0, color = c.textMuted) }
@@ -302,7 +304,7 @@ fun SettingsScreen(
                 )
                 RowDivider()
                 SettingRow(
-                    title = "Clear imported EQ profiles",
+                    title = "Clear imported corrections",
                     subtitle = "Delete local imports without clearing downloaded corrections",
                     icon = EqIcons.Delete, destructive = true,
                     onClick = { showClearCustomProfilesDialog = true }
@@ -370,8 +372,10 @@ fun SettingsScreen(
 
 @Composable
 private fun Group(title: String, content: @Composable ColumnScope.() -> Unit) {
-    SectionHeader(title, modifier = Modifier.padding(top = EqSpacing.m))
-    EqCard(contentPadding = PaddingValues(0.dp), content = content)
+    // SectionHeader adds 4 dp of its own; 12 more lines the title up with row text at 16 dp.
+    SectionHeader(title, modifier = Modifier.padding(start = EqSpacing.m, top = EqSpacing.l))
+    Column(Modifier.fillMaxWidth(), content = content)
+    HorizontalDivider(color = EqifyTheme.colors.outline)
 }
 
 @Composable
@@ -392,7 +396,7 @@ private fun outputProtectionStatus(mode: OutputProtectionMode, limiter: LimiterD
         LimiterDiagnosticState.ATTACHED -> "Ready when EQ is active"
         LimiterDiagnosticState.AVAILABLE -> "Preparing limiter"
         LimiterDiagnosticState.FAILED,
-        LimiterDiagnosticState.UNSUPPORTED -> "Safe fallback · Balanced unavailable"
+        LimiterDiagnosticState.UNSUPPORTED -> "Using Safe because the limiter isn't available"
     }
     OutputProtectionMode.SAFE -> when (limiter.state) {
         LimiterDiagnosticState.FAILED,
@@ -446,8 +450,8 @@ private fun OutputProtectionSheet(
             )
         }
         Text(
-            "Limiter: ${limiterStatus.state.name.lowercase()}" +
-                (limiterStatus.sessionId?.let { " · session $it" } ?: ""),
+            "Limiter state: ${limiterStatus.state.name.lowercase()}." +
+                (limiterStatus.sessionId?.let { " Audio session $it." } ?: ""),
             style = MaterialTheme.typography.bodySmall.tabular(), color = c.textFaint
         )
     }
@@ -538,7 +542,7 @@ private fun PrivacySheet(onDismiss: () -> Unit) {
 private fun PrivacyPoint(@DrawableRes icon: Int, title: String, body: String) {
     val c = EqifyTheme.colors
     Row(horizontalArrangement = Arrangement.spacedBy(EqSpacing.m)) {
-        EqIcon(icon, null, tint = c.accent, size = 20.dp)
+        EqIcon(icon, null, tint = c.textMuted, size = 20.dp)
         Column(Modifier.weight(1f)) {
             Text(title, style = MaterialTheme.typography.titleSmall, color = c.textPrimary)
             Text(body, style = MaterialTheme.typography.bodyMedium, color = c.textMuted)

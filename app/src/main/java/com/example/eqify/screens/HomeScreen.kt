@@ -6,6 +6,9 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -51,18 +54,26 @@ fun HomeScreen(
     val serviceRunning       by EqState.isServiceRunning.collectAsState()
     val correctionStatus     by EqState.headphoneCorrectionStatus.collectAsState()
     val bassLevel            by EqState.bassBoostLevel.collectAsState()
+    // Final applied output (tone + headphone correction + bass, after protection); zeros while paused/bypassed.
+    val outputGains          by EqState.activeBandGains.collectAsState()
+    val isBypassed           by EqState.isBypassed.collectAsState()
     val wiredConnected       by BluetoothHeadphoneDetector.wiredConnected.collectAsState()
     val testToneMessage      by viewModel.testToneMessage.collectAsState()
     val genreMix             by viewModel.genreMix.collectAsState()
     val recentTracks         by viewModel.recentTracks.collectAsState()
     val correctionMessage    by viewModel.correctionMessage.collectAsState()
     var showRecent by remember { mutableStateOf(false) }
+    var showMix by remember { mutableStateOf(false) }
     var correctionTarget by remember { mutableStateOf<Pair<String, String>?>(null) }
+    val customPresets by viewModel.customPresetNames.collectAsState()
 
     correctionTarget?.let { (title, artist) ->
-        GenreCorrectionSheet(title, artist, viewModel.correctionGenres,
+        GenreCorrectionSheet(title, artist, viewModel.correctionGenres, customPresets,
             onSelect = { genre -> viewModel.correctGenre(title, artist, genre); correctionTarget = null },
             onDismiss = { correctionTarget = null })
+    }
+    if (showMix) {
+        GenreMixSheet(genreMix, onRecent = { showMix = false; showRecent = true }, onDismiss = { showMix = false })
     }
     if (showRecent) {
         RecentTracksSheet(recentTracks, onCorrect = { title, artist ->
@@ -76,11 +87,13 @@ fun HomeScreen(
             .fillMaxSize()
             .background(EqifyTheme.colors.background)
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = EqSpacing.screen)
             .padding(bottom = EqSpacing.l),
-        verticalArrangement = Arrangement.spacedBy(EqSpacing.cardGap)
+        verticalArrangement = Arrangement.spacedBy(EqSpacing.m)
     ) {
-        TopBar(onSettingsClick = onNavigateToSettings)
+        // DESIGN_REVIEW.md item 6: no cards on Home. Rows run full width with
+        // hairline dividers; everything else sits in the screen gutter.
+        val gutter = Modifier.padding(horizontal = EqSpacing.screen)
+        TopBar(onSettingsClick = onNavigateToSettings, modifier = gutter)
 
         if (wiredConnected) {
             StatusBanner(
@@ -91,11 +104,12 @@ fun HomeScreen(
                     BluetoothHeadphoneDetector.dismissWiredBanner()
                     onNavigateToHeadphones()
                 },
-                onDismiss = { BluetoothHeadphoneDetector.dismissWiredBanner() }
+                onDismiss = { BluetoothHeadphoneDetector.dismissWiredBanner() },
+                modifier = gutter
             )
         }
         correctionMessage?.let {
-            StatusBanner(it, StatusKind.ERROR, onDismiss = viewModel::dismissCorrectionMessage)
+            StatusBanner(it, StatusKind.ERROR, gutter, onDismiss = viewModel::dismissCorrectionMessage)
         }
 
         NowPlayingCard(
@@ -104,8 +118,11 @@ fun HomeScreen(
             artistName = artistName,
             genreUiState = genreUiState,
             onCorrect = { correctionTarget = trackName to artistName },
-            onOpenSettings = onNavigateToSettings
+            onOpenSettings = onNavigateToSettings,
+            modifier = gutter
         )
+
+        LiveCurve(gains = outputGains.toList(), active = isEqEnabled && !isBypassed && serviceRunning, modifier = gutter)
 
         SoundCard(
             eqEnabled = isEqEnabled,
@@ -121,16 +138,16 @@ fun HomeScreen(
             onTestEq = viewModel::playEqTestTone
         )
 
-        GenreMixCard(genreMix, onRecent = { showRecent = true })
+        GenreMixRow(genreMix, onClick = { showMix = true })
     }
 }
 
 // ── Top bar ───────────────────────────────────────────────────────────
 
 @Composable
-private fun TopBar(onSettingsClick: () -> Unit) {
+private fun TopBar(onSettingsClick: () -> Unit, modifier: Modifier = Modifier) {
     Row(
-        Modifier.fillMaxWidth().padding(top = EqSpacing.m),
+        modifier.fillMaxWidth().padding(top = EqSpacing.m),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text("EQify", style = MaterialTheme.typography.headlineSmall, color = EqifyTheme.colors.textPrimary,
@@ -148,19 +165,18 @@ private fun NowPlayingCard(
     artistName: String,
     genreUiState: GenreUiState,
     onCorrect: () -> Unit,
-    onOpenSettings: () -> Unit
+    onOpenSettings: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     val c = EqifyTheme.colors
-    EqCard(modifier = Modifier.animateContentSize()) {
-        SectionHeader("Now playing", accent = true, modifier = Modifier.padding(bottom = EqSpacing.xs))
+    Column(modifier.fillMaxWidth().animateContentSize()) {
         when {
             !enabled -> EmptyState(
                 icon = EqIcons.Music,
                 title = "Song detection is off",
-                body = "Turn on the media listener to switch EQ automatically by genre.",
+                body = "Turn on song detection to switch EQ by genre automatically.",
                 actionLabel = "Open settings",
-                onAction = onOpenSettings,
-                modifier = Modifier.padding(0.dp)
+                onAction = onOpenSettings
             )
             trackName == IDLE_TRACK || artistName.isBlank() -> Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -206,7 +222,8 @@ private fun GenreStatus(state: GenreUiState) {
         is GenreUiState.Detected -> Column(verticalArrangement = Arrangement.spacedBy(EqSpacing.xs)) {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(EqSpacing.s),
                 verticalArrangement = Arrangement.spacedBy(EqSpacing.xs)) {
-                PillChip(state.genre, selected = true, leadingIcon = EqIcons.GraphicEq)
+                PillChip(GenreChoice.shortLabel(state.genre), selected = true,
+                    leadingIcon = if (GenreChoice.isPreset(state.genre)) EqIcons.Tune else EqIcons.GraphicEq)
                 if (state.source == "Manual correction") {
                     StatusChip("Your correction", StatusKind.ACTIVE)
                 } else {
@@ -220,20 +237,59 @@ private fun GenreStatus(state: GenreUiState) {
                 }
             }
             if (state.source != "Manual correction") {
-                Text("via ${state.source}" + if (state.isFallback) " · fallback result" else "",
+                Text("Found via ${state.source}" + if (state.isFallback) ", as a fallback" else "",
                     style = MaterialTheme.typography.bodySmall, color = EqifyTheme.colors.textMuted)
             }
         }
         is GenreUiState.Detecting -> {
+            val reduceMotion = rememberReduceMotion()
             val pulse by rememberInfiniteTransition(label = "pulse").animateFloat(
                 initialValue = 0.4f, targetValue = 1f,
                 animationSpec = infiniteRepeatable(tween(700), RepeatMode.Reverse), label = "alpha"
             )
-            StatusChip("Detecting genre…", StatusKind.NEUTRAL, Modifier.alpha(pulse))
+            StatusChip("Detecting genre…", StatusKind.NEUTRAL, Modifier.alpha(if (reduceMotion) 1f else pulse))
         }
         is GenreUiState.DetectionOff -> StatusChip("Auto-genre off", StatusKind.NEUTRAL)
         is GenreUiState.Error -> StatusChip("Genre detection failed", StatusKind.ERROR)
         is GenreUiState.Idle -> {}
+    }
+}
+
+// ── Live curve (DESIGN_REVIEW.md item 1) ──────────────────────────────
+//
+// The app's signature: what is shaping the sound right now. No card, no grid,
+// no numbers above it; the band labels are the only scale. It morphs only when
+// the applied output changes (never on first load) and snaps when the system
+// "remove animations" setting is on.
+
+@Composable
+private fun LiveCurve(gains: List<Float>, active: Boolean, modifier: Modifier = Modifier) {
+    val c = EqifyTheme.colors
+    val reduceMotion = rememberReduceMotion()
+    val shown = List(EqProfileManager.BAND_CENTERS_HZ.size) { i ->
+        animateFloatAsState(gains.getOrElse(i) { 0f }, changeMotion(reduceMotion), label = "live-band-$i").value
+    }
+    val alpha by animateFloatAsState(if (active) 1f else 0.4f, changeMotion(reduceMotion, 250), label = "live-alpha")
+    val description = if (!active) "EQ is off, so the sound is unchanged."
+        else if (gains.all { kotlin.math.abs(it) < 0.05f }) "Current sound: flat, no EQ applied."
+        else "Current sound: " + EqProfileManager.BAND_LABELS.indices.joinToString(", ") { i ->
+            "${EqProfileManager.BAND_LABELS[i]} ${formatValue(gains.getOrElse(i) { 0f }, "dB", signed = true)}"
+        } + "."
+    Column(modifier.fillMaxWidth().padding(vertical = EqSpacing.s)) {
+        ToneCurve(
+            gains = shown,
+            height = 112.dp,
+            showGrid = false,
+            showPoints = false,
+            contentDescription = description,
+            modifier = Modifier.graphicsLayer { this.alpha = alpha }
+        )
+        Row(Modifier.fillMaxWidth().padding(top = EqSpacing.xs)) {
+            EqProfileManager.BAND_LABELS.forEach { label ->
+                Text(label.removeSuffix("Hz"), style = MaterialTheme.typography.labelSmall.condensed(), color = c.textFaint,
+                    textAlign = TextAlign.Center, maxLines = 1, modifier = Modifier.weight(1f))
+            }
+        }
     }
 }
 
@@ -254,19 +310,20 @@ private fun SoundCard(
     onTestEq: () -> Unit
 ) {
     val c = EqifyTheme.colors
-    EqCard(title = "Sound", contentPadding = PaddingValues(bottom = EqSpacing.s)) {
+    Column(Modifier.fillMaxWidth()) {
+        HorizontalDivider(color = c.outline)
         SwitchRow(
             title = "Auto EQ",
             subtitle = when {
                 !serviceRunning -> "Engine starting…"
-                eqEnabled -> "Active · ${activePreset.ifBlank { "Flat" }}"
-                else -> "Paused · audio is unmodified"
+                eqEnabled -> "On, using the ${activePreset.ifBlank { "Flat" }} preset"
+                else -> "Paused. Audio plays unchanged."
             },
             checked = eqEnabled,
             onCheckedChange = onToggleEq,
             icon = EqIcons.Equalizer
         )
-        HorizontalDivider(color = c.outline, modifier = Modifier.padding(horizontal = EqSpacing.l))
+        HorizontalDivider(color = c.outline, modifier = Modifier.padding(start = 56.dp))
 
         val status = headphoneStatus(correctionStatus, headphoneName)
         SettingRow(
@@ -277,7 +334,7 @@ private fun SoundCard(
             modifier = Modifier.semantics { contentDescription = "Headphones: $headphoneName. Change headphones" },
             trailing = { status?.let { StatusChip(it.label, it.kind) } ?: EqIcon(EqIcons.Expand, null, size = 20.dp) }
         )
-        HorizontalDivider(color = c.outline, modifier = Modifier.padding(horizontal = EqSpacing.l))
+        HorizontalDivider(color = c.outline, modifier = Modifier.padding(start = 56.dp))
 
         Column(Modifier.padding(horizontal = EqSpacing.l, vertical = EqSpacing.m),
             verticalArrangement = Arrangement.spacedBy(EqSpacing.s)) {
@@ -285,7 +342,7 @@ private fun SoundCard(
                 Text("Bass boost", style = MaterialTheme.typography.titleSmall, color = c.textPrimary,
                     modifier = Modifier.weight(1f))
                 Text(if (bassLevel == 0f) "Off" else "+${bassLevel.toInt()} dB sub-bass",
-                    style = MaterialTheme.typography.labelMedium.tabular(),
+                    style = MaterialTheme.typography.labelMedium.condensed().tabular(),
                     color = if (bassLevel > 0f) c.accent else c.textMuted)
             }
             SegmentedToggle(
@@ -304,6 +361,7 @@ private fun SoundCard(
             icon = EqIcons.Play,
             modifier = Modifier.padding(horizontal = EqSpacing.s)
         )
+        HorizontalDivider(color = c.outline)
     }
 }
 
@@ -319,52 +377,80 @@ private fun headphoneStatus(status: HeadphoneCorrectionStatus, headphoneName: St
         if (status.headphoneName == headphoneName) HeadphoneStatusUi("Saved", StatusKind.SUCCESS, "Using saved gain values") else null
     is HeadphoneCorrectionStatus.Failed ->
         if (status.headphoneName == headphoneName) HeadphoneStatusUi("Failed", StatusKind.ERROR, status.message) else null
-    is HeadphoneCorrectionStatus.Imported -> HeadphoneStatusUi("Imported", StatusKind.ACTIVE, "Using imported profile: ${status.displayName}")
+    is HeadphoneCorrectionStatus.Imported -> HeadphoneStatusUi("Imported", StatusKind.ACTIVE, "Using imported correction: ${status.displayName}")
     is HeadphoneCorrectionStatus.ImportFailed -> HeadphoneStatusUi("Failed", StatusKind.ERROR, status.message)
     HeadphoneCorrectionStatus.Idle -> null
 }
 
 // ── Genre mix ─────────────────────────────────────────────────────────
 
+/** One compact line on Home; the full breakdown opens in a sheet. */
 @Composable
-private fun GenreMixCard(mix: GenreMix, onRecent: () -> Unit) {
+private fun GenreMixRow(mix: GenreMix, onClick: () -> Unit) {
+    val top = mix.items.firstOrNull { !it.genre.equals("Other", ignoreCase = true) }
+    val plural = if (mix.total == 1) "" else "s"
+    SettingRow(
+        title = "Genre mix this week",
+        subtitle = when {
+            mix.total == 0 -> "No tracks detected yet"
+            top != null -> "Mostly ${GenreChoice.label(top.genre)}, ${top.percent}% of ${mix.total} detected track$plural"
+            else -> "${mix.total} detected track$plural"
+        },
+        icon = EqIcons.GraphicEq,
+        onClick = onClick,
+        trailing = { if (mix.total > 0) GenreMixBar(mix, Modifier.width(88.dp)) }
+    )
+}
+
+/** One stacked bar; each segment proportional to its observation count. */
+@Composable
+private fun GenreMixBar(mix: GenreMix, modifier: Modifier = Modifier) {
     val c = EqifyTheme.colors
-    EqCard(title = "Genre mix", action = { TextAction("Recent tracks", onRecent) }) {
-        Text("Past 7 days · ${mix.total} detected track${if (mix.total == 1) "" else "s"} (not listening time)",
-            style = MaterialTheme.typography.bodySmall, color = c.textMuted)
-        Spacer(Modifier.height(EqSpacing.m))
+    Row(
+        modifier.height(10.dp).clip(PillShape).background(c.surfaceHighest)
+            .semantics { contentDescription = mix.items.joinToString { "${it.genre} ${it.percent} percent" } },
+        horizontalArrangement = Arrangement.spacedBy(2.dp)
+    ) {
+        mix.items.forEachIndexed { i, item ->
+            if (item.count > 0) Box(Modifier.weight(item.count.toFloat()).fillMaxHeight().background(mixColor(i, item.genre)))
+        }
+    }
+}
+
+@Composable
+private fun mixColor(index: Int, genre: String) = EqifyTheme.colors.let { c ->
+    if (genre.equals("Other", ignoreCase = true)) c.textFaint else c.chart[index % c.chart.size]
+}
+
+@Composable
+private fun GenreMixSheet(mix: GenreMix, onRecent: () -> Unit, onDismiss: () -> Unit) {
+    val c = EqifyTheme.colors
+    val plural = if (mix.total == 1) "" else "s"
+    EqSheet(
+        title = "Genre mix this week",
+        subtitle = "${mix.total} detected track$plural in the past 7 days. This counts tracks, not listening time.",
+        onDismiss = onDismiss,
+        actions = { TonalButton("Recent tracks", onRecent) }
+    ) {
         if (mix.total == 0) {
-            Text("No tracks observed yet. Turn on notification access and the media listener to start.",
-                style = MaterialTheme.typography.bodyMedium, color = c.textMuted)
+            EmptyState(EqIcons.Music, "No tracks detected yet", body = "Turn on song detection to start.")
         } else {
-            val colors = mix.items.mapIndexed { i, item ->
-                if (item.genre.equals("Other", ignoreCase = true)) c.textFaint else c.chart[i % c.chart.size]
-            }
-            // One stacked bar; each segment proportional to its observation count.
-            Row(
-                Modifier.fillMaxWidth().height(12.dp).clip(PillShape).background(c.surfaceHighest)
-                    .semantics { contentDescription = mix.items.joinToString { "${it.genre} ${it.percent} percent" } },
-                horizontalArrangement = Arrangement.spacedBy(2.dp)
-            ) {
+            GenreMixBar(mix, Modifier.fillMaxWidth())
+            Column {
                 mix.items.forEachIndexed { i, item ->
-                    if (item.count > 0) Box(Modifier.weight(item.count.toFloat()).fillMaxHeight().background(colors[i]))
-                }
-            }
-            Spacer(Modifier.height(EqSpacing.m))
-            mix.items.forEachIndexed { i, item ->
-                Row(Modifier.fillMaxWidth().padding(vertical = EqSpacing.xs), verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.size(10.dp).clip(PillShape).background(colors[i]))
-                    Spacer(Modifier.width(EqSpacing.s))
-                    Text(item.genre, style = MaterialTheme.typography.bodyMedium, color = c.textPrimary,
-                        modifier = Modifier.weight(1f))
-                    ValueReadout(item.percent.toFloat(), "%", decimals = 0)
-                    Text("  ·  ${item.count}", style = MaterialTheme.typography.labelMedium.tabular(), color = c.textMuted)
+                    Row(Modifier.fillMaxWidth().padding(vertical = EqSpacing.xs), verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.size(10.dp).clip(PillShape).background(mixColor(i, item.genre)))
+                        Spacer(Modifier.width(EqSpacing.s))
+                        Text(GenreChoice.label(item.genre), style = MaterialTheme.typography.bodyMedium, color = c.textPrimary,
+                            modifier = Modifier.weight(1f))
+                        ValueReadout(item.percent.toFloat(), "%", decimals = 0)
+                        Text(" (${item.count})", style = MaterialTheme.typography.labelMedium.tabular(), color = c.textMuted)
+                    }
                 }
             }
         }
-        Spacer(Modifier.height(EqSpacing.s))
-        Text("Only tracks detected while the listener and Auto-Genre were active are counted.",
-            style = MaterialTheme.typography.bodySmall, color = c.textFaint)
+        Text("Only tracks detected while song detection and auto-genre were on are counted.",
+            style = MaterialTheme.typography.bodySmall, color = c.textMuted)
     }
 }
 
@@ -374,7 +460,7 @@ private fun GenreMixCard(mix: GenreMix, onRecent: () -> Unit) {
 private fun RecentTracksSheet(
     tracks: List<RecentGenreTrack>, onCorrect: (String, String) -> Unit, onDismiss: () -> Unit
 ) {
-    EqSheet(title = "Recent tracks", subtitle = "Last 14 days · up to 15 distinct tracks", onDismiss = onDismiss) {
+    EqSheet(title = "Recent tracks", subtitle = "Up to 15 tracks from the last 14 days", onDismiss = onDismiss) {
         if (tracks.isEmpty()) {
             EmptyState(EqIcons.Music, "No tracks observed yet", body = "Detected tracks will appear here.")
         } else {
@@ -383,7 +469,9 @@ private fun RecentTracksSheet(
                     if (i > 0) HorizontalDivider(color = EqifyTheme.colors.outline)
                     SettingRow(
                         title = track.title,
-                        subtitle = "${track.artist} · ${track.genre}",
+                        subtitle = if (GenreChoice.isPreset(track.genre))
+                            "${track.artist}\nPreset: ${GenreChoice.shortLabel(track.genre)}"
+                        else "${track.artist}\nGenre: ${track.genre}",
                         trailing = { TextAction("Change", { onCorrect(track.title, track.artist) }) }
                     )
                 }
@@ -395,7 +483,7 @@ private fun RecentTracksSheet(
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun GenreCorrectionSheet(
-    title: String, artist: String, genres: List<String>,
+    title: String, artist: String, genres: List<String>, presets: List<String>,
     onSelect: (String?) -> Unit, onDismiss: () -> Unit
 ) {
     EqSheet(title = "Genre for \"$title\"", subtitle = artist, onDismiss = onDismiss) {
@@ -407,7 +495,16 @@ private fun GenreCorrectionSheet(
                 onClick = { onSelect(null) }
             )
         }
-        SectionHeader("Choose a genre")
+        if (presets.isNotEmpty()) {
+            SectionHeader("Your presets")
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(EqSpacing.s),
+                verticalArrangement = Arrangement.spacedBy(EqSpacing.s)) {
+                presets.forEach { name ->
+                    PillChip(name, leadingIcon = EqIcons.Tune, onClick = { onSelect(GenreChoice.preset(name)) })
+                }
+            }
+        }
+        SectionHeader("Genres")
         FlowRow(horizontalArrangement = Arrangement.spacedBy(EqSpacing.s),
             verticalArrangement = Arrangement.spacedBy(EqSpacing.s)) {
             genres.forEach { genre -> PillChip(genre, onClick = { onSelect(genre) }) }

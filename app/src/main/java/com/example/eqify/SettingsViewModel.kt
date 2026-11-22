@@ -62,9 +62,9 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                 if (repository.headphoneCorrectionSelection.first() is HeadphoneCorrectionSelection.Custom)
                     repository.selectNoCorrection()
                 withContext(Dispatchers.IO) { customProfiles.clear() }
-                _customProfilesMessage.value = "Cleared $count imported profile${if (count == 1) "" else "s"}."
+                _customProfilesMessage.value = "Cleared $count imported correction${if (count == 1) "" else "s"}."
             } catch (e: CancellationException) { throw e }
-            catch (e: Exception) { _customProfilesMessage.value = "Could not clear imported profiles: ${e.message}" }
+            catch (e: Exception) { _customProfilesMessage.value = "Could not clear imported corrections: ${e.message}" }
         }
     }
 

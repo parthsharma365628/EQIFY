@@ -10,6 +10,7 @@ import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import java.net.URLDecoder
@@ -67,6 +68,15 @@ internal object CustomPresetNameCodec {
 
 class UserPreferencesRepository(private val context: Context) {
 
+    /**
+     * A settings flow that emits only when *its* value changes. DataStore's
+     * `data` re-emits on every write to any key; without distinctUntilChanged,
+     * an unrelated write (e.g. the tile's processing snapshot) restarts every
+     * collector, which caused a genre-detection feedback loop (Pop/Rock flicker).
+     */
+    private fun <T> pref(transform: suspend (Preferences) -> T): Flow<T> =
+        context.dataStore.data.map(transform).distinctUntilChanged()
+
     private object Keys {
         val IS_EQ_ENABLED         = booleanPreferencesKey("is_eq_enabled")
         val AUTO_GENRE_DETECTION  = booleanPreferencesKey("auto_genre_detection")
@@ -91,19 +101,19 @@ class UserPreferencesRepository(private val context: Context) {
 
     // ── Standard settings ─────────────────────────────────────────────
 
-    val isEqEnabled: Flow<Boolean> = context.dataStore.data.map { prefs ->
+    val isEqEnabled: Flow<Boolean> = pref { prefs ->
         prefs[Keys.IS_EQ_ENABLED] ?: true
     }
 
-    val autoGenreDetection: Flow<Boolean> = context.dataStore.data.map { prefs ->
+    val autoGenreDetection: Flow<Boolean> = pref { prefs ->
         prefs[Keys.AUTO_GENRE_DETECTION] ?: true
     }
 
-    val smoothEqTransitions: Flow<Boolean> = context.dataStore.data.map { prefs ->
+    val smoothEqTransitions: Flow<Boolean> = pref { prefs ->
         prefs[Keys.SMOOTH_EQ_TRANSITIONS] ?: true
     }
 
-    val outputProtectionMode: Flow<OutputProtectionMode> = context.dataStore.data.map { prefs ->
+    val outputProtectionMode: Flow<OutputProtectionMode> = pref { prefs ->
         OutputProtectionMode.fromStorageValue(prefs[Keys.OUTPUT_PROTECTION_MODE])
             ?: when (prefs[Keys.LIMIT_OUTPUT_GAIN]) {
                 false -> OutputProtectionMode.OFF
@@ -115,19 +125,19 @@ class UserPreferencesRepository(private val context: Context) {
             }
     }
 
-    val forceMono: Flow<Boolean> = context.dataStore.data.map { prefs ->
+    val forceMono: Flow<Boolean> = pref { prefs ->
         prefs[Keys.FORCE_MONO] ?: false
     }
 
-    val mediaListenerEnabled: Flow<Boolean> = context.dataStore.data.map { prefs ->
+    val mediaListenerEnabled: Flow<Boolean> = pref { prefs ->
         prefs[Keys.MEDIA_LISTENER] ?: true
     }
 
-    val selectedHeadphone: Flow<String> = context.dataStore.data.map { prefs ->
+    val selectedHeadphone: Flow<String> = pref { prefs ->
         prefs[Keys.SELECTED_HEADPHONE] ?: "Sony WH-1000XM5"
     }
 
-    val headphoneCorrectionSelection: Flow<HeadphoneCorrectionSelection> = context.dataStore.data.map { prefs ->
+    val headphoneCorrectionSelection: Flow<HeadphoneCorrectionSelection> = pref { prefs ->
         when (prefs[Keys.CORRECTION_SOURCE]) {
             "custom" -> prefs[Keys.CUSTOM_CORRECTION_ID]?.takeIf { it.isNotBlank() }
                 ?.let { HeadphoneCorrectionSelection.Custom(it) } ?: HeadphoneCorrectionSelection.None
@@ -138,19 +148,19 @@ class UserPreferencesRepository(private val context: Context) {
         }
     }
 
-    val headphoneAutoDetect: Flow<Boolean> = context.dataStore.data.map { prefs ->
+    val headphoneAutoDetect: Flow<Boolean> = pref { prefs ->
         prefs[Keys.HEADPHONE_AUTO_DETECT] ?: true
     }
 
-    val bassBoostLevel: Flow<Float> = context.dataStore.data.map { prefs ->
+    val bassBoostLevel: Flow<Float> = pref { prefs ->
         prefs[Keys.BASS_BOOST_LEVEL] ?: 0f
     }
 
-    val lastPreset: Flow<String> = context.dataStore.data.map { prefs ->
+    val lastPreset: Flow<String> = pref { prefs ->
         prefs[Keys.LAST_PRESET] ?: "Hip-Hop"
     }
 
-    val processingSnapshot: Flow<EqProcessingSnapshot> = context.dataStore.data.map { prefs ->
+    val processingSnapshot: Flow<EqProcessingSnapshot> = pref { prefs ->
         val requestedEnabled = prefs[Keys.IS_EQ_ENABLED] ?: true
         EqProcessingSnapshot(
             requestedEnabled = requestedEnabled,
@@ -163,11 +173,11 @@ class UserPreferencesRepository(private val context: Context) {
         )
     }
 
-    val lastFmApiKey: Flow<String> = context.dataStore.data.map { prefs ->
+    val lastFmApiKey: Flow<String> = pref { prefs ->
         prefs[Keys.LASTFM_API_KEY] ?: ""
     }
 
-    val favoriteHeadphones: Flow<List<String>> = context.dataStore.data.map { prefs ->
+    val favoriteHeadphones: Flow<List<String>> = pref { prefs ->
         CustomPresetNameCodec.decode(prefs[Keys.FAVORITE_HEADPHONES] ?: "")
     }
 
@@ -292,13 +302,26 @@ class UserPreferencesRepository(private val context: Context) {
 
     // ── Custom preset names list ──────────────────────────────────────
 
-    val customPresetNames: Flow<List<String>> = context.dataStore.data.map { prefs ->
+    val customPresetNames: Flow<List<String>> = pref { prefs ->
         val raw = prefs[Keys.CUSTOM_PRESET_NAMES] ?: ""
         CustomPresetNameCodec.decode(raw)
     }
 
     private suspend fun saveCustomPresetNamesList(names: List<String>) {
         context.dataStore.edit { it[Keys.CUSTOM_PRESET_NAMES] = CustomPresetNameCodec.encode(names) }
+    }
+
+    /**
+     * Every saved custom preset's gains, by name. Lists (not FloatArrays) so
+     * distinctUntilChanged compares by value. Used by the EQ service when a
+     * song's correction points at a preset.
+     */
+    val customPresetGains: Flow<Map<String, List<Float>>> = pref { prefs ->
+        CustomPresetNameCodec.decode(prefs[Keys.CUSTOM_PRESET_NAMES] ?: "").mapNotNull { name ->
+            val gains = prefs[stringPreferencesKey("custom_gains_$name")]
+                ?.split(",")?.mapNotNull { it.trim().toFloatOrNull() }
+            if (gains != null && gains.size == 8 && gains.all { it.isFinite() }) name to gains else null
+        }.toMap()
     }
 
     // ── Custom preset gains ───────────────────────────────────────────
@@ -350,19 +373,19 @@ class UserPreferencesRepository(private val context: Context) {
 
     suspend fun renameCustomPreset(oldName: String, newName: String) {
         val name = newName.trim()
-        require(name.isNotEmpty()) { "Enter a profile name." }
+        require(name.isNotEmpty()) { "Enter a preset name." }
         require(!name.equals("Custom", true) &&
             EqProfileManager.defaultProfiles.keys.none { it.equals(name, true) }) {
             "This name is reserved."
         }
         context.dataStore.edit { prefs ->
             val names = CustomPresetNameCodec.decode(prefs[Keys.CUSTOM_PRESET_NAMES] ?: "")
-            require(oldName in names) { "Profile no longer exists." }
+            require(oldName in names) { "This preset no longer exists." }
             require(names.none { it != oldName && it.equals(name, true) }) {
-                "A profile with this name already exists."
+                "A preset with this name already exists."
             }
             val oldKey = stringPreferencesKey("custom_gains_$oldName")
-            val gains = requireNotNull(prefs[oldKey]) { "Saved profile data is missing." }
+            val gains = requireNotNull(prefs[oldKey]) { "This preset's saved values are missing." }
             prefs.remove(oldKey)
             prefs[stringPreferencesKey("custom_gains_$name")] = gains
             prefs[Keys.CUSTOM_PRESET_NAMES] = CustomPresetNameCodec.encode(

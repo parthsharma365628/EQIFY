@@ -23,6 +23,7 @@ import com.example.eqify.ui.theme.EqSpacing
 import com.example.eqify.ui.theme.EqifyShapes
 import com.example.eqify.ui.theme.EqifyTheme
 import com.example.eqify.ui.theme.PillShape
+import com.example.eqify.ui.theme.condensed
 
 // ── Cards and headers ─────────────────────────────────────────────────
 
@@ -64,12 +65,15 @@ fun EqCard(
     }
 }
 
-/** Uppercase overline above a group of cards/rows ("APPEARANCE", "GENRE MIX"). */
+/**
+ * Sentence-case title above a group of rows ("Imported corrections", "Sound").
+ * No uppercase eyebrows (DESIGN_REVIEW.md M1); omit it when the content explains itself.
+ */
 @Composable
 fun SectionHeader(text: String, modifier: Modifier = Modifier, accent: Boolean = false) {
     Text(
-        text.uppercase(),
-        style = MaterialTheme.typography.labelSmall,
+        text,
+        style = MaterialTheme.typography.titleSmall,
         color = if (accent) EqifyTheme.colors.accent else EqifyTheme.colors.textMuted,
         modifier = modifier.padding(horizontal = EqSpacing.xs, vertical = EqSpacing.s)
     )
@@ -155,7 +159,7 @@ fun ValueRow(
         title = title, subtitle = subtitle, icon = icon, onClick = onClick, modifier = modifier,
         trailing = {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(EqSpacing.xs)) {
-                Text(value, style = MaterialTheme.typography.labelLarge, color = EqifyTheme.colors.accent,
+                Text(value, style = MaterialTheme.typography.labelLarge, color = EqifyTheme.colors.textMuted,
                     maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 160.dp))
                 EqIcon(EqIcons.Expand, contentDescription = null, size = 20.dp)
             }
@@ -188,7 +192,7 @@ fun PillChip(
             horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             if (leadingIcon != null) EqIcon(leadingIcon, null, tint = fg, size = 18.dp)
-            Text(text, style = MaterialTheme.typography.labelMedium, color = fg, maxLines = 1,
+            Text(text, style = MaterialTheme.typography.labelMedium.condensed(), color = fg, maxLines = 1,
                 overflow = TextOverflow.Ellipsis)
             if (trailingIcon != null) EqIcon(trailingIcon, null, tint = fg, size = 18.dp)
         }
@@ -220,7 +224,7 @@ fun StatusChip(text: String, kind: StatusKind, modifier: Modifier = Modifier) {
         horizontalArrangement = Arrangement.spacedBy(6.dp)
     ) {
         Box(Modifier.size(8.dp).background(dot, PillShape))
-        Text(text, style = MaterialTheme.typography.labelMedium,
+        Text(text, style = MaterialTheme.typography.labelMedium.condensed(),
             color = if (kind == StatusKind.ERROR) c.error else c.textPrimary, maxLines = 1,
             overflow = TextOverflow.Ellipsis)
     }

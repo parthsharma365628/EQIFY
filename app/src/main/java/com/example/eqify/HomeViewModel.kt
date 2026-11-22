@@ -23,6 +23,9 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     val recentTracks = history.recent().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val genreMix = history.mix().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), GenreMix(0, emptyList()))
     val correctionGenres get() = EqProfileManager.correctionGenres
+    /** The user's own presets, offered in the genre-correction sheet next to the built-in genres. */
+    val customPresetNames = repository.customPresetNames
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private val _testToneMessage = MutableStateFlow<String?>(null)
     val testToneMessage = _testToneMessage.asStateFlow()

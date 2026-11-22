@@ -81,6 +81,14 @@ interface GenreHistoryDao {
     @Query("DELETE FROM genre_correction")
     suspend fun clearCorrections()
 
+    /** Point every correction that used [from] at [to] (a preset was renamed). */
+    @Query("UPDATE genre_correction SET correctedGenre = :to WHERE correctedGenre = :from")
+    suspend fun retargetCorrections(from: String, to: String)
+
+    /** Remove every correction that points at [value] (a preset was deleted). */
+    @Query("DELETE FROM genre_correction WHERE correctedGenre = :value")
+    suspend fun removeCorrectionsTo(value: String)
+
     @Transaction
     suspend fun clearAll() {
         clearObservations()
@@ -151,10 +159,17 @@ class GenreHistoryRepository(context: Context) {
         require(key.valid)
         if (genre == null) dao.removeCorrection(key.title, key.artist)
         else {
-            require(genre in EqProfileManager.correctionGenres)
+            require(GenreChoice.isValidCorrection(genre))
             dao.upsert(GenreCorrection(key.title, key.artist, title, artist, genre, System.currentTimeMillis()))
         }
     }
+
+    /** A preset was renamed: songs corrected to it follow the new name. */
+    suspend fun renamePresetReferences(oldName: String, newName: String) =
+        dao.retargetCorrections(GenreChoice.preset(oldName), GenreChoice.preset(newName))
+
+    /** A preset was deleted: songs corrected to it go back to automatic detection. */
+    suspend fun removePresetReferences(name: String) = dao.removeCorrectionsTo(GenreChoice.preset(name))
 
     suspend fun record(title: String, artist: String, genre: String, manual: Boolean, at: Long = System.currentTimeMillis()) {
         val key = TrackIdentity.of(title, artist)

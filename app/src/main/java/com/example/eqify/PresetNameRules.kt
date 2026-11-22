@@ -2,7 +2,7 @@ package com.example.eqify
 
 /**
  * Single source of truth for user tone-preset names. Pure Kotlin for JVM tests.
- * Names are matched case-insensitively; "Custom" and built-in profile names are reserved.
+ * Names are matched case-insensitively; "Custom" and built-in preset names are reserved.
  */
 object PresetNameRules {
     /** Length cap for names created by import. Existing UI flows keep their current behavior. */
@@ -23,8 +23,8 @@ object PresetNameRules {
     fun validateNew(name: String, existing: Collection<String>): String? {
         val trimmed = name.trim()
         return when {
-            trimmed.isEmpty() -> "Enter a profile name."
-            isReserved(trimmed) || isDuplicate(trimmed, existing) -> "Choose a unique profile name."
+            trimmed.isEmpty() -> "Enter a preset name."
+            isReserved(trimmed) || isDuplicate(trimmed, existing) -> "Choose a unique preset name."
             else -> null
         }
     }

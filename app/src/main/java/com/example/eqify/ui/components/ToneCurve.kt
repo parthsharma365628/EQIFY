@@ -32,6 +32,8 @@ fun ToneCurve(
     style: ToneCurveStyle = ToneCurveStyle.CURVE,
     rangeDb: Float = 12f,
     showGrid: Boolean = true,
+    /** Dots at each band on the CURVE style; off for the clean Home hero. */
+    showPoints: Boolean = true,
     contentDescription: String? = "EQ curve"
 ) {
     // Theme values are read here: the Canvas draw lambda is not composable.
@@ -70,7 +72,7 @@ fun ToneCurve(
                 }
                 drawPath(area, fill)
                 drawPath(line, accent, style = Stroke(2.dp.toPx(), cap = StrokeCap.Round))
-                pts.forEach { drawCircle(accent, 3.dp.toPx(), it) }
+                if (showPoints) pts.forEach { drawCircle(accent, 3.dp.toPx(), it) }
             }
         }
     }

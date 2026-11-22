@@ -263,7 +263,11 @@ class EqScreenViewModel(application: Application) : AndroidViewModel(application
 
     fun confirmDelete(name: String) {
         customGainsCache.remove(name)
-        viewModelScope.launch { repository.deleteCustomPreset(name) }
+        viewModelScope.launch {
+            repository.deleteCustomPreset(name)
+            // Songs corrected to this preset go back to automatic detection.
+            runCatching { (getApplication<Application>() as EqifyApplication).genreCoordinator.deletePreset(name) }
+        }
         if (_activePreset.value == name) selectPreset("Flat")
         _showDeleteConfirm.value = null
     }
@@ -273,6 +277,10 @@ class EqScreenViewModel(application: Application) : AndroidViewModel(application
     suspend fun renameProfile(oldName: String, newName: String): String? {
         return try {
             repository.renameCustomPreset(oldName, newName)
+            // Songs corrected to this preset follow the new name.
+            runCatching {
+                (getApplication<Application>() as EqifyApplication).genreCoordinator.renamePreset(oldName, newName.trim())
+            }
             val name = newName.trim()
             customGainsCache.remove(oldName)?.let { customGainsCache[name] = it }
             if (_activePreset.value == oldName) _activePreset.value = name
@@ -281,7 +289,7 @@ class EqScreenViewModel(application: Application) : AndroidViewModel(application
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: Exception) {
-            e.message ?: "Unable to rename profile."
+            e.message ?: "Couldn't rename the preset."
         }
     }
 
@@ -307,7 +315,7 @@ class EqScreenViewModel(application: Application) : AndroidViewModel(application
                     ?: repository.loadCustomPresetGains(presetName)
                     ?: EqProfileManager.defaultProfiles[presetName]?.copyOf()
             if (tone == null || tone.size != 8 || tone.any { !it.isFinite() || it !in -12f..12f }) {
-                _shareMessage.value = "This profile can't be shared: its saved values are invalid."
+                _shareMessage.value = "This preset can't be shared because its saved values are invalid."
                 return@launch
             }
             val name = presetName ?: _activePreset.value.takeUnless { it == "Custom" } ?: "My EQ"
@@ -467,7 +475,7 @@ class EqScreenViewModel(application: Application) : AndroidViewModel(application
                 val tone = profile.tone.toFloatArray()
 
                 val savedName = if (saveTone) saveImportedTone(profile.name, tone).also {
-                    done += "Saved \"$it\" to My profiles."
+                    done += "Saved \"$it\" to My presets."
                 } else null
 
                 val correction = profile.correction
@@ -484,7 +492,7 @@ class EqScreenViewModel(application: Application) : AndroidViewModel(application
                     } else {
                         val id = withContext(Dispatchers.IO) { saveImportedCorrection(correction) }
                         if (useNow) repository.selectCustomCorrection(id)
-                        done += "Headphone correction saved to My custom profiles" +
+                        done += "Headphone correction saved to Imported corrections" +
                             if (useNow) " and selected." else "."
                     }
                 }
@@ -613,14 +621,14 @@ fun EqScreen(vm: EqScreenViewModel = viewModel()) {
     renameTarget?.let { oldName ->
         AlertDialog(
             onDismissRequest = { if (!renaming) renameTarget = null },
-            title = { Text("Rename profile", style = MaterialTheme.typography.titleMedium) },
+            title = { Text("Rename preset", style = MaterialTheme.typography.titleMedium) },
             text = {
                 OutlinedTextField(
                     value = renameDraft,
                     onValueChange = { renameDraft = it; renameError = null },
                     singleLine = true,
                     enabled = !renaming,
-                    label = { Text("Profile name") },
+                    label = { Text("Preset name") },
                     isError = renameError != null,
                     supportingText = { renameError?.let { Text(it) } }
                 )
@@ -739,7 +747,7 @@ fun EqScreen(vm: EqScreenViewModel = viewModel()) {
                 IconAction(EqIcons.More, "More options", onClick = { menuOpen = true })
                 DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false },
                     containerColor = c.surfaceHighest) {
-                    MenuItem("Save as new profile", EqIcons.Add) { menuOpen = false; vm.openNewProfile() }
+                    MenuItem("Save as new preset", EqIcons.Add) { menuOpen = false; vm.openNewProfile() }
                     MenuItem("Reset to saved", EqIcons.Reset) { menuOpen = false; vm.resetCurrentPreset() }
                     MenuItem("Share", EqIcons.Share) { menuOpen = false; vm.openShare() }
                     MenuItem("Import shared profile", EqIcons.Download) { menuOpen = false; vm.openImport() }
@@ -820,7 +828,8 @@ private fun EqBandsPanel(
     val labels = EqProfileManager.BAND_LABELS
     // Eight columns are narrow; at large system font sizes drop the decimal so
     // "+12.0" still fits (exact values remain in the tap-to-edit dialog).
-    val largeFont = LocalDensity.current.fontScale > 1.3f
+    // The condensed data width fits more, so decimals are only dropped above 1.5×.
+    val largeFont = LocalDensity.current.fontScale > 1.5f
     Column(modifier) {
         Row(Modifier.fillMaxWidth()) {
             labels.indices.forEach { i ->
@@ -857,7 +866,7 @@ private fun EqBandsPanel(
         }
         Row(Modifier.fillMaxWidth()) {
             labels.forEach { label ->
-                Text(label.removeSuffix("Hz"), style = MaterialTheme.typography.labelMedium,
+                Text(label.removeSuffix("Hz"), style = MaterialTheme.typography.labelMedium.condensed(),
                     color = c.textMuted, textAlign = TextAlign.Center, modifier = Modifier.weight(1f), maxLines = 1)
             }
         }
@@ -979,12 +988,12 @@ fun PresetPickerDialog(
         onDismiss = onDismiss,
         actions = {
             TextAction("Import", onImport, icon = EqIcons.Download)
-            TonalButton("New profile", onNewProfile, icon = EqIcons.Add)
+            TonalButton("New preset", onNewProfile, icon = EqIcons.Add)
         }
     ) {
         val builtIn = allPresets.filter { candidate -> customPresets.none { it.equals(candidate, ignoreCase = true) } }
         if (customPresets.isNotEmpty()) {
-            SectionHeader("My profiles")
+            SectionHeader("My presets")
             EqCard(contentPadding = PaddingValues(0.dp)) {
                 customPresets.forEachIndexed { i, name ->
                     if (i > 0) HorizontalDivider(color = EqifyTheme.colors.outline)
@@ -1045,7 +1054,7 @@ fun NewProfileDialog(
     var name by remember { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("New profile", style = MaterialTheme.typography.titleMedium) },
+        title = { Text("New preset", style = MaterialTheme.typography.titleMedium) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(EqSpacing.m)) {
                 Text("Give this EQ setting a name. Your current slider positions will be saved.",
@@ -1067,7 +1076,7 @@ fun NewProfileDialog(
 @Composable
 fun DeleteConfirmDialog(presetName: String, onConfirm: () -> Unit, onDismiss: () -> Unit) {
     ConfirmDialog(
-        title = "Delete profile?",
+        title = "Delete preset?",
         message = "Delete \"$presetName\"? This cannot be undone.",
         confirmLabel = "Delete",
         destructive = true,
@@ -1103,7 +1112,7 @@ fun ShareProfileDialog(
     ) {
         if (draft.isBuiltIn) StatusBanner("This is a built-in preset; everyone with EQify already has it.", StatusKind.NEUTRAL)
         if (draft.correctionOnly) {
-            Text("Headphone correction only (flat tone). The receiver can save it to their custom headphone profiles.",
+            Text("Headphone correction only, with a flat tone. The receiver can save it to their imported corrections.",
                 style = MaterialTheme.typography.bodyMedium, color = c.textMuted)
             draft.correction?.let { ToneCurve(it.gains, height = 88.dp) }
         } else {
@@ -1216,14 +1225,14 @@ fun ImportPreviewDialog(
     ) {
         ToneCurve(profile.tone, height = 96.dp)
         CheckRow(saveTone, { saveTone = it }, "Save tone as a preset",
-            "Added to My profiles; an existing preset is never replaced.", enabled = !busy)
+            "Added to My presets. An existing preset is never replaced.", enabled = !busy)
         profile.correction?.let { corr ->
             val detail = when {
                 corr.kind == SharedCorrection.Kind.DATASET && preview.datasetMatch != null ->
                     "${preview.datasetMatch} (found in your headphone catalog)"
                 corr.kind == SharedCorrection.Kind.DATASET ->
                     "${corr.name}: not found in your catalog, so it will be saved as an imported correction"
-                else -> "${corr.name}: saved to My custom profiles"
+                else -> "${corr.name}: saved to your imported corrections"
             }
             CheckRow(useCorrection, { useCorrection = it }, "Use headphone correction", detail, enabled = !busy)
         }

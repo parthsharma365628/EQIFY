@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
@@ -38,7 +39,12 @@ class GenreCoordinator(
             ) { auto, key, listener -> LookupOptions(auto, key, listener) }
             combine(NowPlayingState.observation, options, revision, pendingMutation) { observation, config, version, pending ->
                 Lookup(observation, config, version, pending)
-            }.collectLatest { lookup -> process(lookup) }
+            }
+                // Re-detect only when an input really changed. Identical re-emissions
+                // (e.g. from an unrelated settings write) used to restart detection for
+                // the same track and loop between the offline guess and the iTunes answer.
+                .distinctUntilChanged()
+                .collectLatest { lookup -> process(lookup) }
         }
     }
 
@@ -46,6 +52,28 @@ class GenreCoordinator(
         pendingMutation.value = true // invalidate/cancel an in-flight network response first
         try {
             history.setCorrection(title, artist, genre)
+            revision.value += 1
+        } finally {
+            pendingMutation.value = false
+        }
+    }
+
+    /** Keeps song corrections in step when a preset is renamed; re-resolves the current track. */
+    suspend fun renamePreset(oldName: String, newName: String) = mutationLock.withLock {
+        pendingMutation.value = true
+        try {
+            history.renamePresetReferences(oldName, newName)
+            revision.value += 1
+        } finally {
+            pendingMutation.value = false
+        }
+    }
+
+    /** Songs corrected to a deleted preset return to automatic detection. */
+    suspend fun deletePreset(name: String) = mutationLock.withLock {
+        pendingMutation.value = true
+        try {
+            history.removePresetReferences(name)
             revision.value += 1
         } finally {
             pendingMutation.value = false
@@ -116,8 +144,11 @@ class GenreCoordinator(
         publish: (GenreUiState.Detected) -> Unit
     ): GenreUiState.Detected {
         val cleanArtist = artist.substringBefore("•").substringBefore("·").trim()
-        val local = GenreUiState.Detected(LocalGenreDetector.detect(track, cleanArtist), "Offline", "Low", true)
-        publish(local)
+        val localMatch = LocalGenreDetector.match(track, cleanArtist)
+        val local = GenreUiState.Detected(localMatch ?: LocalGenreDetector.DEFAULT_GENRE, "Offline", "Low", true)
+        // Show an instant guess only when a keyword actually matched. A bare default
+        // would flash "Pop" before every real answer; it stays the last-resort result.
+        if (localMatch != null) publish(local)
         if (lastFmApiKey.isNotBlank()) {
             try {
                 val result = LastFmClient.apiService.getArtistInfo(

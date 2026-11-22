@@ -160,7 +160,7 @@ private fun ThemePreviewCard() {
             .border(1.dp, c.outline, EqifyShapes.large).padding(EqSpacing.l),
         verticalArrangement = Arrangement.spacedBy(EqSpacing.m)
     ) {
-        Text("PREVIEW", style = MaterialTheme.typography.labelSmall, color = c.textMuted)
+        Text("Preview", style = MaterialTheme.typography.titleSmall, color = c.textMuted)
         Column(
             Modifier.fillMaxWidth().clip(EqifyShapes.large).background(c.surfaceRaised).padding(EqSpacing.l),
             verticalArrangement = Arrangement.spacedBy(EqSpacing.s)

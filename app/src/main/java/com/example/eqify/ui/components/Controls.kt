@@ -27,6 +27,7 @@ import com.example.eqify.ui.theme.EqifyShapes
 import com.example.eqify.ui.theme.EqifyTheme
 import com.example.eqify.ui.theme.PillShape
 import com.example.eqify.ui.theme.tabular
+import com.example.eqify.ui.theme.condensed
 
 // ── Buttons ───────────────────────────────────────────────────────────
 
@@ -46,14 +47,17 @@ fun TonalButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier
         shape = EqifyShapes.medium) { ButtonContent(text, icon) }
 }
 
-/** Low-emphasis text action. [destructive] uses the error colour. */
+/**
+ * Low-emphasis text action. Neutral text, not accent: accent is reserved for
+ * what is shaping the sound (DESIGN_REVIEW.md item 5). [destructive] uses error.
+ */
 @Composable
 fun TextAction(text: String, onClick: () -> Unit, modifier: Modifier = Modifier,
                enabled: Boolean = true, destructive: Boolean = false, @DrawableRes icon: Int? = null) {
     TextButton(
         onClick = onClick, enabled = enabled, modifier = modifier.heightIn(min = EqSpacing.touchTarget),
         colors = ButtonDefaults.textButtonColors(
-            contentColor = if (destructive) EqifyTheme.colors.error else EqifyTheme.colors.accent
+            contentColor = if (destructive) EqifyTheme.colors.error else EqifyTheme.colors.textPrimary
         )
     ) { ButtonContent(text, icon) }
 }
@@ -123,7 +127,7 @@ fun <T> SegmentedToggle(
             ) {
                 Text(
                     label(option),
-                    style = MaterialTheme.typography.labelLarge,
+                    style = MaterialTheme.typography.labelLarge.condensed().tabular(),
                     color = fg,
                     maxLines = 1,
                     softWrap = false,
@@ -154,7 +158,7 @@ fun ValueReadout(
 ) {
     Text(
         formatValue(value, unit, decimals, signed),
-        style = style.tabular(),
+        style = style.condensed().tabular(),
         color = color,
         modifier = modifier,
         textAlign = textAlign,

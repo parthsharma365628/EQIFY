@@ -14,9 +14,9 @@ class PresetNameRulesTest {
     }
 
     @Test fun validateNewMatchesExistingDialogMessages() {
-        assertEquals("Enter a profile name.", PresetNameRules.validateNew("  ", emptyList()))
-        assertEquals("Choose a unique profile name.", PresetNameRules.validateNew("Rock", emptyList()))
-        assertEquals("Choose a unique profile name.", PresetNameRules.validateNew("gym", listOf("Gym")))
+        assertEquals("Enter a preset name.", PresetNameRules.validateNew("  ", emptyList()))
+        assertEquals("Choose a unique preset name.", PresetNameRules.validateNew("Rock", emptyList()))
+        assertEquals("Choose a unique preset name.", PresetNameRules.validateNew("gym", listOf("Gym")))
         assertNull(PresetNameRules.validateNew("Gym 2", listOf("Gym")))
     }
 

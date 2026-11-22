@@ -163,7 +163,7 @@ class HeadphonesViewModel(application: Application) : AndroidViewModel(applicati
         pendingDatasetSelection = false
         viewModelScope.launch {
             if (customProfilesRepository.find(id) == null) {
-                _importMessage.value = "Profile no longer exists."
+                _importMessage.value = "This correction no longer exists."
             } else {
                 repository.selectCustomCorrection(id)
             }
@@ -183,7 +183,7 @@ class HeadphonesViewModel(application: Application) : AndroidViewModel(applicati
                 if (correctionSelection.value == HeadphoneCorrectionSelection.Custom(id))
                     repository.selectNoCorrection()
                 withContext(Dispatchers.IO) { customProfilesRepository.delete(id) }
-                _importMessage.value = "Profile deleted. Flat correction is active if it was selected."
+                _importMessage.value = "Correction deleted. If it was in use, no headphone correction is applied now."
             } catch (e: Exception) { _importMessage.value = "Delete failed: ${e.message}" }
         }
     }
@@ -196,7 +196,7 @@ class HeadphonesViewModel(application: Application) : AndroidViewModel(applicati
     fun openShareCustomProfile(id: String) {
         val profile = customProfilesRepository.find(id)
         if (profile == null) {
-            _importMessage.value = "Profile no longer exists."
+            _importMessage.value = "This correction no longer exists."
             return
         }
         if (profile.gains.size != 8 || profile.gains.any { !it.isFinite() || it !in -12f..12f }) {
@@ -328,10 +328,10 @@ fun HeadphonesScreen(
     renameProfile?.let { profile ->
         AlertDialog(
             onDismissRequest = { renameProfile = null },
-            title = { Text("Rename imported profile", style = MaterialTheme.typography.titleMedium) },
+            title = { Text("Rename imported correction", style = MaterialTheme.typography.titleMedium) },
             text = {
                 OutlinedTextField(renameDraft, onValueChange = { renameDraft = it }, singleLine = true,
-                    label = { Text("Profile name") })
+                    label = { Text("Correction name") })
             },
             confirmButton = {
                 TextAction("Save", enabled = renameDraft.isNotBlank(), onClick = {
@@ -343,7 +343,7 @@ fun HeadphonesScreen(
     }
     deleteProfile?.let { profile ->
         ConfirmDialog(
-            title = "Delete imported profile?",
+            title = "Delete imported correction?",
             message = "\"${profile.displayName}\" will be removed from this device. If it is in use, flat correction is used instead.",
             confirmLabel = "Delete",
             destructive = true,
@@ -409,7 +409,7 @@ fun HeadphonesScreen(
                     shape = EqifyShapes.medium,
                     modifier = Modifier.fillMaxWidth()
                 )
-                Text("AutoEQ database · 6,028 models", style = MaterialTheme.typography.bodySmall,
+                Text("6,028 models from the AutoEQ database", style = MaterialTheme.typography.bodySmall,
                     color = c.textMuted, modifier = Modifier.padding(start = EqSpacing.xs, top = EqSpacing.xs))
             }
 
@@ -424,8 +424,7 @@ fun HeadphonesScreen(
                 item(key = "add") {
                     AddCorrectionButton(
                         onImportFile = { picker.launch(arrayOf("text/plain")) },
-                        onPaste = { showPasteSheet = true },
-                        onNameHeadphone = { vm.showCustomDialog() }
+                        onPaste = { showPasteSheet = true }
                     )
                 }
                 importMessage?.let { message ->
@@ -433,13 +432,13 @@ fun HeadphonesScreen(
                 }
                 if (errorMessage == "Offline favorites") {
                     item(key = "offline") {
-                        StatusBanner("Headphone database unavailable · showing saved favorites", StatusKind.WARNING,
+                        StatusBanner("Can't reach the headphone database. Showing your saved favorites.", StatusKind.WARNING,
                             Modifier.animateItem(), actionLabel = "Retry", onAction = { vm.retry() })
                     }
                 }
 
                 if (customProfiles.isNotEmpty()) {
-                    item(key = "customHeader") { SectionHeader("My custom profiles", modifier = Modifier.padding(top = EqSpacing.s)) }
+                    item(key = "customHeader") { SectionHeader("Imported corrections", modifier = Modifier.padding(top = EqSpacing.s)) }
                     item(key = "customList") {
                         EqCard(contentPadding = PaddingValues(0.dp)) {
                             customProfiles.sortedByDescending { it.importedAtEpochMillis }.forEachIndexed { i, profile ->
@@ -458,7 +457,7 @@ fun HeadphonesScreen(
                 }
 
                 item(key = "catalogHeader") {
-                    SectionHeader(if (searchQuery.isBlank()) "Favourites & catalog" else "Results",
+                    SectionHeader(if (searchQuery.isBlank()) "Favorites and catalog" else "Results",
                         modifier = Modifier.padding(top = EqSpacing.s))
                 }
                 when {
@@ -491,6 +490,15 @@ fun HeadphonesScreen(
                         )
                     }
                 }
+                item(key = "nameHeadphone") {
+                    SettingRow(
+                        title = "Can't find your headphones?",
+                        subtitle = "Add them by name. They play without a headphone correction.",
+                        icon = EqIcons.Add,
+                        onClick = { vm.showCustomDialog() },
+                        modifier = Modifier.padding(top = EqSpacing.s)
+                    )
+                }
             }
         }
     }
@@ -510,7 +518,7 @@ private fun correctionUi(status: HeadphoneCorrectionStatus, name: String): Corre
         if (status.headphoneName == name) CorrectionUi("Saved", StatusKind.SUCCESS, "Using saved correction") else null
     is HeadphoneCorrectionStatus.Failed ->
         if (status.headphoneName == name) CorrectionUi("Failed", StatusKind.ERROR, status.message) else null
-    is HeadphoneCorrectionStatus.Imported -> CorrectionUi("Imported", StatusKind.ACTIVE, "Using imported profile: ${status.displayName}")
+    is HeadphoneCorrectionStatus.Imported -> CorrectionUi("Imported", StatusKind.ACTIVE, "Using imported correction: ${status.displayName}")
     is HeadphoneCorrectionStatus.ImportFailed -> CorrectionUi("Failed", StatusKind.ERROR, status.message)
     HeadphoneCorrectionStatus.Idle -> null
 }
@@ -525,7 +533,6 @@ private fun SelectedHeadphoneCard(name: String, status: HeadphoneCorrectionStatu
                 EqIcon(EqIcons.Headphones, null, tint = c.onAccentContainer)
             }
             Column(Modifier.weight(1f)) {
-                Text("CURRENTLY SELECTED", style = MaterialTheme.typography.labelSmall, color = c.textMuted)
                 Text(name, style = MaterialTheme.typography.titleMedium, color = c.textPrimary)
             }
             ui?.let { StatusChip(it.label, it.kind) }
@@ -539,14 +546,13 @@ private fun SelectedHeadphoneCard(name: String, status: HeadphoneCorrectionStatu
 }
 
 @Composable
-private fun AddCorrectionButton(onImportFile: () -> Unit, onPaste: () -> Unit, onNameHeadphone: () -> Unit) {
+private fun AddCorrectionButton(onImportFile: () -> Unit, onPaste: () -> Unit) {
     var open by remember { mutableStateOf(false) }
     Box {
         TonalButton("Add correction", { open = true }, icon = EqIcons.Add)
         DropdownMenu(expanded = open, onDismissRequest = { open = false }, containerColor = EqifyTheme.colors.surfaceHighest) {
             HpMenuItem("Import GraphicEQ file", EqIcons.FileOpen) { open = false; onImportFile() }
             HpMenuItem("Paste 10-band values", EqIcons.Paste) { open = false; onPaste() }
-            HpMenuItem("Name a headphone (flat)", EqIcons.Edit) { open = false; onNameHeadphone() }
         }
     }
 }
@@ -569,7 +575,7 @@ private fun CustomProfileRow(
     var menu by remember { mutableStateOf(false) }
     SettingRow(
         title = profile.displayName,
-        subtitle = if (selected) "In use · imported GraphicEQ" else "Imported GraphicEQ",
+        subtitle = if (selected) "In use" else "From a GraphicEQ file",
         icon = if (selected) EqIcons.CheckCircle else EqIcons.GraphicEq,
         onClick = onSelect,
         modifier = Modifier.semantics { this.selected = selected },
@@ -612,9 +618,9 @@ fun HeadphoneListItem(
             trailing = {
                 IconAction(
                     icon = if (isFavorite) EqIcons.Star else EqIcons.StarOutline,
-                    contentDescription = if (isFavorite) "Remove $name from favourites" else "Add $name to favourites",
+                    contentDescription = if (isFavorite) "Remove $name from favorites" else "Add $name to favorites",
                     onClick = onFavoriteClick,
-                    tint = if (isFavorite) c.accent else c.textMuted
+                    tint = if (isFavorite) c.textPrimary else c.textMuted
                 )
             }
         )
