@@ -4,9 +4,21 @@ plugins {
     alias(libs.plugins.ksp)
 }
 
-val eqifyBaseUrl = providers.gradleProperty("EQIFY_BASE_URL")
-    .orElse("http://10.0.2.2:3000/")
-    .get()
+// Genre backend. Unset = the emulator's localhost, used by debug builds only:
+// release builds call the backend only when EQIFY_BASE_URL is an https URL.
+val eqifyBaseUrlProperty = providers.gradleProperty("EQIFY_BASE_URL").orNull?.trim().orEmpty()
+val eqifyBaseUrl = eqifyBaseUrlProperty.ifEmpty { "http://10.0.2.2:3000/" }
+val releaseBackendEnabled = eqifyBaseUrlProperty.startsWith("https://")
+// Optional feedback address for Settings > Send feedback (blank = the user picks a recipient).
+val feedbackEmail = providers.gradleProperty("EQIFY_FEEDBACK_EMAIL").orElse("").get().trim()
+    .also { require(!it.contains('"') && !it.contains('\\')) { "EQIFY_FEEDBACK_EMAIL must be a plain address" } }
+// Release signing, from the developer's ~/.gradle/gradle.properties (never commit these).
+val releaseStoreFile = providers.gradleProperty("EQIFY_KEYSTORE_FILE").orNull
+val releaseStorePassword = providers.gradleProperty("EQIFY_KEYSTORE_PASSWORD").orNull
+val releaseKeyAlias = providers.gradleProperty("EQIFY_KEY_ALIAS").orNull
+val releaseKeyPassword = providers.gradleProperty("EQIFY_KEY_PASSWORD").orNull
+val hasReleaseSigning = listOf(releaseStoreFile, releaseStorePassword, releaseKeyAlias, releaseKeyPassword)
+    .all { !it.isNullOrBlank() }
 val headphoneDataBaseUrl = providers.gradleProperty("EQIFY_HEADPHONE_DATA_BASE_URL")
     .orElse("https://parthsharma365628.github.io/eqify-data/")
     .get()
@@ -26,11 +38,13 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.example.eqify"
+        // Permanent once published: stores identify the app by this ID.
+        applicationId = "com.liteplane.eqify"
         minSdk = 26
         targetSdk = 36
+        // Increase versionCode for every build you hand out.
         versionCode = 1
-        versionName = "1.0"
+        versionName = "0.1.0-beta"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -51,10 +65,35 @@ android {
         "SENTRY_DSN",
         34.toChar() + sentryDsn + 34.toChar()
     )
+    defaultConfig.buildConfigField(
+        "String",
+        "FEEDBACK_EMAIL",
+        34.toChar() + feedbackEmail + 34.toChar()
+    )
+
+    signingConfigs {
+        if (hasReleaseSigning) {
+            create("release") {
+                storeFile = file(releaseStoreFile!!)
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
+    }
 
     buildTypes {
+        debug {
+            buildConfigField("boolean", "GENRE_BACKEND_ENABLED", "true")
+            // Plain HTTP only for the local backend at 10.0.2.2 / your PC's IP.
+            manifestPlaceholders["usesCleartextTraffic"] = "true"
+        }
         release {
-            isMinifyEnabled = false
+            buildConfigField("boolean", "GENRE_BACKEND_ENABLED", releaseBackendEnabled.toString())
+            manifestPlaceholders["usesCleartextTraffic"] = "false"
+            if (hasReleaseSigning) signingConfig = signingConfigs.getByName("release")
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -80,6 +119,8 @@ dependencies {
     implementation("com.google.zxing:core:3.5.3")
     // QR scanning via Google Play services' own camera UI: no CAMERA permission.
     implementation("com.google.android.gms:play-services-code-scanner:16.1.0")
+    // Play services pulls fragment 1.0.0, which breaks registerForActivityResult; force a modern one.
+    implementation("androidx.fragment:fragment:1.8.5")
     // Crash/ANR/native-crash reporting; initialized manually in EqifyApplication.
     implementation("io.sentry:sentry-android:7.14.0")
     implementation(libs.androidx.core.ktx)

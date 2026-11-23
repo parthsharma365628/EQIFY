@@ -160,7 +160,10 @@ private fun PermissionWalkthrough(
     }
     val description = when (step) {
         0 -> "EQify needs a few Android permissions to detect the current song and keep EQ active."
-        1 -> "Notification access lets EQify read only the song title and artist shown by your music app."
+        1 -> NotificationAccessInfo.dialogText(
+            "Notification access lets EQify detect the song you play. You can skip it: " +
+                "presets, headphone correction and bass still work."
+        )
         2 -> "Bluetooth access identifies connected headphones. Notification permission keeps the foreground EQ service visible."
         else -> "The EQ service is ready. You can change these permissions later in Android Settings."
     }

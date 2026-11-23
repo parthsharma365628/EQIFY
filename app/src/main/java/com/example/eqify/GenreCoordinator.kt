@@ -168,6 +168,8 @@ class GenreCoordinator(
             if (genre != null) return GenreUiState.Detected(genre, "iTunes", "Medium")
         } catch (e: CancellationException) { throw e }
         catch (_: Exception) { /* Keep local result and try backend. */ }
+        // Release builds without a deployed https backend skip this call.
+        if (!BuildConfig.GENRE_BACKEND_ENABLED) return local
         return try {
             val response = RetrofitClient.apiService.resolveGenre(GenreRequest(track.trim(), cleanArtist))
             val source = response.source.lowercase()

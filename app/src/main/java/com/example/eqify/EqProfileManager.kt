@@ -82,19 +82,30 @@ object EqProfileManager {
         "chillout" to "Ambient",
     )
 
-    fun resolveGenreGains(genre: String): FloatArray {
+    /**
+     * The curve for built-in [name]: the user's override when one exists
+     * (FEATURE_CUSTOM_GENRE_CURVES.md), otherwise the built-in. Flat is never overridden.
+     */
+    fun effectiveGains(name: String, overrides: Map<String, List<Float>> = emptyMap()): FloatArray? {
+        if (GenreCurveOverrides.isCustomisable(name)) {
+            overrides[name]?.takeIf { GenreCurveOverrides.isValidCurve(it) }?.let { return it.toFloatArray() }
+        }
+        return defaultProfiles[name]?.copyOf()
+    }
+
+    fun resolveGenreGains(genre: String, overrides: Map<String, List<Float>> = emptyMap()): FloatArray {
         val trimmed = genre.trim()
         if (trimmed.isEmpty()) return defaultProfiles["Flat"]!!.copyOf()
 
-        defaultProfiles[trimmed]?.let { return it.copyOf() }
-        defaultProfiles.entries.find { it.key.equals(trimmed, ignoreCase = true) }?.value?.let {
-            return it.copyOf()
+        effectiveGains(trimmed, overrides)?.let { return it }
+        defaultProfiles.keys.find { it.equals(trimmed, ignoreCase = true) }?.let { name ->
+            return effectiveGains(name, overrides)!!
         }
 
         val key = trimmed.lowercase()
         for ((needle, profileName) in genreKeywords) {
             if (key.contains(needle)) {
-                return (defaultProfiles[profileName] ?: defaultProfiles["Flat"]!!).copyOf()
+                return effectiveGains(profileName, overrides) ?: defaultProfiles["Flat"]!!.copyOf()
             }
         }
 

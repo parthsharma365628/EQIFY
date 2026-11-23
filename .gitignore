@@ -18,6 +18,10 @@ local.properties
 /.vscode/
 /EQify_PRD.docx
 
+# Release signing keys: back them up elsewhere, never commit them
+*.jks
+*.keystore
+
 # Backend dependencies and downloaded AutoEq data
 /eqify-backend/node_modules/
 /eqify-backend/autoeq-results/

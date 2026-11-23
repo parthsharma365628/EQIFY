@@ -70,6 +70,31 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     fun dismissCustomProfilesMessage() { _customProfilesMessage.value = null }
 
+    // ── Customised built-in curves (FEATURE_CUSTOM_GENRE_CURVES.md) ───
+
+    val genreOverrides = repository.genreOverrides
+    private val _genreCurvesMessage = MutableStateFlow<String?>(null)
+    val genreCurvesMessage = _genreCurvesMessage.asStateFlow()
+
+    fun resetGenreCurves() {
+        viewModelScope.launch {
+            try {
+                val customised = repository.genreOverrides.first()
+                repository.clearGenreOverrides()
+                // Automatic mode follows the overrides flow; a manually chosen built-in is re-applied.
+                val active = EqState.activePresetName.value
+                if (EqState.manualOverrideActive.value && active in customised) {
+                    EqProfileManager.defaultProfiles[active]?.let { EqState.applyManualPreset(active, it.copyOf()) }
+                }
+                val n = customised.size
+                _genreCurvesMessage.value = "Reset $n genre curve${if (n == 1) "" else "s"} to default."
+            } catch (e: CancellationException) { throw e }
+            catch (e: Exception) { _genreCurvesMessage.value = "Could not reset genre curves: ${e.message}" }
+        }
+    }
+
+    fun dismissGenreCurvesMessage() { _genreCurvesMessage.value = null }
+
     fun clearGenreHistory() {
         viewModelScope.launch {
             try {

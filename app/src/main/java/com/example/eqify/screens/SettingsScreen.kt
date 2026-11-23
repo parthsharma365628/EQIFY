@@ -65,6 +65,8 @@ fun SettingsScreen(
     val historyMessage        by vm.historyMessage.collectAsState()
     val customProfiles by vm.customEqProfiles.collectAsState()
     val customProfilesMessage by vm.customProfilesMessage.collectAsState()
+    val genreOverrides by vm.genreOverrides.collectAsState(initial = emptyMap())
+    val genreCurvesMessage by vm.genreCurvesMessage.collectAsState()
     val crashReportingEnabled by vm.crashReportingEnabled.collectAsState()
     val crashReportMessage by vm.crashReportMessage.collectAsState()
     val themeSettings by vm.themeSettings.collectAsState()
@@ -75,9 +77,11 @@ fun SettingsScreen(
     var showClearCacheDialog by remember { mutableStateOf(false) }
     var showClearHistoryDialog by remember { mutableStateOf(false) }
     var showClearCustomProfilesDialog by remember { mutableStateOf(false) }
+    var showResetGenreCurvesDialog by remember { mutableStateOf(false) }
     var showOutputProtectionSheet by remember { mutableStateOf(false) }
     var showLastFmSheet by remember { mutableStateOf(false) }
     var showPrivacySheet by remember { mutableStateOf(false) }
+    var showLicencesSheet by remember { mutableStateOf(false) }
 
     // Refresh permission state when user returns from the system settings screen
     DisposableEffect(lifecycleOwner) {
@@ -99,8 +103,10 @@ fun SettingsScreen(
     if (showPermissionDialog) {
         ConfirmDialog(
             title = "Notification access needed",
-            message = "To detect music automatically, EQify needs Notification Access. " +
-                "Find EQify on the next screen and turn it on.",
+            message = NotificationAccessInfo.dialogText(
+                "To detect music automatically, EQify needs Notification Access. " +
+                    "Find EQify on the next screen and turn it on."
+            ),
             confirmLabel = "Open settings",
             onConfirm = {
                 showPermissionDialog = false
@@ -137,6 +143,16 @@ fun SettingsScreen(
             onDismiss = { showClearCustomProfilesDialog = false }
         )
     }
+    if (showResetGenreCurvesDialog) {
+        ConfirmDialog(
+            title = "Reset customised genre curves?",
+            message = "Every built-in genre you edited (${genreOverrides.keys.sorted().joinToString(", ")}) " +
+                "goes back to its default curve. Your own presets stay intact.",
+            confirmLabel = "Reset", destructive = true,
+            onConfirm = { showResetGenreCurvesDialog = false; vm.resetGenreCurves() },
+            onDismiss = { showResetGenreCurvesDialog = false }
+        )
+    }
     if (showOutputProtectionSheet) {
         OutputProtectionSheet(
             selectedMode = outputProtectionMode,
@@ -157,6 +173,7 @@ fun SettingsScreen(
         )
     }
     if (showPrivacySheet) PrivacySheet(onDismiss = { showPrivacySheet = false })
+    if (showLicencesSheet) LicencesSheet(onDismiss = { showLicencesSheet = false })
 
     // ── UI ────────────────────────────────────────────────────────────
     Scaffold(
@@ -184,6 +201,7 @@ fun SettingsScreen(
             cacheMessage?.let { StatusBanner(it, StatusKind.NEUTRAL, gutter, onDismiss = vm::dismissCacheMessage) }
             historyMessage?.let { StatusBanner(it, StatusKind.NEUTRAL, gutter, onDismiss = vm::dismissHistoryMessage) }
             customProfilesMessage?.let { StatusBanner(it, StatusKind.NEUTRAL, gutter, onDismiss = vm::dismissCustomProfilesMessage) }
+            genreCurvesMessage?.let { StatusBanner(it, StatusKind.NEUTRAL, gutter, onDismiss = vm::dismissGenreCurvesMessage) }
 
             Group("Appearance") {
                 AppearanceSettings(
@@ -223,7 +241,7 @@ fun SettingsScreen(
                 RowDivider()
                 SwitchRow(
                     title = "Force mono",
-                    subtitle = "Combine left and right channels",
+                    subtitle = "Combine left and right channels. Not supported on every phone",
                     checked = forceMono,
                     onCheckedChange = { vm.setForceMono(it) },
                     icon = EqIcons.Headphones
@@ -297,6 +315,15 @@ fun SettingsScreen(
                     onClick = { showClearHistoryDialog = true }
                 )
                 RowDivider()
+                if (genreOverrides.isNotEmpty()) {
+                    SettingRow(
+                        title = "Reset customised genre curves (${genreOverrides.size})",
+                        subtitle = "Return edited built-in genres to their default curves",
+                        icon = EqIcons.Reset, destructive = true,
+                        onClick = { showResetGenreCurvesDialog = true }
+                    )
+                    RowDivider()
+                }
                 SettingRow(
                     title = "Clear downloaded corrections",
                     subtitle = "Remove locally cached AutoEQ curves",
@@ -319,7 +346,10 @@ fun SettingsScreen(
                     icon = EqIcons.Share,
                     onClick = {
                         val mail = Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:")).apply {
-                            putExtra(Intent.EXTRA_SUBJECT, "EQify Android feedback")
+                            if (BuildConfig.FEEDBACK_EMAIL.isNotBlank())
+                                putExtra(Intent.EXTRA_EMAIL, arrayOf(BuildConfig.FEEDBACK_EMAIL))
+                            putExtra(Intent.EXTRA_SUBJECT, "EQify ${BuildConfig.VERSION_NAME} feedback")
+                            putExtra(Intent.EXTRA_TEXT, feedbackTemplate())
                         }
                         runCatching { context.startActivity(Intent.createChooser(mail, "Send feedback")) }
                     }
@@ -342,10 +372,18 @@ fun SettingsScreen(
 
             Group("About") {
                 SettingRow(title = "Version", icon = EqIcons.Info,
-                    trailing = { Text("1.0.0 (Beta)", style = MaterialTheme.typography.labelLarge, color = c.textMuted) })
+                    trailing = { Text(BuildConfig.VERSION_NAME, style = MaterialTheme.typography.labelLarge, color = c.textMuted) })
                 RowDivider()
                 SettingRow(title = "AutoEQ database", subtitle = "Served from GitHub Pages + on-device cache",
                     icon = EqIcons.Download)
+                RowDivider()
+                SettingRow(
+                    title = "Open-source licences",
+                    subtitle = "Libraries, font and data EQify is built with",
+                    icon = EqIcons.Info,
+                    onClick = { showLicencesSheet = true },
+                    trailing = { EqIcon(EqIcons.Expand, null, size = 20.dp) }
+                )
             }
 
             if (vm.isDebugBuild) {
@@ -551,7 +589,63 @@ private fun PrivacyPoint(@DrawableRes icon: Int, title: String, body: String) {
     }
 }
 
+// ── Open-source licences ──────────────────────────────────────────────
+
+private data class Credit(val name: String, val licence: String, val url: String)
+
+private val credits = listOf(
+    Credit("AutoEq headphone measurements (Jaakko Pasanen)", "MIT License", "https://github.com/jaakkopasanen/AutoEq"),
+    Credit("Archivo font (Omnibus-Type)", "SIL Open Font License 1.1", "https://github.com/Omnibus-Type/Archivo"),
+    Credit("AndroidX and Jetpack Compose", "Apache License 2.0", "https://developer.android.com/jetpack/androidx"),
+    Credit("Kotlin and kotlinx.coroutines", "Apache License 2.0", "https://github.com/Kotlin/kotlinx.coroutines"),
+    Credit("Retrofit and OkHttp (Square)", "Apache License 2.0", "https://github.com/square/retrofit"),
+    Credit("Gson (Google)", "Apache License 2.0", "https://github.com/google/gson"),
+    Credit("ZXing core", "Apache License 2.0", "https://github.com/zxing/zxing"),
+    Credit("Sentry Android SDK", "MIT License", "https://github.com/getsentry/sentry-java"),
+    Credit("Google code scanner (Play services)", "Android Software Development Kit License", "https://developers.google.com/ml-kit/terms")
+)
+
+@Composable
+private fun LicencesSheet(onDismiss: () -> Unit) {
+    val c = EqifyTheme.colors
+    val context = LocalContext.current
+    var showFontLicence by remember { mutableStateOf(false) }
+    val fontLicence = remember {
+        runCatching { context.resources.openRawResource(R.raw.archivo_ofl).bufferedReader().use { it.readText() } }
+            .getOrDefault("")
+    }
+    EqSheet(title = "Open-source licences", subtitle = "Tap an entry to open its source.", onDismiss = onDismiss) {
+        credits.forEach { credit ->
+            SettingRow(
+                title = credit.name,
+                subtitle = credit.licence,
+                onClick = {
+                    runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(credit.url))) }
+                }
+            )
+        }
+        if (fontLicence.isNotBlank()) {
+            TextAction(if (showFontLicence) "Hide font licence" else "Show full font licence",
+                onClick = { showFontLicence = !showFontLicence })
+            if (showFontLicence) Text(fontLicence, style = MaterialTheme.typography.bodySmall, color = c.textMuted)
+        }
+    }
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────
+
+/** Pre-filled so bug reports say which build and phone they came from. */
+private fun feedbackTemplate(): String = buildString {
+    appendLine("What happened, or what would you like?")
+    appendLine()
+    appendLine()
+    appendLine("Music app and headphones used:")
+    appendLine()
+    appendLine("---")
+    appendLine("EQify ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
+    appendLine("Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})")
+    append("Phone: ${Build.MANUFACTURER} ${Build.MODEL}")
+}
 
 private fun isNotificationServiceEnabled(context: Context): Boolean {
     val packageNames = Settings.Secure.getString(

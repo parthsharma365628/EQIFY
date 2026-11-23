@@ -80,7 +80,9 @@ class EqifyApplication : Application() {
 
     private suspend fun loadPresetGains(repo: UserPreferencesRepository, name: String): FloatArray {
         repo.loadCustomPresetGains(name)?.let { return it }
-        EqProfileManager.defaultProfiles[name]?.let { return it.copyOf() }
+        // A customised built-in restores the user's version (FEATURE_CUSTOM_GENRE_CURVES.md).
+        val overrides = repo.genreOverrides.first()
+        EqProfileManager.effectiveGains(name, overrides)?.let { return it }
         EqProfileManager.defaultProfiles.entries.find { it.key.equals(name, ignoreCase = true) }
             ?.value?.let { return it.copyOf() }
         return EqProfileManager.defaultProfiles["Flat"]!!.copyOf()

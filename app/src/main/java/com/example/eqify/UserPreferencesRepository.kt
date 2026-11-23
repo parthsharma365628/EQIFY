@@ -98,6 +98,7 @@ class UserPreferencesRepository(private val context: Context) {
         val LASTFM_API_KEY        = stringPreferencesKey("lastfm_api_key")
         val FAVORITE_HEADPHONES   = stringPreferencesKey("favorite_headphones")
         val DEVICE_CHOICES        = stringPreferencesKey("device_headphone_choices")
+        val GENRE_OVERRIDES       = stringPreferencesKey("genre_curve_overrides")
     }
 
     // ── Standard settings ─────────────────────────────────────────────
@@ -179,6 +180,32 @@ class UserPreferencesRepository(private val context: Context) {
     }
 
     /** What the user chose for each output device (FEATURE_HEADPHONE_DETECTION.md). */
+    /** The user's versions of built-in curves, by built-in name (FEATURE_CUSTOM_GENRE_CURVES.md). */
+    val genreOverrides: Flow<Map<String, List<Float>>> = pref { prefs ->
+        GenreCurveOverrides.decode(prefs[Keys.GENRE_OVERRIDES])
+    }
+
+    /**
+     * Customise built-in [name], or reset it with null. A curve equal to the
+     * built-in removes the override. Flat and unknown names are ignored.
+     */
+    suspend fun setGenreOverride(name: String, gains: List<Float>?) {
+        if (!GenreCurveOverrides.isCustomisable(name)) return
+        context.dataStore.edit { prefs ->
+            val map = GenreCurveOverrides.decode(prefs[Keys.GENRE_OVERRIDES]).toMutableMap()
+            if (gains == null || GenreCurveOverrides.isDefault(name, gains)) map.remove(name)
+            else {
+                require(GenreCurveOverrides.isValidCurve(gains)) { "Invalid curve." }
+                map[name] = gains
+            }
+            prefs[Keys.GENRE_OVERRIDES] = GenreCurveOverrides.encode(map)
+        }
+    }
+
+    suspend fun clearGenreOverrides() {
+        context.dataStore.edit { it.remove(Keys.GENRE_OVERRIDES) }
+    }
+
     val deviceChoices: Flow<Map<String, DeviceChoice>> = pref { prefs ->
         DeviceHeadphoneMemory.decode(prefs[Keys.DEVICE_CHOICES])
     }

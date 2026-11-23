@@ -1,21 +1,24 @@
-# Add project specific ProGuard rules here.
-# You can control the set of applied configuration files using the
-# proguardFiles setting in build.gradle.
-#
-# For more details, see
-#   http://developer.android.com/guide/developing/tools/proguard.html
+# EQify release rules. R8 shrinks and optimises, but does not rename,
+# so Sentry stack traces stay readable without uploading mapping files.
+-dontobfuscate
+-keepattributes SourceFile,LineNumberTable,Signature,InnerClasses,EnclosingMethod,*Annotation*
 
-# If your project uses WebView with JS, uncomment the following
-# and specify the fully qualified class name to the JavaScript interface
-# class:
-#-keepclassmembers class fqcn.of.javascript.interface.for.webview {
-#   public *;
-#}
+# Gson maps JSON onto these models by field name (Retrofit responses and the
+# cached headphone index). Keep their fields and constructors.
+-keep class com.example.eqify.GenreRequest { *; }
+-keep class com.example.eqify.GenreResponse { *; }
+-keep class com.example.eqify.StaticHeadphone* { *; }
+-keep class com.example.eqify.LastFm* { *; }
+-keep class com.example.eqify.Itunes* { *; }
 
-# Uncomment this to preserve the line number information for
-# debugging stack traces.
-#-keepattributes SourceFile,LineNumberTable
+# Gson generic types.
+-keep class com.google.gson.reflect.TypeToken { *; }
+-keep class * extends com.google.gson.reflect.TypeToken
 
-# If you keep the line number information, uncomment this to
-# hide the original source file name.
-#-renamesourcefileattribute SourceFile
+# Retrofit 2.9 with suspend functions under R8 full mode.
+-keep,allowobfuscation,allowshrinking interface retrofit2.Call
+-keep,allowobfuscation,allowshrinking class retrofit2.Response
+-keep,allowobfuscation,allowshrinking class kotlin.coroutines.Continuation
+-keep interface com.example.eqify.*ApiService { *; }
+-dontwarn javax.annotation.**
+-dontwarn org.codehaus.mojo.animal_sniffer.**

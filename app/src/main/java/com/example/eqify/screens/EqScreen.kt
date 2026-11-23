@@ -116,6 +116,10 @@ class EqScreenViewModel(application: Application) : AndroidViewModel(application
 
     private val customGainsCache = mutableMapOf<String, FloatArray>()
 
+    /** User versions of built-in curves (FEATURE_CUSTOM_GENRE_CURVES.md). */
+    val genreOverrides: StateFlow<Map<String, List<Float>>> = repository.genreOverrides
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
+
     private val _showPresetPicker    = MutableStateFlow(false)
     val showPresetPicker: StateFlow<Boolean> = _showPresetPicker.asStateFlow()
 
@@ -175,7 +179,7 @@ class EqScreenViewModel(application: Application) : AndroidViewModel(application
                 ?: repository.loadCustomPresetGains(name)?.also {
                     customGainsCache[name] = it.copyOf()
                 }
-                ?: EqProfileManager.defaultProfiles[name]?.copyOf()
+                ?: EqProfileManager.effectiveGains(name, repository.genreOverrides.first())
                 ?: EqProfileManager.defaultProfiles["Flat"]!!.copyOf()
 
             _activePreset.value = name
@@ -201,7 +205,7 @@ class EqScreenViewModel(application: Application) : AndroidViewModel(application
         _bands.value = updated
         val gains = updated.toFloatArray()
 
-        if (isDefaultPreset(_activePreset.value)) {
+        if (isDefaultPreset(_activePreset.value) && !GenreCurveOverrides.isCustomisable(_activePreset.value)) {
             _activePreset.value = "Custom"
         }
 
@@ -245,9 +249,20 @@ class EqScreenViewModel(application: Application) : AndroidViewModel(application
 
     fun saveToCurrentPreset() {
         val name = _activePreset.value
-        if (name == "Custom") { _showNewProfileDialog.value = true; return }
-        if (isDefaultPreset(name)) return
+        if (name == "Custom" || (isDefaultPreset(name) && !GenreCurveOverrides.isCustomisable(name))) {
+            _showNewProfileDialog.value = true; return
+        }
         val gains = _bands.value.toFloatArray()
+        if (isDefaultPreset(name)) {
+            // Customise the built-in for every song of this genre. Equal to the default = no override.
+            _hasUnsavedChanges.value = false
+            viewModelScope.launch {
+                repository.setGenreOverride(name, gains.toList())
+                repository.setLastPreset(name)
+            }
+            EqState.applyManualPreset(name, gains)
+            return
+        }
         customGainsCache[name] = gains
         _hasUnsavedChanges.value = false
         viewModelScope.launch {
@@ -255,6 +270,23 @@ class EqScreenViewModel(application: Application) : AndroidViewModel(application
             repository.setLastPreset(name)
         }
         EqState.applyManualPreset(name, gains)
+    }
+
+    // ── Reset a customised built-in ───────────────────────────────────
+
+    fun isCustomised(name: String) = genreOverrides.value.containsKey(name)
+
+    fun resetToDefault(name: String) {
+        if (!GenreCurveOverrides.isCustomisable(name)) return
+        viewModelScope.launch { repository.setGenreOverride(name, null) }
+        // Automatic mode follows the overrides flow; a manually chosen preset is re-applied here.
+        if (_activePreset.value == name && EqState.manualOverrideActive.value) {
+            val gains = EqProfileManager.defaultProfiles[name]!!.copyOf()
+            presetSelectionJob?.cancel()
+            _bands.value = gains.toList()
+            _hasUnsavedChanges.value = false
+            EqState.applyManualPreset(name, gains)
+        }
     }
 
     // ── Delete ────────────────────────────────────────────────────────
@@ -313,7 +345,7 @@ class EqScreenViewModel(application: Application) : AndroidViewModel(application
             val tone = if (presetName == null) _bands.value.toFloatArray() else
                 customGainsCache[presetName]?.copyOf()
                     ?: repository.loadCustomPresetGains(presetName)
-                    ?: EqProfileManager.defaultProfiles[presetName]?.copyOf()
+                    ?: EqProfileManager.effectiveGains(presetName, repository.genreOverrides.first())
             if (tone == null || tone.size != 8 || tone.any { !it.isFinite() || it !in -12f..12f }) {
                 _shareMessage.value = "This preset can't be shared because its saved values are invalid."
                 return@launch
@@ -324,7 +356,7 @@ class EqScreenViewModel(application: Application) : AndroidViewModel(application
                 tone = tone.toList(),
                 correction = correctionForShare(),
                 bass = EqState.bassBoostLevel.value.takeIf { it > 0f && it <= EqProfileCodec.MAX_BASS_DB },
-                isBuiltIn = presetName != null && isDefaultPreset(presetName)
+                isBuiltIn = presetName != null && isDefaultPreset(presetName) && !isCustomised(presetName)
             )
         }
     }
@@ -575,7 +607,7 @@ class EqScreenViewModel(application: Application) : AndroidViewModel(application
 
     private fun resolveGains(name: String): FloatArray =
         customGainsCache[name]?.copyOf()
-            ?: EqProfileManager.defaultProfiles[name]?.copyOf()
+            ?: EqProfileManager.effectiveGains(name, genreOverrides.value)
             ?: EqProfileManager.defaultProfiles["Flat"]!!.copyOf()
 
     // Must stay the LAST member: viewModelScope uses Main.immediate, so this can
@@ -610,6 +642,7 @@ fun EqScreen(vm: EqScreenViewModel = viewModel()) {
     val allPresets        by vm.allPresetNames.collectAsState()
     val customPresets     by vm.customPresetNames.collectAsState()
     val hasUnsavedChanges by vm.hasUnsavedChanges.collectAsState()
+    val genreOverrides    by vm.genreOverrides.collectAsState()
     val isBypassed        by EqState.isBypassed.collectAsState()
     var renameTarget by remember { mutableStateOf<String?>(null) }
     var renameDraft by remember { mutableStateOf("") }
@@ -652,7 +685,8 @@ fun EqScreen(vm: EqScreenViewModel = viewModel()) {
         onSelect = { vm.selectPreset(it) }, onDelete = { vm.requestDelete(it) },
         onRename = { renameTarget = it; renameDraft = it; renameError = null; vm.closePresetPicker() },
         onNewProfile = { vm.openNewProfile() }, onDismiss = { vm.closePresetPicker() },
-        onShare = { vm.openShare(it) }, onImport = { vm.openImport() }
+        onShare = { vm.openShare(it) }, onImport = { vm.openImport() },
+        customised = genreOverrides.keys, onResetToDefault = { vm.resetToDefault(it) }
     )
 
     // ── Profile sharing ───────────────────────────────────────────────
@@ -749,6 +783,11 @@ fun EqScreen(vm: EqScreenViewModel = viewModel()) {
                     containerColor = c.surfaceHighest) {
                     MenuItem("Save as new preset", EqIcons.Add) { menuOpen = false; vm.openNewProfile() }
                     MenuItem("Reset to saved", EqIcons.Reset) { menuOpen = false; vm.resetCurrentPreset() }
+                    if (activePreset in genreOverrides) {
+                        MenuItem("Reset $activePreset to default", EqIcons.Reset) {
+                            menuOpen = false; vm.resetToDefault(activePreset)
+                        }
+                    }
                     MenuItem("Share", EqIcons.Share) { menuOpen = false; vm.openShare() }
                     MenuItem("Import shared profile", EqIcons.Download) { menuOpen = false; vm.openImport() }
                 }
@@ -980,7 +1019,8 @@ fun PresetPickerDialog(
     allPresets: List<String>, customPresets: List<String>, activePreset: String,
     onSelect: (String) -> Unit, onDelete: (String) -> Unit, onRename: (String) -> Unit,
     onNewProfile: () -> Unit, onDismiss: () -> Unit,
-    onShare: (String) -> Unit = {}, onImport: () -> Unit = {}
+    onShare: (String) -> Unit = {}, onImport: () -> Unit = {},
+    customised: Set<String> = emptySet(), onResetToDefault: (String) -> Unit = {}
 ) {
     EqSheet(
         title = "EQ presets",
@@ -1006,8 +1046,11 @@ fun PresetPickerDialog(
         EqCard(contentPadding = PaddingValues(0.dp)) {
             builtIn.forEachIndexed { i, name ->
                 if (i > 0) HorizontalDivider(color = EqifyTheme.colors.outline)
+                val isCustomised = name in customised
                 PresetRow(name, name == activePreset, isCustom = false, onSelect = { onSelect(name) },
-                    onDelete = {}, onShare = { onShare(name) })
+                    onDelete = {}, onShare = { onShare(name) },
+                    subtitle = if (isCustomised) "Customised" else null,
+                    onResetToDefault = if (isCustomised) ({ onResetToDefault(name) }) else null)
             }
         }
     }
@@ -1017,12 +1060,15 @@ fun PresetPickerDialog(
 private fun PresetRow(
     name: String, isActive: Boolean, isCustom: Boolean,
     onSelect: () -> Unit, onDelete: () -> Unit, onRename: () -> Unit = {},
-    onShare: (() -> Unit)? = null
+    onShare: (() -> Unit)? = null,
+    subtitle: String? = null,
+    onResetToDefault: (() -> Unit)? = null
 ) {
     val c = EqifyTheme.colors
     var menuOpen by remember { mutableStateOf(false) }
     SettingRow(
         title = name,
+        subtitle = subtitle,
         icon = if (isActive) EqIcons.CheckCircle else null,
         onClick = onSelect,
         modifier = Modifier.semantics { selected = isActive },
@@ -1034,6 +1080,12 @@ private fun PresetRow(
                         if (onShare != null) MenuItem("Share", EqIcons.Share) { menuOpen = false; onShare() }
                         MenuItem("Rename", EqIcons.Edit) { menuOpen = false; onRename() }
                         MenuItem("Delete", EqIcons.Delete) { menuOpen = false; onDelete() }
+                    }
+                } else if (onResetToDefault != null) {
+                    IconAction(EqIcons.More, "Options for $name", { menuOpen = true })
+                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }, containerColor = c.surfaceHighest) {
+                        if (onShare != null) MenuItem("Share", EqIcons.Share) { menuOpen = false; onShare() }
+                        MenuItem("Reset to default", EqIcons.Reset) { menuOpen = false; onResetToDefault() }
                     }
                 } else if (onShare != null) {
                     IconAction(EqIcons.Share, "Share $name", onShare)

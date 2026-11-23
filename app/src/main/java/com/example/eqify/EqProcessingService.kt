@@ -181,8 +181,10 @@ class EqProcessingService : Service() {
                     EqState.baseToneGains,
                     EqState.tonePresetName,
                     EqState.manualOverrideActive,
-                    repository.customPresetGains
-                ) { a, bt, tn, manual, presets -> AutoToneState(a, bt, tn, manual, presets) }
+                    combine(repository.customPresetGains, repository.genreOverrides) { presets, overrides ->
+                        presets to overrides
+                    }
+                ) { a, bt, tn, manual, library -> AutoToneState(a, bt, tn, manual, library.first, library.second) }
             ) { t1, t2, t3 ->
                 EqPipe(
                     genre         = t1.genre,
@@ -199,7 +201,8 @@ class EqProcessingService : Service() {
                     baseToneGains = t3.baseToneGains,
                     toneName      = t3.toneName,
                     manualOverride = t3.manualOverride,
-                    customPresets = t3.customPresets
+                    customPresets = t3.customPresets,
+                    genreOverrides = t3.genreOverrides
                 )
             }.collectLatest { pipe ->
                 val previous = lastAutoSnapshot
@@ -284,7 +287,7 @@ class EqProcessingService : Service() {
                         pipe.customPresets[correctedPreset]?.toFloatArray()
                             ?: EqProfileManager.defaultProfiles["Flat"]!!.copyOf()
                     pipe.autoGenre && pipe.genre.isNotBlank() ->
-                        EqProfileManager.resolveGenreGains(pipe.genre)
+                        EqProfileManager.resolveGenreGains(pipe.genre, pipe.genreOverrides)
                     pipe.autoGenre ->
                         EqProfileManager.defaultProfiles["Flat"]!!.copyOf()
                     else ->
@@ -314,7 +317,7 @@ class EqProcessingService : Service() {
                     pipe.autoGenre -> "Flat"
                     else -> pipe.toneName.ifBlank { "Flat" }
                 }
-                val bassTag = if (pipe.bassBoost > 0f) " · Bass +${pipe.bassBoost.toInt()}dB" else ""
+                val bassTag = if (pipe.bassBoost > 0f) "bass +${pipe.bassBoost.toInt()} dB" else ""
 
                 // A combine emission can contain an older manual curve. Never
                 // publish it over a newer slider edit, even after a cache hit.
@@ -339,7 +342,7 @@ class EqProcessingService : Service() {
                 lastAutoSnapshot = nextSnapshot
 
                 val hpShort = pipe.headphone.split(" ").takeLast(2).joinToString(" ")
-                updateNotification("$displayName$bassTag · $hpShort")
+                updateNotification(listOf(displayName, bassTag, hpShort).filter { it.isNotBlank() }.joinToString(", "))
                 Log.d(TAG, "Auto-EQ: $displayName gains=${combined.map { "%.1f".format(it) }}")
             }
         }
@@ -397,6 +400,8 @@ class EqProcessingService : Service() {
         val autoGenre: Boolean, val baseToneGains: FloatArray, val toneName: String,
         val manualOverride: Boolean,
         val customPresets: Map<String, List<Float>> = emptyMap(),
+        /** User versions of built-in curves (FEATURE_CUSTOM_GENRE_CURVES.md). */
+        val genreOverrides: Map<String, List<Float>> = emptyMap(),
         val correctionSuppressed: Boolean = false
     )
 
@@ -413,7 +418,8 @@ class EqProcessingService : Service() {
         val baseToneGains: FloatArray,
         val toneName: String,
         val manualOverride: Boolean,
-        val customPresets: Map<String, List<Float>>
+        val customPresets: Map<String, List<Float>>,
+        val genreOverrides: Map<String, List<Float>>
     )
 
     private data class AudioSettingsState(

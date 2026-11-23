@@ -153,6 +153,8 @@ Do not change limiter parameters based only on whether the difference is obvious
 
 Every `UserPreferencesRepository` flow goes through `pref { }`, which adds `distinctUntilChanged()`: DataStore re-emits on any write, and without it an unrelated write (such as the processing snapshot below) restarts every collector. That caused a Pop/Rock genre feedback loop on 2026-11-22; keep new preference flows on `pref { }`. `EqProcessingSnapshot` is the compact persisted status for external controls. The processing service derives it from the master toggle, bypass state, active display profile, and `EqEngine.isEqualizerAttached`. The Quick Settings tile combines that snapshot with the process-local service-running flag so it does not claim that EQ is active after the service or app process has stopped.
 
+Built-in genre curves (all except Flat) can be customised in the app. `UserPreferencesRepository.genreOverrides` stores the user's versions by built-in name (`GenreCurveOverrides.kt` codec; a curve equal to the default is removed). Every built-in lookup goes through `EqProfileManager.effectiveGains`/`resolveGenreGains(genre, overrides)`, so auto-genre, keyword-mapped genres, preset selection, startup restore and sharing all see the user's version, and the code defaults stay the fallback. Do not read `defaultProfiles[name]` directly for a curve that gets applied. See `FEATURE_CUSTOM_GENRE_CURVES.md`.
+
 The former `limit_output_gain` Boolean is a migration-only preference. Existing `false` values migrate to Off; existing `true` or missing values migrate to Balanced on API 28+ and Safe on older Android versions. Do not remove migration handling without considering installed users.
 
 ### Media and headphone detection
@@ -199,6 +201,7 @@ Paths are relative to `app/src/main/java/com/example/eqify/`. “Owns” means l
 | `GraphicEqImporter.kt` (pure converter) | Validates standalone GraphicEQ text or pasted ten-row table, log-frequency resamples to eight bands, reports ±12 dB limiting. | `EqProfileManager.BAND_CENTERS_HZ`; reject extra directives and malformed points rather than partially importing. | Changing file/table parsing or conversion math. |
 | `CustomEqProfileRepository.kt` (app-private repository) | Atomically stores imported eight-band profiles, exposes list and CRUD. | Application, headphone/settings VMs, service; distinct from Pages cache and global tone presets. | Changing imported-profile schema or persistence. |
 | `EqProfileCodec.kt` (pure codec) | Encodes/decodes shareable profiles: `EQIFY1:` + Base64-URL raw-Deflate JSON, or plain JSON files; strict validation with size/inflate caps. | Gson + `java.util` only (no `org.json`, so it is JVM-testable); `BAND_CENTERS_HZ`; never contains history or device data. | Changing the share format or its validation. |
+| `GenreCurveOverrides.kt` (pure codec) | Validates, encodes and decodes the user's versions of built-in curves; Flat and unknown names are never stored. | `EqProfileManager`; used by `UserPreferencesRepository` and the resolver. | Changing which built-ins are customisable or the storage format. |
 | `PresetNameRules.kt` (pure rules) | Reserved/duplicate checks and collision-free import names. | `EqProfileManager.defaultProfiles`; used by `EqScreen` and `saveNewCustomPreset`. | Changing tone-preset naming rules. |
 | `ProfileQrCode.kt` (pure QR builder) | ZXing `core` module matrix for a profile code (M error correction, no margin). | Screens draw it black-on-white with `QUIET_ZONE_MODULES`; generation only, no camera. | Changing QR density or limits. |
 | `ProfileShareIo.kt` (Android helpers) | Writes the `.eqify.json` file and builds the text share chooser. | Used by `EqScreen` and `HeadphonesScreen`; call file writes off the main thread. | Changing export wording or file output. |
@@ -306,6 +309,17 @@ and static Pages models.
 - GitHub Pages Android client integration is implemented. No Cloudflare Worker,
   D1 database, or import has been implemented. The Node API remains configured
   for the final genre-resolution fallback, not headphone lookup.
+
+## Release builds
+
+See `RELEASING.md`. Release builds:
+- use the app ID `com.liteplane.eqify` (the namespace stays `com.example.eqify`)
+- are signed from `EQIFY_KEYSTORE_*` Gradle properties
+- block cleartext traffic (via the `usesCleartextTraffic` manifest placeholder)
+- call the genre backend only when `EQIFY_BASE_URL` is https (`BuildConfig.GENRE_BACKEND_ENABLED`)
+- are shrunk by R8 with `-dontobfuscate`
+
+Gson-mapped models in `EqifyApi.kt` are kept in `proguard-rules.pro`; add a keep rule for any new reflection-mapped class. `androidx.fragment` is pinned because Play services pulls 1.0.0, which fails release lint. `PRIVACY.md` is the user-facing privacy policy; update it when data leaving the phone changes.
 
 ## Tests and diagnostics
 
