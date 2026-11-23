@@ -17,6 +17,7 @@ EQify is an equalizer. It works on your phone and has no accounts. This page say
 | Artist name | Last.fm | Only if you add your own Last.fm API key. |
 | Song title and artist | The EQify genre service | Only in builds where one is set up. The beta build does not use it. |
 | A headphone model name (as part of a file path) | GitHub Pages (EQify headphone data) | Only after you choose a headphone, to download its correction. |
+| A request for the latest version (no personal data; GitHub sees your IP address) | GitHub API | At most once a day while **Automatic update checks** is on in Settings, or when you tap **Check for updates**. |
 | Crash and error reports | Sentry | Only while **Send crash reports** is on in Settings. You can turn it off at any time. |
 
 Crash reports contain the device model, Android and app version, and technical details of the error. Before sending, EQify removes song titles, artists, headphone names and API keys from them. Screenshots and screen layouts are never attached.
@@ -33,4 +34,4 @@ There are no ads or analytics, no account, and no selling or sharing of data for
 
 ## Contact
 
-Questions or deletion requests: use **Settings → Send feedback** in the app, or open an issue on the project's GitHub page.
+Questions or deletion requests: use **Settings → Send feedback** in the app, or open an issue at <https://github.com/parthsharma365628/eqify-releases/issues>.

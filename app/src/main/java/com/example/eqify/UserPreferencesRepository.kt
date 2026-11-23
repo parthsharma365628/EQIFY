@@ -7,6 +7,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.floatPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
@@ -99,6 +100,13 @@ class UserPreferencesRepository(private val context: Context) {
         val FAVORITE_HEADPHONES   = stringPreferencesKey("favorite_headphones")
         val DEVICE_CHOICES        = stringPreferencesKey("device_headphone_choices")
         val GENRE_OVERRIDES       = stringPreferencesKey("genre_curve_overrides")
+        val GENRE_STRENGTH        = floatPreferencesKey("genre_strength")
+        val DEVICE_PROFILES       = stringPreferencesKey("device_profiles")
+        val UPDATE_AUTO_CHECK     = booleanPreferencesKey("update_auto_check")
+        val UPDATE_LAST_CHECK     = longPreferencesKey("update_last_check")
+        val UPDATE_LATEST_TAG     = stringPreferencesKey("update_latest_tag")
+        val UPDATE_LATEST_URL     = stringPreferencesKey("update_latest_url")
+        val UPDATE_DISMISSED      = stringPreferencesKey("update_dismissed_tag")
     }
 
     // ── Standard settings ─────────────────────────────────────────────
@@ -205,6 +213,81 @@ class UserPreferencesRepository(private val context: Context) {
     suspend fun clearGenreOverrides() {
         context.dataStore.edit { it.remove(Keys.GENRE_OVERRIDES) }
     }
+
+    /** Genre strength, 0–125% as 0..1.25 (FEATURES_NEXT_PLAN.md §2). */
+    val genreStrength: Flow<Float> = pref { GenreStrength.normalise(it[Keys.GENRE_STRENGTH]) }
+
+    suspend fun setGenreStrength(value: Float) {
+        context.dataStore.edit { it[Keys.GENRE_STRENGTH] = GenreStrength.normalise(value) }
+    }
+
+    // ── Update check (FEATURES_NEXT_PLAN.md §1) ───────────────────────
+
+    val autoUpdateCheck: Flow<Boolean> = pref { it[Keys.UPDATE_AUTO_CHECK] ?: true }
+    val lastUpdateCheck: Flow<Long> = pref { it[Keys.UPDATE_LAST_CHECK] ?: 0L }
+    val dismissedUpdateTag: Flow<String> = pref { it[Keys.UPDATE_DISMISSED].orEmpty() }
+
+    /** The newest release seen at the last successful check (may be older than this build). */
+    val latestKnownRelease: Flow<ReleaseInfo?> = pref { prefs ->
+        val tag = prefs[Keys.UPDATE_LATEST_TAG]
+        val url = prefs[Keys.UPDATE_LATEST_URL]
+        val version = AppVersion.parse(tag)
+        if (tag == null || url == null || version == null || !url.startsWith("https://github.com/")) null
+        else ReleaseInfo(tag, version, url)
+    }
+
+    suspend fun setAutoUpdateCheck(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.UPDATE_AUTO_CHECK] = enabled }
+    }
+
+    suspend fun recordUpdateCheck(atMillis: Long, newest: ReleaseInfo?) {
+        context.dataStore.edit { prefs ->
+            prefs[Keys.UPDATE_LAST_CHECK] = atMillis
+            if (newest == null) {
+                prefs.remove(Keys.UPDATE_LATEST_TAG); prefs.remove(Keys.UPDATE_LATEST_URL)
+            } else {
+                prefs[Keys.UPDATE_LATEST_TAG] = newest.tag
+                prefs[Keys.UPDATE_LATEST_URL] = newest.url
+            }
+        }
+    }
+
+    suspend fun dismissUpdate(tag: String) {
+        context.dataStore.edit { it[Keys.UPDATE_DISMISSED] = tag }
+    }
+
+    // ── Per-device sound (FEATURES_NEXT_PLAN.md §4) ───────────────────
+
+    val deviceProfiles: Flow<Map<String, DeviceProfile>> = pref { DeviceProfiles.decode(it[Keys.DEVICE_PROFILES]) }
+
+    private suspend fun editDeviceProfiles(transform: (Map<String, DeviceProfile>) -> Map<String, DeviceProfile>) {
+        context.dataStore.edit { prefs ->
+            val next = transform(DeviceProfiles.decode(prefs[Keys.DEVICE_PROFILES]))
+            prefs[Keys.DEVICE_PROFILES] = DeviceProfiles.encode(next)
+        }
+    }
+
+    /** Lists the device under My devices; keeps its settings and any rename. */
+    suspend fun recordDeviceSeen(key: String, kind: AudioOutputKind, name: String, atMillis: Long) = editDeviceProfiles { map ->
+        val existing = map[key]
+        map + (key to (existing?.copy(kind = kind, lastSeenMillis = atMillis, label = existing.label ?: name)
+            ?: DeviceProfile(label = name, kind = kind, lastSeenMillis = atMillis)))
+    }
+
+    suspend fun updateDeviceProfile(key: String, kind: AudioOutputKind, transform: (DeviceProfile) -> DeviceProfile) =
+        editDeviceProfiles { map -> map + (key to transform(map[key] ?: DeviceProfile(kind = kind))) }
+
+    /** Removes the device's settings and its remembered headphone correction. */
+    suspend fun forgetDevice(key: String) {
+        editDeviceProfiles { it - key }
+        setDeviceChoice(key, null)
+    }
+
+    suspend fun renamePresetInDeviceProfiles(from: String, to: String) =
+        editDeviceProfiles { DeviceProfiles.renamePreset(it, from, to) }
+
+    suspend fun removePresetFromDeviceProfiles(name: String) =
+        editDeviceProfiles { DeviceProfiles.removePreset(it, name) }
 
     val deviceChoices: Flow<Map<String, DeviceChoice>> = pref { prefs ->
         DeviceHeadphoneMemory.decode(prefs[Keys.DEVICE_CHOICES])

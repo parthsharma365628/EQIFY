@@ -67,6 +67,9 @@ fun SettingsScreen(
     val customProfilesMessage by vm.customProfilesMessage.collectAsState()
     val genreOverrides by vm.genreOverrides.collectAsState(initial = emptyMap())
     val genreCurvesMessage by vm.genreCurvesMessage.collectAsState()
+    val autoUpdateCheck by vm.autoUpdateCheck.collectAsState(initial = true)
+    val updateStatus by vm.updateStatus.collectAsState()
+    val latestRelease by vm.latestRelease.collectAsState()
     val crashReportingEnabled by vm.crashReportingEnabled.collectAsState()
     val crashReportMessage by vm.crashReportMessage.collectAsState()
     val themeSettings by vm.themeSettings.collectAsState()
@@ -374,6 +377,31 @@ fun SettingsScreen(
                 SettingRow(title = "Version", icon = EqIcons.Info,
                     trailing = { Text(BuildConfig.VERSION_NAME, style = MaterialTheme.typography.labelLarge, color = c.textMuted) })
                 RowDivider()
+                val available = (updateStatus as? UpdateChecker.Status.Available)?.release ?: latestRelease
+                SettingRow(
+                    title = if (available != null) "Update available: ${available.version}" else "Check for updates",
+                    subtitle = when {
+                        updateStatus is UpdateChecker.Status.Checking -> "Checking…"
+                        available != null -> "Tap to open the download page and release notes"
+                        updateStatus is UpdateChecker.Status.UpToDate -> "You're up to date"
+                        updateStatus is UpdateChecker.Status.Failed -> "Couldn't check right now. Try again later"
+                        else -> "Looks for a newer version on GitHub"
+                    },
+                    icon = EqIcons.Download,
+                    onClick = {
+                        if (available != null) openUrl(context, available.url) else vm.checkForUpdatesNow()
+                    },
+                    trailing = { EqIcon(EqIcons.Expand, null, size = 20.dp) }
+                )
+                RowDivider()
+                SwitchRow(
+                    title = "Automatic update checks",
+                    subtitle = "Once a day, asks GitHub for the latest version",
+                    checked = autoUpdateCheck,
+                    onCheckedChange = { vm.setAutoUpdateCheck(it) },
+                    icon = EqIcons.Info
+                )
+                RowDivider()
                 SettingRow(title = "AutoEQ database", subtitle = "Served from GitHub Pages + on-device cache",
                     icon = EqIcons.Download)
                 RowDivider()
@@ -572,9 +600,22 @@ private fun PrivacySheet(onDismiss: () -> Unit) {
             "A correction is downloaded only after you select a headphone.")
         PrivacyPoint(EqIcons.FileOpen, "Imported files",
             "GraphicEQ files are converted and stored on this device. They are not uploaded.")
+        PrivacyPoint(EqIcons.Download, "Update checks",
+            "Once a day (if on), EQify asks GitHub for the latest version. GitHub sees your IP address, nothing else.")
         PrivacyPoint(EqIcons.Error, "Crash reports",
             "If crash reports are on, crash and error details are sent to Sentry without song titles, artists, headphone names or keys.")
+        val context = LocalContext.current
+        TextAction("Read the full privacy policy", onClick = { openUrl(context, ReleaseLinks.PRIVACY_POLICY) })
     }
+}
+
+/** Public pages for this build (the code repository itself is private). */
+private object ReleaseLinks {
+    const val PRIVACY_POLICY = "https://github.com/parthsharma365628/eqify-releases/blob/main/PRIVACY.md"
+}
+
+private fun openUrl(context: Context, url: String) {
+    runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
 }
 
 @Composable

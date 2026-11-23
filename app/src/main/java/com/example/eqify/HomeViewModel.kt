@@ -21,6 +21,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     val selectedHeadphone = NowPlayingState.selectedHeadphone
     val mediaListenerEnabled = NowPlayingState.mediaListenerEnabled
     val recentTracks = history.recent().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val weekStats = history.weekStats().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000),
+        ListeningStats.compute(emptyList(), emptyList(), 0L))
     val genreMix = history.mix().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), GenreMix(0, emptyList()))
     val correctionGenres get() = EqProfileManager.correctionGenres
     /** The user's own presets, offered in the genre-correction sheet next to the built-in genres. */
@@ -42,6 +44,19 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     fun dismissCorrectionMessage() { _correctionMessage.value = null }
 
+    fun setGenreStrength(value: Float) {
+        viewModelScope.launch { DeviceSoundCoordinator.setGenreStrength(value) }
+    }
+
+    /** Newer release not yet dismissed by the user (FEATURES_NEXT_PLAN.md §1). */
+    val updateBanner = kotlinx.coroutines.flow.combine(UpdateChecker.latest, repository.dismissedUpdateTag) { latest, dismissed ->
+        latest?.takeIf { it.tag != dismissed }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    fun dismissUpdate(tag: String) {
+        viewModelScope.launch { repository.dismissUpdate(tag) }
+    }
+
     fun setEqEnabled(enabled: Boolean) {
         viewModelScope.launch {
             EqState.setEnabled(enabled)
@@ -49,12 +64,12 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /** Edits the connected device's bass when it has its own (FEATURES_NEXT_PLAN.md §4). */
     fun setBassBoost(level: Float) {
-        viewModelScope.launch {
-            EqState.setBassBoost(level)
-            repository.setBassBoostLevel(level)
-        }
+        viewModelScope.launch { DeviceSoundCoordinator.setBass(level) }
     }
+
+    val deviceSound = DeviceSoundCoordinator.state
 
     fun playEqTestTone() {
         if (_testToneMessage.value == "Playing test sound...") return

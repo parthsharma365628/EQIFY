@@ -275,9 +275,17 @@ class HeadphonesViewModel(application: Application) : AndroidViewModel(applicati
 @Composable
 fun HeadphonesScreen(
     onNavigateBack: () -> Unit = {},
-    vm: HeadphonesViewModel = viewModel()
+    vm: HeadphonesViewModel = viewModel(),
+    devicesVm: DevicesViewModel = viewModel()
 ) {
     val c = EqifyTheme.colors
+    val devices by devicesVm.devices.collectAsState()
+    val devicePresets by devicesVm.presetNames.collectAsState()
+    var openDeviceKey by remember { mutableStateOf<String?>(null) }
+    // Look the row up live, so the sheet reflects changes as they are saved.
+    devices.firstOrNull { it.key == openDeviceKey }?.let { row ->
+        DeviceSheet(row, devicePresets, devicesVm, onDismiss = { openDeviceKey = null })
+    }
     val results by vm.results.collectAsState()
     val isLoading by vm.isLoading.collectAsState()
     val errorMessage by vm.errorMessage.collectAsState()
@@ -285,6 +293,7 @@ fun HeadphonesScreen(
     val searchQuery by vm.searchQuery.collectAsState()
     val showCustomDialog by vm.showCustomDialog.collectAsState()
     val correctionStatus by EqState.headphoneCorrectionStatus.collectAsState()
+    val correctionGains by EqState.currentHeadphoneCorrection.collectAsState()
     val favorites by vm.favorites.collectAsState()
     val customProfiles by vm.customProfiles.collectAsState()
     val selection by vm.correctionSelection.collectAsState()
@@ -421,8 +430,11 @@ fun HeadphonesScreen(
                 contentPadding = PaddingValues(start = EqSpacing.screen, end = EqSpacing.screen, bottom = EqSpacing.xl),
                 verticalArrangement = Arrangement.spacedBy(EqSpacing.s)
             ) {
+                item(key = "devices") {
+                    MyDevicesSection(devices, onOpen = { openDeviceKey = it.key })
+                }
                 item(key = "selected") {
-                    SelectedHeadphoneCard(localSelectedHeadphone, correctionStatus)
+                    SelectedHeadphoneCard(localSelectedHeadphone, correctionStatus, correctionGains.toList())
                 }
                 item(key = "add") {
                     AddCorrectionButton(
@@ -529,7 +541,7 @@ private fun correctionUi(status: HeadphoneCorrectionStatus, name: String): Corre
 }
 
 @Composable
-private fun SelectedHeadphoneCard(name: String, status: HeadphoneCorrectionStatus) {
+private fun SelectedHeadphoneCard(name: String, status: HeadphoneCorrectionStatus, correction: List<Float> = emptyList()) {
     val c = EqifyTheme.colors
     val ui = correctionUi(status, name)
     EqCard {
@@ -546,6 +558,20 @@ private fun SelectedHeadphoneCard(name: String, status: HeadphoneCorrectionStatu
             Spacer(Modifier.height(EqSpacing.s))
             Text(it.detail, style = MaterialTheme.typography.bodySmall,
                 color = if (it.kind == StatusKind.ERROR) c.error else c.textMuted)
+        }
+        // What the correction does (FEATURES_NEXT_PLAN.md §3). AutoEq gives the
+        // correction, not the measured response, and the label says so.
+        if (correction.size == 8 && !SoundLayers.isFlat(correction) && ui?.kind != StatusKind.ERROR) {
+            val summary = SoundLayers.describe(correction)
+            Spacer(Modifier.height(EqSpacing.m))
+            Text("What the correction changes", style = MaterialTheme.typography.titleSmall, color = c.textPrimary)
+            LayeredCurve(
+                layers = listOf(SoundLayer(SoundLayer.Kind.CORRECTION, correction)),
+                height = 96.dp, showLegend = false,
+                description = "Headphone correction curve. $summary",
+                modifier = Modifier.padding(top = EqSpacing.xs)
+            )
+            Text(summary, style = MaterialTheme.typography.bodySmall, color = c.textMuted)
         }
     }
 }

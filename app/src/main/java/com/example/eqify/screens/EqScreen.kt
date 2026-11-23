@@ -120,6 +120,40 @@ class EqScreenViewModel(application: Application) : AndroidViewModel(application
     val genreOverrides: StateFlow<Map<String, List<Float>>> = repository.genreOverrides
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
 
+    /** Strength applied on top of automatic genre EQ, or null when it changes nothing. */
+    val genreStrengthNote: StateFlow<Float?> = combine(
+        DeviceSoundCoordinator.state, EqState.manualOverrideActive
+    ) { device, manual ->
+        val e = device.effective
+        e.genreStrength.takeIf { e.autoGenre && e.devicePreset == null && !manual && it != GenreStrength.DEFAULT }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    // ── Per-device sound (FEATURES_NEXT_PLAN.md §4) ───────────────────
+
+    /** "Set by <device>" while the connected device's preset is playing. */
+    val deviceSourceLabel: StateFlow<String?> = combine(
+        DeviceSoundCoordinator.state, EqState.manualOverrideActive
+    ) { device, manual -> device.label.takeIf { device.effective.devicePreset != null && !manual } }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    /** (device label, preset): offer to make a manual pick this device's preset. */
+    private val _deviceAlwaysPrompt = MutableStateFlow<Pair<String, String>?>(null)
+    val deviceAlwaysPrompt: StateFlow<Pair<String, String>?> = _deviceAlwaysPrompt.asStateFlow()
+
+    fun useForDeviceAlways() {
+        val (_, preset) = _deviceAlwaysPrompt.value ?: return
+        _deviceAlwaysPrompt.value = null
+        val device = DeviceSoundCoordinator.state.value
+        val key = device.deviceKey ?: return
+        val kind = device.kind ?: return
+        viewModelScope.launch {
+            repository.updateDeviceProfile(key, kind) { it.copy(sound = DeviceSound.Preset(preset)) }
+            EqState.clearManualOverride() // the device setting now governs
+        }
+    }
+
+    fun dismissDeviceAlwaysPrompt() { _deviceAlwaysPrompt.value = null }
+
     private val _showPresetPicker    = MutableStateFlow(false)
     val showPresetPicker: StateFlow<Boolean> = _showPresetPicker.asStateFlow()
 
@@ -187,6 +221,10 @@ class EqScreenViewModel(application: Application) : AndroidViewModel(application
             _hasUnsavedChanges.value = false
             EqState.applyManualPreset(name, rawGains)
             repository.setLastPreset(name)
+            val device = DeviceSoundCoordinator.state.value
+            val devicePreset = device.effective.devicePreset
+            _deviceAlwaysPrompt.value = if (devicePreset != null && devicePreset != name && device.label != null)
+                device.label to name else null
         }
     }
 
@@ -297,6 +335,7 @@ class EqScreenViewModel(application: Application) : AndroidViewModel(application
         customGainsCache.remove(name)
         viewModelScope.launch {
             repository.deleteCustomPreset(name)
+            repository.removePresetFromDeviceProfiles(name)
             // Songs corrected to this preset go back to automatic detection.
             runCatching { (getApplication<Application>() as EqifyApplication).genreCoordinator.deletePreset(name) }
         }
@@ -309,6 +348,7 @@ class EqScreenViewModel(application: Application) : AndroidViewModel(application
     suspend fun renameProfile(oldName: String, newName: String): String? {
         return try {
             repository.renameCustomPreset(oldName, newName)
+            repository.renamePresetInDeviceProfiles(oldName, newName.trim())
             // Songs corrected to this preset follow the new name.
             runCatching {
                 (getApplication<Application>() as EqifyApplication).genreCoordinator.renamePreset(oldName, newName.trim())
@@ -532,8 +572,7 @@ class EqScreenViewModel(application: Application) : AndroidViewModel(application
                 val bass = profile.bass
                 if (applyBass && bass != null) {
                     val level = snapBassLevel(bass)
-                    EqState.setBassBoost(level)
-                    repository.setBassBoostLevel(level)
+                    DeviceSoundCoordinator.setBass(level)
                     done += if (level == 0f) "Bass boost turned off." else "Bass boost set to +${level.toInt()} dB."
                 }
 
@@ -643,6 +682,11 @@ fun EqScreen(vm: EqScreenViewModel = viewModel()) {
     val customPresets     by vm.customPresetNames.collectAsState()
     val hasUnsavedChanges by vm.hasUnsavedChanges.collectAsState()
     val genreOverrides    by vm.genreOverrides.collectAsState()
+    val genreStrengthNote by vm.genreStrengthNote.collectAsState()
+    val deviceSourceLabel by vm.deviceSourceLabel.collectAsState()
+    val deviceAlwaysPrompt by vm.deviceAlwaysPrompt.collectAsState()
+    var showLayers by remember { mutableStateOf(false) }
+    if (showLayers) SoundLayersSheet(genreStrengthNote, onDismiss = { showLayers = false })
     val isBypassed        by EqState.isBypassed.collectAsState()
     var renameTarget by remember { mutableStateOf<String?>(null) }
     var renameDraft by remember { mutableStateOf("") }
@@ -789,6 +833,7 @@ fun EqScreen(vm: EqScreenViewModel = viewModel()) {
                         }
                     }
                     MenuItem("Share", EqIcons.Share) { menuOpen = false; vm.openShare() }
+                    MenuItem("Show sound layers", EqIcons.GraphicEq) { menuOpen = false; showLayers = true }
                     MenuItem("Import shared profile", EqIcons.Download) { menuOpen = false; vm.openImport() }
                 }
             }
@@ -814,6 +859,21 @@ fun EqScreen(vm: EqScreenViewModel = viewModel()) {
             )
         }
 
+        deviceSourceLabel?.let {
+            Text("Preset set by $it. Change it in Headphones > My devices.",
+                style = MaterialTheme.typography.bodySmall, color = c.textMuted)
+        }
+        deviceAlwaysPrompt?.let { (device, preset) ->
+            StatusBanner("Use $preset for $device from now on?", StatusKind.NEUTRAL,
+                actionLabel = "Always", onAction = vm::useForDeviceAlways,
+                onDismiss = vm::dismissDeviceAlwaysPrompt)
+        }
+        genreStrengthNote?.let { strength ->
+            Text("Automatic EQ plays this curve at ${Math.round(strength * 100)}% genre strength. " +
+                "Moving a slider switches to manual, at full strength.",
+                style = MaterialTheme.typography.bodySmall, color = c.textMuted)
+        }
+
         shareMessage?.let { message ->
             StatusBanner(message, StatusKind.NEUTRAL, onDismiss = { vm.dismissShareMessage() })
         }
@@ -834,6 +894,35 @@ fun EqScreen(vm: EqScreenViewModel = viewModel()) {
                 modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
         }
         Spacer(Modifier.height(EqSpacing.s))
+    }
+}
+
+/** Tone, correction, bass and the total actually applied (FEATURES_NEXT_PLAN.md §3). */
+@Composable
+private fun SoundLayersSheet(strength: Float?, onDismiss: () -> Unit) {
+    val c = EqifyTheme.colors
+    val tone by EqState.activeToneGains.collectAsState()
+    val correction by EqState.currentHeadphoneCorrection.collectAsState()
+    val bass by EqState.bassBoostLevel.collectAsState()
+    val total by EqState.activeBandGains.collectAsState()
+    val bypassed by EqState.isBypassed.collectAsState()
+    val enabled by EqState.isEqEnabled.collectAsState()
+    // The tone you hear: automatic genre EQ is scaled by genre strength.
+    val heardTone = if (strength != null) GenreStrength.apply(tone, strength).toList() else tone.toList()
+    val layers = SoundLayers.build(heardTone, correction.toList(), bass, total.toList())
+    EqSheet(title = "Sound layers", subtitle = "What EQify adds up, band by band.", onDismiss = onDismiss) {
+        LayeredCurve(layers = layers, height = 180.dp,
+            description = "Total applied: ${SoundLayers.describe(total.toList())}")
+        val notes = buildList {
+            if (!enabled) add("EQ is off, so nothing is applied.")
+            else if (bypassed) add("Comparing with the original sound: nothing is applied right now.")
+            if (SoundLayers.isFlat(correction.toList())) add("No headphone correction is active.")
+            if (strength != null) add("Tone includes genre strength (${Math.round(strength * 100)}%).")
+            add("Total is the sum after output protection, which can lower boosts to prevent clipping.")
+        }
+        notes.forEach { Text(it, style = MaterialTheme.typography.bodySmall, color = c.textMuted) }
+        Text("Total: ${SoundLayers.describe(total.toList())}", style = MaterialTheme.typography.bodyMedium,
+            color = c.textPrimary)
     }
 }
 

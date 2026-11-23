@@ -310,6 +310,24 @@ and static Pages models.
   D1 database, or import has been implemented. The Node API remains configured
   for the final genre-resolution fallback, not headphone lookup.
 
+## 0.2.0 features (FEATURES_NEXT_PLAN.md)
+
+- **Update check:** `UpdateChecker.kt`
+  - Pure `AppVersion` and `UpdateRules`, plus the network call using OkHttp 3 and Gson `JsonParser()`.
+  - At most daily, release builds only, via `EqifyApplication.checkForUpdatesIfDue()` (also called from `MainActivity.onResume`).
+  - Reads the public `eqify-releases` repo, pre-releases included. The last seen release is stored, so the Home banner survives restarts. Dismissing hides that tag only.
+- **Genre strength:** `GenreStrength.kt`
+  - Scales only the automatic genre tone in `EqProcessingService`, never manual presets, a device preset, correction or bass.
+  - `EqState.activeToneGains` stays the unscaled curve; only the output is scaled.
+- **Sound layers:** `SoundLayers.kt` (pure layers and plain-language summary) and `ui/components/LayeredCurve.kt`. Used on the Headphones card, in EQ overflow → Show sound layers, and in the device sheet.
+- **Per-device sound:** `DeviceProfiles.kt` (model, codec, resolver), `DeviceSoundCoordinator.kt` and `screens/DeviceSettings.kt`.
+  - The coordinator owns the effective bass (`EqState.bassBoostLevel`) and publishes effective auto-genre, device preset and strength to the EQ service.
+  - Precedence: manual change this session, then the device setting, then the default. A device with its own Sound setting ends a manual override when it connects.
+  - Stored under `device_profiles`. `device_headphone_choices` is unchanged.
+  - Preset rename and delete follow through. Route bass and strength writes through the coordinator, never `EqState.setBassBoost` directly.
+- **Listening stats:** `ListeningStats.kt` (pure; counts detected songs, never listening time) and `screens/WeekInSound.kt`.
+  - The share card is captured with a graphics layer and shared via the `FileProvider` (`${applicationId}.fileprovider`, `cache/shared/` only).
+
 ## Release builds
 
 See `RELEASING.md`. Release builds:

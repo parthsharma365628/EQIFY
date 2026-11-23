@@ -21,6 +21,7 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 class EqProcessingService : Service() {
@@ -172,19 +173,25 @@ class EqProcessingService : Service() {
                 combine(
                     repository.outputProtectionMode,
                     repository.forceMono,
-                    EqState.bassBoostLevel,
+                    // Bass and strength are the connected device's effective values (FEATURES_NEXT_PLAN.md §4).
+                    combine(EqState.bassBoostLevel,
+                        DeviceSoundCoordinator.state.map { it.effective.genreStrength }.distinctUntilChanged()
+                    ) { b, s -> b to s },
                     repository.smoothEqTransitions,
                     HeadphoneDetector.correctionSuppressed
-                ) { l, m, b, smooth, noHp -> AudioSettingsState(l, m, b, smooth, noHp) },
+                ) { l, m, bs, smooth, noHp -> AudioSettingsState(l, m, bs.first, smooth, noHp, bs.second) },
                 combine(
-                    repository.autoGenreDetection,
+                    DeviceSoundCoordinator.state.map { it.effective.autoGenre to it.effective.devicePreset }
+                        .distinctUntilChanged(),
                     EqState.baseToneGains,
                     EqState.tonePresetName,
                     EqState.manualOverrideActive,
                     combine(repository.customPresetGains, repository.genreOverrides) { presets, overrides ->
                         presets to overrides
                     }
-                ) { a, bt, tn, manual, library -> AutoToneState(a, bt, tn, manual, library.first, library.second) }
+                ) { mode, bt, tn, manual, library ->
+                    AutoToneState(mode.first, bt, tn, manual, library.first, library.second, mode.second)
+                }
             ) { t1, t2, t3 ->
                 EqPipe(
                     genre         = t1.genre,
@@ -197,12 +204,14 @@ class EqProcessingService : Service() {
                     bassBoost     = t2.bassBoost,
                     smoothTransitions = t2.smoothTransitions,
                     correctionSuppressed = t2.correctionSuppressed,
+                    genreStrength = t2.genreStrength,
                     autoGenre     = t3.autoGenre,
                     baseToneGains = t3.baseToneGains,
                     toneName      = t3.toneName,
                     manualOverride = t3.manualOverride,
                     customPresets = t3.customPresets,
-                    genreOverrides = t3.genreOverrides
+                    genreOverrides = t3.genreOverrides,
+                    devicePreset  = t3.devicePreset
                 )
             }.collectLatest { pipe ->
                 val previous = lastAutoSnapshot
@@ -283,6 +292,11 @@ class EqProcessingService : Service() {
                 val tonePart: FloatArray = when {
                     pipe.manualOverride ->
                         pipe.baseToneGains.copyOf()
+                    // This device always uses a preset: user preset, customised built-in, built-in, else Flat.
+                    pipe.devicePreset != null ->
+                        pipe.customPresets[pipe.devicePreset]?.toFloatArray()
+                            ?: EqProfileManager.effectiveGains(pipe.devicePreset, pipe.genreOverrides)
+                            ?: EqProfileManager.defaultProfiles["Flat"]!!.copyOf()
                     pipe.autoGenre && correctedPreset != null ->
                         pipe.customPresets[correctedPreset]?.toFloatArray()
                             ?: EqProfileManager.defaultProfiles["Flat"]!!.copyOf()
@@ -294,8 +308,12 @@ class EqProcessingService : Service() {
                         pipe.baseToneGains.copyOf()
                 }
 
+                // Genre strength scales only the automatic tone (never a manual curve).
+                // Sliders keep showing the curve itself; only the output is scaled.
+                val appliedTone = if (pipe.manualOverride || !pipe.autoGenre || pipe.devicePreset != null) tonePart
+                    else GenreStrength.apply(tonePart, pipe.genreStrength)
                 var combined = EqProfileManager.combineGains(
-                    tonePart,
+                    appliedTone,
                     hpCorrection,
                     pipe.bassBoost
                 )
@@ -310,6 +328,9 @@ class EqProcessingService : Service() {
 
                 val displayName = when {
                     pipe.manualOverride -> pipe.toneName.ifBlank { "Custom" }
+                    pipe.devicePreset != null ->
+                        if (pipe.customPresets.containsKey(pipe.devicePreset) ||
+                            EqProfileManager.defaultProfiles.containsKey(pipe.devicePreset)) pipe.devicePreset else "Flat"
                     pipe.autoGenre && correctedPreset != null ->
                         if (pipe.customPresets.containsKey(correctedPreset)) correctedPreset else "Flat"
                     pipe.autoGenre && pipe.genre.isNotBlank() ->
@@ -402,7 +423,10 @@ class EqProcessingService : Service() {
         val customPresets: Map<String, List<Float>> = emptyMap(),
         /** User versions of built-in curves (FEATURE_CUSTOM_GENRE_CURVES.md). */
         val genreOverrides: Map<String, List<Float>> = emptyMap(),
-        val correctionSuppressed: Boolean = false
+        val correctionSuppressed: Boolean = false,
+        val genreStrength: Float = GenreStrength.DEFAULT,
+        /** The connected device always uses this preset (FEATURES_NEXT_PLAN.md §4). */
+        val devicePreset: String? = null
     )
 
     private data class SourceState(
@@ -419,7 +443,8 @@ class EqProcessingService : Service() {
         val toneName: String,
         val manualOverride: Boolean,
         val customPresets: Map<String, List<Float>>,
-        val genreOverrides: Map<String, List<Float>>
+        val genreOverrides: Map<String, List<Float>>,
+        val devicePreset: String?
     )
 
     private data class AudioSettingsState(
@@ -428,7 +453,8 @@ class EqProcessingService : Service() {
         val bassBoost: Float,
         val smoothTransitions: Boolean,
         /** Phone speaker / "Not headphones" device: apply no headphone correction. */
-        val correctionSuppressed: Boolean
+        val correctionSuppressed: Boolean,
+        val genreStrength: Float
     )
 
     private data class AutoSnapshot(
@@ -445,6 +471,8 @@ class EqProcessingService : Service() {
         val mono: Boolean,
         val outputProtectionMode: OutputProtectionMode,
         val smoothTransitions: Boolean,
+        val genreStrength: Float,
+        val devicePreset: String?,
         val outputGains: FloatArray
     ) {
         fun requiresSnap(pipe: EqPipe): Boolean =
@@ -452,12 +480,13 @@ class EqProcessingService : Service() {
                 bassBoost != pipe.bassBoost || mono != pipe.mono ||
                 outputProtectionMode != pipe.outputProtectionMode ||
                 smoothTransitions != pipe.smoothTransitions ||
-                autoGenre != pipe.autoGenre ||
+                autoGenre != pipe.autoGenre || devicePreset != pipe.devicePreset ||
                 toneName != pipe.toneName || !baseToneGains.contentEquals(pipe.baseToneGains)
 
         fun canRampTo(pipe: EqPipe, correction: FloatArray, output: FloatArray): Boolean =
             !requiresSnap(pipe) && !outputGains.contentEquals(output) &&
                 (genre != pipe.genre || correctionSelection != pipe.correctionSelection ||
+                    genreStrength != pipe.genreStrength ||
                     !headphoneCorrection.contentEquals(correction))
 
         companion object {
@@ -466,7 +495,7 @@ class EqProcessingService : Service() {
                 pipe.baseToneGains.copyOf(), pipe.toneName, pipe.autoGenre,
                 pipe.manualOverride, pipe.enabled, pipe.bypassed, pipe.bassBoost,
                 pipe.mono, pipe.outputProtectionMode, pipe.smoothTransitions,
-                output.copyOf()
+                pipe.genreStrength, pipe.devicePreset, output.copyOf()
             )
         }
     }

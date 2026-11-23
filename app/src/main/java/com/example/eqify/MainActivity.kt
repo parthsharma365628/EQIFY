@@ -134,6 +134,11 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        (application as EqifyApplication).checkForUpdatesIfDue()
+    }
+
     // singleTask: a link or share while EQify is running arrives here.
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)

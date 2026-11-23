@@ -30,6 +30,17 @@ class EqifyApplication : Application() {
         registerGlobalReceivers()
         restorePersistedState()
         genreCoordinator
+        DeviceSoundCoordinator.start(repository)
+        appScope.launch { UpdateChecker.restore(repository) }
+        checkForUpdatesIfDue()
+    }
+
+    /** Called at start and whenever the app returns to the foreground; throttled to once a day. */
+    fun checkForUpdatesIfDue() {
+        appScope.launch {
+            try { UpdateChecker.checkIfDue(repository) } catch (e: kotlinx.coroutines.CancellationException) { throw e }
+            catch (e: Exception) { Log.w("EqifyApplication", "Update check skipped: ${e.message}") }
+        }
     }
 
     /**

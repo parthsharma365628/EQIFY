@@ -15,6 +15,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -60,12 +61,18 @@ fun HomeScreen(
     val detectionPrompt      by HeadphoneDetector.prompt.collectAsState()
     val testToneMessage      by viewModel.testToneMessage.collectAsState()
     val genreMix             by viewModel.genreMix.collectAsState()
+    val weekStats            by viewModel.weekStats.collectAsState()
     val recentTracks         by viewModel.recentTracks.collectAsState()
     val correctionMessage    by viewModel.correctionMessage.collectAsState()
     var showRecent by remember { mutableStateOf(false) }
     var showMix by remember { mutableStateOf(false) }
     var correctionTarget by remember { mutableStateOf<Pair<String, String>?>(null) }
     val customPresets by viewModel.customPresetNames.collectAsState()
+    val updateBanner by viewModel.updateBanner.collectAsState()
+    val deviceSound by viewModel.deviceSound.collectAsState()
+    val manualOverride by EqState.manualOverrideActive.collectAsState()
+    val effective = deviceSound.effective
+    val context = androidx.compose.ui.platform.LocalContext.current
 
     correctionTarget?.let { (title, artist) ->
         GenreCorrectionSheet(title, artist, viewModel.correctionGenres, customPresets,
@@ -73,7 +80,7 @@ fun HomeScreen(
             onDismiss = { correctionTarget = null })
     }
     if (showMix) {
-        GenreMixSheet(genreMix, onRecent = { showMix = false; showRecent = true }, onDismiss = { showMix = false })
+        WeekInSoundSheet(weekStats, onRecent = { showMix = false; showRecent = true }, onDismiss = { showMix = false })
     }
     if (showRecent) {
         RecentTracksSheet(recentTracks, onCorrect = { title, artist ->
@@ -104,6 +111,19 @@ fun HomeScreen(
         correctionMessage?.let {
             StatusBanner(it, StatusKind.ERROR, gutter, onDismiss = viewModel::dismissCorrectionMessage)
         }
+        updateBanner?.let { release ->
+            StatusBanner(
+                "EQify ${release.version} is available.", StatusKind.ACTIVE, gutter,
+                actionLabel = "What's new",
+                onAction = {
+                    runCatching {
+                        context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW,
+                            android.net.Uri.parse(release.url)))
+                    }
+                },
+                onDismiss = { viewModel.dismissUpdate(release.tag) }
+            )
+        }
 
         NowPlayingCard(
             enabled = mediaListenerEnabled,
@@ -128,7 +148,13 @@ fun HomeScreen(
             bassLevel = bassLevel,
             onBassChange = { viewModel.setBassBoost(it) },
             testToneMessage = testToneMessage,
-            onTestEq = viewModel::playEqTestTone
+            onTestEq = viewModel::playEqTestTone,
+            // Only while automatic genre EQ is what's playing; a manual preset ignores it.
+            showGenreStrength = effective.autoGenre && effective.devicePreset == null && !manualOverride && isEqEnabled,
+            genreStrength = effective.genreStrength,
+            onGenreStrengthChange = viewModel::setGenreStrength,
+            strengthScope = deviceSound.label.takeIf { effective.strengthFromDevice },
+            bassScope = deviceSound.label.takeIf { effective.bassFromDevice }
         )
 
         GenreMixRow(genreMix, onClick = { showMix = true })
@@ -345,7 +371,13 @@ private fun SoundCard(
     bassLevel: Float,
     onBassChange: (Float) -> Unit,
     testToneMessage: String?,
-    onTestEq: () -> Unit
+    onTestEq: () -> Unit,
+    showGenreStrength: Boolean = false,
+    genreStrength: Float = GenreStrength.DEFAULT,
+    onGenreStrengthChange: (Float) -> Unit = {},
+    /** Set when the value belongs to the connected device (FEATURES_NEXT_PLAN.md §4). */
+    strengthScope: String? = null,
+    bassScope: String? = null
 ) {
     val c = EqifyTheme.colors
     Column(Modifier.fillMaxWidth()) {
@@ -377,8 +409,12 @@ private fun SoundCard(
         Column(Modifier.padding(horizontal = EqSpacing.l, vertical = EqSpacing.m),
             verticalArrangement = Arrangement.spacedBy(EqSpacing.s)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Bass boost", style = MaterialTheme.typography.titleSmall, color = c.textPrimary,
-                    modifier = Modifier.weight(1f))
+                Column(Modifier.weight(1f)) {
+                    Text("Bass boost", style = MaterialTheme.typography.titleSmall, color = c.textPrimary)
+                    bassScope?.let {
+                        Text("For $it", style = MaterialTheme.typography.bodySmall, color = c.textMuted)
+                    }
+                }
                 Text(if (bassLevel == 0f) "Off" else "+${bassLevel.toInt()} dB sub-bass",
                     style = MaterialTheme.typography.labelMedium.condensed().tabular(),
                     color = if (bassLevel > 0f) c.accent else c.textMuted)
@@ -392,6 +428,10 @@ private fun SoundCard(
                 modifier = Modifier.fillMaxWidth()
             )
         }
+        if (showGenreStrength) {
+            HorizontalDivider(color = c.outline, modifier = Modifier.padding(start = EqSpacing.l))
+            GenreStrengthControl(genreStrength, onGenreStrengthChange, strengthScope)
+        }
         TextAction(
             text = testToneMessage ?: "Play test sound",
             onClick = onTestEq,
@@ -400,6 +440,36 @@ private fun SoundCard(
             modifier = Modifier.padding(horizontal = EqSpacing.s)
         )
         HorizontalDivider(color = c.outline)
+    }
+}
+
+/** Drag locally; the value is saved once, when the finger lifts. */
+@Composable
+private fun GenreStrengthControl(value: Float, onChange: (Float) -> Unit, scope: String?) {
+    val c = EqifyTheme.colors
+    var dragging by remember { mutableStateOf<Float?>(null) }
+    val shown = dragging ?: value
+    Column(Modifier.padding(horizontal = EqSpacing.l, vertical = EqSpacing.m),
+        verticalArrangement = Arrangement.spacedBy(EqSpacing.xs)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Genre strength", style = MaterialTheme.typography.titleSmall, color = c.textPrimary)
+                Text(scope?.let { "For $it" } ?: "How strongly genre EQ shapes the sound",
+                    style = MaterialTheme.typography.bodySmall, color = c.textMuted)
+            }
+            Text(GenreStrength.label(shown), style = MaterialTheme.typography.labelMedium.condensed().tabular(),
+                color = if (GenreStrength.normalise(shown) == GenreStrength.DEFAULT) c.textMuted else c.accent)
+        }
+        Slider(
+            value = shown,
+            onValueChange = { dragging = GenreStrength.normalise(it) },
+            onValueChangeFinished = { dragging?.let(onChange); dragging = null },
+            valueRange = GenreStrength.MIN..GenreStrength.MAX,
+            steps = Math.round((GenreStrength.MAX - GenreStrength.MIN) / GenreStrength.STEP) - 1,
+            modifier = Modifier.fillMaxWidth().semantics {
+                contentDescription = "Genre strength ${Math.round(GenreStrength.normalise(shown) * 100)} percent"
+            }
+        )
     }
 }
 
@@ -430,7 +500,7 @@ private fun GenreMixRow(mix: GenreMix, onClick: () -> Unit) {
     val top = mix.items.firstOrNull { !it.genre.equals("Other", ignoreCase = true) }
     val plural = if (mix.total == 1) "" else "s"
     SettingRow(
-        title = "Genre mix this week",
+        title = "Your week in sound",
         subtitle = when {
             mix.total == 0 -> "No tracks detected yet"
             top != null -> "Mostly ${GenreChoice.label(top.genre)}, ${top.percent}% of ${mix.total} detected track$plural"
@@ -460,38 +530,6 @@ private fun GenreMixBar(mix: GenreMix, modifier: Modifier = Modifier) {
 @Composable
 private fun mixColor(index: Int, genre: String) = EqifyTheme.colors.let { c ->
     if (genre.equals("Other", ignoreCase = true)) c.textFaint else c.chart[index % c.chart.size]
-}
-
-@Composable
-private fun GenreMixSheet(mix: GenreMix, onRecent: () -> Unit, onDismiss: () -> Unit) {
-    val c = EqifyTheme.colors
-    val plural = if (mix.total == 1) "" else "s"
-    EqSheet(
-        title = "Genre mix this week",
-        subtitle = "${mix.total} detected track$plural in the past 7 days. This counts tracks, not listening time.",
-        onDismiss = onDismiss,
-        actions = { TonalButton("Recent tracks", onRecent) }
-    ) {
-        if (mix.total == 0) {
-            EmptyState(EqIcons.Music, "No tracks detected yet", body = "Turn on song detection to start.")
-        } else {
-            GenreMixBar(mix, Modifier.fillMaxWidth())
-            Column {
-                mix.items.forEachIndexed { i, item ->
-                    Row(Modifier.fillMaxWidth().padding(vertical = EqSpacing.xs), verticalAlignment = Alignment.CenterVertically) {
-                        Box(Modifier.size(10.dp).clip(PillShape).background(mixColor(i, item.genre)))
-                        Spacer(Modifier.width(EqSpacing.s))
-                        Text(GenreChoice.label(item.genre), style = MaterialTheme.typography.bodyMedium, color = c.textPrimary,
-                            modifier = Modifier.weight(1f))
-                        ValueReadout(item.percent.toFloat(), "%", decimals = 0)
-                        Text(" (${item.count})", style = MaterialTheme.typography.labelMedium.tabular(), color = c.textMuted)
-                    }
-                }
-            }
-        }
-        Text("Only tracks detected while song detection and auto-genre were on are counted.",
-            style = MaterialTheme.typography.bodySmall, color = c.textMuted)
-    }
 }
 
 // ── Sheets ────────────────────────────────────────────────────────────

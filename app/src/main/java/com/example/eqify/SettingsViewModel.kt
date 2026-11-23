@@ -95,6 +95,20 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     fun dismissGenreCurvesMessage() { _genreCurvesMessage.value = null }
 
+    // ── Updates (FEATURES_NEXT_PLAN.md §1) ────────────────────────────
+
+    val autoUpdateCheck = repository.autoUpdateCheck
+    val updateStatus = UpdateChecker.status
+    val latestRelease = UpdateChecker.latest
+
+    fun setAutoUpdateCheck(enabled: Boolean) {
+        viewModelScope.launch { repository.setAutoUpdateCheck(enabled) }
+    }
+
+    fun checkForUpdatesNow() {
+        viewModelScope.launch { UpdateChecker.checkNow(repository) }
+    }
+
     fun clearGenreHistory() {
         viewModelScope.launch {
             try {

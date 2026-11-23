@@ -198,6 +198,12 @@ class GenreHistoryRepository(context: Context) {
             GenreHistoryMath.recent(rows, corrections, now)
         }
 
+    /** "Your week in sound" (FEATURES_NEXT_PLAN.md §5). */
+    fun weekStats(): Flow<WeekStats> =
+        combine(dao.observations(0, Long.MAX_VALUE), dao.corrections(), clock()) { rows, corrections, now ->
+            ListeningStats.compute(rows, corrections, now)
+        }
+
     fun mix(): Flow<GenreMix> =
         combine(dao.observations(0, Long.MAX_VALUE), dao.corrections(), clock()) { rows, corrections, now ->
             GenreHistoryMath.mix(rows, corrections, now)
