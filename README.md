@@ -62,6 +62,15 @@ Cloudflare remains a future migration plan.
 Genre corrections, recent tracks, and a seven-day genre mix are stored on-device
 with Room. The mix counts detected track observations, not listening time.
 
+### Try the Orbit prototype
+
+On an Android 9+ device, install the debug build, connect headphones, turn on EQ,
+and select **Balanced** output protection. Leave **Force mono** off and switch
+out of **Original** bypass. Turn on **Settings → Debug → Orbit prototype** and
+play music for at least 30 seconds. The stereo balance sweeps gently right and
+left, then repeats. The effect depends on the playback app and audio route, so
+check for audible motion and confirm that turning Orbit off restores the balance.
+
 Made by Parth Sharma and Shreyansh Mangal.
 
 ## License

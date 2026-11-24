@@ -29,6 +29,7 @@ EQIFY/
 │     │  ├─ MainActivity.kt, EqifyApplication.kt
 │     │  ├─ EqEngine.kt, EqProcessingService.kt, EqState.kt
 │     │  ├─ EqGainRamp.kt
+│     │  ├─ OrbitPrototype.kt        # Debug-only stereo motion experiment
 │     │  ├─ EqProcessingSnapshot.kt, EqQuickSettingsTileService.kt
 │     │  ├─ OutputProtectionMode.kt, LimiterDiagnostics.kt
 │     │  ├─ EqProfileManager.kt, UserPreferencesRepository.kt
@@ -147,6 +148,16 @@ Balanced is the default on Android 9+ when the limiter initializes successfully.
 
 Do not change limiter parameters based only on whether the difference is obvious at normal listening levels. An intentionally aggressive threshold was used temporarily to validate that the effect processed real audio, then restored to `-1 dB`.
 
+### Orbit prototype
+
+**Settings → Debug → Orbit prototype** enables a repeating 30-second stereo balance sweep. `OrbitSweep` follows a sine curve and attenuates one channel at a time by up to 6 dB. It starts centered, leans furthest right at 7.5 seconds, returns to center at 15 seconds, and leans furthest left at 22.5 seconds. The effect operates on the stereo mix. The prototype uses Android `DynamicsProcessing` directly.
+
+This experiment requires a debug build on Android 9+, an active Balanced limiter, enabled EQ outside Original bypass, Force mono off, and a headphone-like output recognized by the existing detector. It waits for Android to report active music playback. The detector tracks connected outputs, so the route a specific player uses still needs device verification. Orbit is off by default and the request lives in memory for the service run.
+
+`EqProcessingService` runs the observer independently of both EQ gain paths. `EqEngine` writes Orbit's input gains on the existing Balanced processor with an attachment epoch check. The sweep is timed with a monotonic clock and gain writes are serialized with session and limiter changes. The engine attempts to restore both channels to 0 dB on stop, bypass, device or session change, and control recovery. Keep limiter settings and headphone correction independent of the stereo sweep.
+
+`OrbitSweepTest` checks the 30-second cycle and attenuation bounds. The debug build and all 160 JVM tests passed when the prototype was introduced. Confirm audible motion and neutral reset on a phone with headphones and a real playback app. Check the sweep during rapid toggle, bypass, disconnect, and session changes before expanding it beyond the debug menu.
+
 ### Persistence
 
 `UserPreferencesRepository` is the DataStore boundary. Screens should write settings through their view models rather than directly mutating processing objects. `EqProcessingService` observes persisted settings and mirrors values needed by the immediate manual path into `EqState`.
@@ -250,6 +261,7 @@ Paths are relative to `app/src/main/java/com/example/eqify/`. “Owns” means l
 | Audio effect/session attachment | `EqEngine.kt` | Application-lifetime audio-session receiver; limiter must share session |
 | Composed EQ output | `EqProfileManager.kt`, `EqProcessingService.kt` | Preserve separate automatic and immediate manual paths |
 | EQ transition smoothing | `EqGainRamp.kt`, `EqProcessingService.kt`, `EqEngine.kt`, `UserPreferencesRepository.kt`, `screens/SettingsScreen.kt` | Only genre/correction changes ramp; manual, bypass, protection and controls snap; device listening validation pending |
+| Orbit prototype | `OrbitPrototype.kt`, `EqProcessingService.kt`, `EqEngine.kt`, `screens/SettingsScreen.kt` | Debug only. Shares the Balanced processor, with separate per-channel gains and session cleanup. |
 | Runtime UI state | `EqState.kt`, `NowPlayingState.kt` | In-memory state is not durable across process death |
 | Genre resolution and correction | `GenreCoordinator.kt`, `GenreHistoryRepository.kt`, `Localgenredetector.kt` | Correction first, then local → optional Last.fm → iTunes → EQify backend; application-scoped |
 | Recent tracks / weekly mix | `GenreHistoryRepository.kt`, `screens/HomeScreen.kt` | 14-day distinct recents, 7-day observation counts, 16-day retention; not listening duration |
