@@ -41,6 +41,7 @@ object EqEngine {
     private var currentGains = FloatArray(8)
     private var appliedLevels: IntArray? = null
     private var limiterProtectionRequested = false
+    private var orbitGainsDirty = false
 
     private val _limiterDiagnosticStatus = MutableStateFlow(initialLimiterStatus())
     val limiterDiagnosticStatus = _limiterDiagnosticStatus.asStateFlow()
@@ -141,6 +142,7 @@ object EqEngine {
 
         val processor = dynamicsProcessor ?: return
         try {
+            if (!enabled) resetOrbitGains()
             processor.enabled = enabled
             val effectEnabled = processor.enabled
             publishLimiterStatus(
@@ -265,6 +267,13 @@ object EqEngine {
                 )
             }
             dynamicsProcessor = processor
+            if (BuildConfig.DEBUG) {
+                // If another client took control during a sweep, neutralize the
+                // old gains as soon as we can write to this attachment again.
+                processor.setControlStatusListener { _, hasControl ->
+                    if (hasControl && dynamicsProcessor === processor) resetOrbitGains()
+                }
+            }
             publishLimiterStatus(
                 LimiterDiagnosticStatus(
                     state = LimiterDiagnosticState.ATTACHED,
@@ -379,13 +388,57 @@ object EqEngine {
         }
 
     private fun releaseLimiter() {
-        try {
-            dynamicsProcessor?.enabled = false
-            dynamicsProcessor?.release()
-        } catch (e: Exception) {
-            Log.w(TAG, "Error releasing limiter: ${e.message}")
-        }
+        resetOrbitGains()
+        val processor = dynamicsProcessor ?: return
         dynamicsProcessor = null
+        orbitGainsDirty = false
+        try {
+            if (processor.hasControl()) processor.enabled = false
+        } catch (e: Exception) {
+            Log.w(TAG, "Error disabling limiter: ${e.message}")
+        } finally {
+            try { processor.release() } catch (e: Exception) {
+                Log.w(TAG, "Error releasing limiter: ${e.message}")
+            }
+        }
+    }
+
+    /** Debug Orbit shares the already-enabled Balanced processor on this attachment. */
+    internal fun orbitAttachmentEpoch(): Long? = attachmentEpoch.takeIf {
+        BuildConfig.DEBUG && limiterProtectionRequested && _limiterDiagnosticStatus.value.enabled &&
+            dynamicsProcessor != null
+    }
+
+    internal fun writeOrbitGains(epoch: Long, gains: OrbitSweep.Gains): Boolean {
+        if (epoch != orbitAttachmentEpoch()) return false
+        val processor = dynamicsProcessor ?: return false
+        return try {
+            if (!processor.hasControl()) return false
+            // Either channel may already have changed when a later write fails.
+            orbitGainsDirty = true
+            processor.setInputGainbyChannel(0, gains.leftDb)
+            processor.setInputGainbyChannel(1, gains.rightDb)
+            true
+        } catch (e: Exception) {
+            Log.w(TAG, "Orbit gain write failed", e)
+            false
+        }
+    }
+
+    internal fun resetOrbitGains() {
+        if (!orbitGainsDirty) return
+        val processor = dynamicsProcessor ?: return
+        if (!runCatching { processor.hasControl() }.getOrDefault(false)) return
+        var restored = true
+        for (channel in 0 until LIMITER_CHANNEL_COUNT) {
+            try {
+                processor.setInputGainbyChannel(channel, 0f)
+            } catch (e: Exception) {
+                restored = false
+                Log.w(TAG, "Could not restore Orbit channel $channel", e)
+            }
+        }
+        orbitGainsDirty = !restored
     }
 
     // ── Gain application ──────────────────────────────────────────────

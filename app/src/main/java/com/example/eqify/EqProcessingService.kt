@@ -82,6 +82,12 @@ class EqProcessingService : Service() {
         observeManualAdjustments()  // PATH B: slider driven (instant, no network)
         EqState.setServiceRunning(true)
         observeProcessingSnapshot()
+        if (BuildConfig.DEBUG) {
+            val audio = getSystemService(AudioManager::class.java)
+            if (audio != null) serviceScope.launch {
+                OrbitPrototype.observe(audio, (application as EqifyApplication).repository)
+            }
+        }
         Log.d(TAG, "Service created")
     }
 
@@ -116,6 +122,7 @@ class EqProcessingService : Service() {
         super.onDestroy()
         serviceActive = false
         gainRamp.cancel()
+        if (BuildConfig.DEBUG) OrbitPrototype.stop()
         if (EqState.isEqEnabled.value && !EqState.isBypassed.value) {
             lastAutoSnapshot?.let { EqEngine.applyGains(it.outputGains) }
         }

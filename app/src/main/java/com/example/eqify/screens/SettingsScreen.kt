@@ -416,6 +416,21 @@ fun SettingsScreen(
 
             if (vm.isDebugBuild) {
                 Group("Debug") {
+                    val orbitRequested by OrbitPrototype.requested.collectAsState()
+                    val orbitStatus by OrbitPrototype.status.collectAsState()
+                    SwitchRow(
+                        title = "Orbit prototype",
+                        checked = orbitRequested,
+                        onCheckedChange = OrbitPrototype::request,
+                        subtitle = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                            orbitStatus.message
+                        } else {
+                            "Orbit requires Android 9 or later."
+                        },
+                        icon = EqIcons.GraphicEq,
+                        enabled = Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
+                    )
+                    RowDivider()
                     SettingRow(
                         title = "Send test error",
                         subtitle = crashReportMessage ?: "Sends a handled test event to Sentry",
