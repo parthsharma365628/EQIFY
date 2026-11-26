@@ -1,6 +1,6 @@
 # Feature Plan: Genre Correction, Recent Tracks, and Weekly Insights
 
-Status: implemented locally in the Android app (2026-10-11). Debug Kotlin compilation and JVM unit tests pass; device validation remains pending. Do not treat the checklist below as proof of manual tests that have not run.
+Status: implemented locally in the Android app (2026-10-11) and shipped since 0.1.0-beta. Builds and JVM unit tests pass; device validation remains pending. Since 0.2.0 the weekly mix is shown in the "Your week in sound" sheet (`ListeningStats.kt`, `screens/WeekInSound.kt`; `FEATURES_NEXT_PLAN.md` §5), which uses the same observations. Do not treat the checklist below as proof of manual tests that have not run.
 
 This document supersedes the deleted `FEATURE_GENRE_LISTENING_INSIGHTS.md`.
 Implementation uses `GenreCoordinator.kt` (application-owned resolver),

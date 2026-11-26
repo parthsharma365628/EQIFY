@@ -4,7 +4,7 @@ This file gives AI coding assistants durable context for working in the EQify re
 
 ## What this is
 
-EQify is an Android equalizer that combines genre profiles, headphone-specific AutoEQ corrections, bass boost, and manual EQ adjustments. The Android client is written in Kotlin with Jetpack Compose. The app downloads headphone data from GitHub Pages; a small Node.js/Express backend retains headphone routes for tooling and provides the last step of the client's genre-detection fallback chain. Shared backend tooling converts the AutoEQ dataset into EQify's eight logical frequency bands.
+EQify is an Android equalizer that combines genre profiles, headphone-specific AutoEQ corrections, bass boost, and manual EQ adjustments. The Android client is written in Kotlin with Jetpack Compose. The app downloads headphone data from GitHub Pages; a small Node.js/Express backend retains headphone routes for tooling and provides the last step of the client's genre-detection fallback chain. Release builds call it only when an https `EQIFY_BASE_URL` is set, and the published betas set none. A Wear OS remote lives in the `wear/` module. Shared backend tooling converts the AutoEQ dataset into EQify's eight logical frequency bands.
 
 The Android app supports API 26 and newer. `DynamicsProcessing.Limiter` is only available from API 28 (Android 9), so older or incompatible devices must use the Safe output-protection fallback.
 
@@ -16,37 +16,47 @@ or Gradle-generated file is shown):
 ```text
 EQIFY/
 ├─ AI.md                         # Start here for architecture and guardrails
-├─ FEATURE_GENRE_INSIGHTS_AND_CORRECTION.md # Deferred, source-checked feature plan
+├─ EQify_Android_PRD_v2.md       # Product requirements and feature status (v3.0)
+├─ FEATURES_NEXT_PLAN.md, FEATURES_BATCH{2,3,4}_PLAN.md # Plans for 0.2–0.5, with correction logs
+├─ FEATURE_*.md                  # Earlier feature plans (genre insights, import, sharing, …)
 ├─ GITHUB_PAGES_AUTOEQ.md        # Static export checkpoint and publishing steps
 ├─ CLOUDFLARE_AUTOEQ_MIGRATION.md # Deferred Worker + D1 migration plan
-├─ README.md                     # Human-facing project overview
+├─ UI_REDESIGN.md, DESIGN_REVIEW.md # Design decisions
+├─ README.md, PRIVACY.md, RELEASING.md, LICENSE
 ├─ settings.gradle.kts, build.gradle.kts, gradle/, gradlew.bat
 ├─ app/
-│  ├─ build.gradle.kts            # Android SDK, Compose, dependencies, BASE_URL
+│  ├─ build.gradle.kts            # Android SDK, Compose, dependencies, BASE_URL, signing
 │  └─ src/
-│     ├─ main/AndroidManifest.xml # Activity, foreground service, tile, permissions
+│     ├─ main/AndroidManifest.xml # Activities, service, tiles, widget, receivers, permissions
+│     ├─ main/res/xml/            # shortcuts, widget info, file provider paths
+│     ├─ main/java/com/example/eqify/ # Only MediaListenerService and EqQuickSettingsTileService (see "Package name")
 │     ├─ main/java/com/liteplane/eqify/
-│     │  ├─ MainActivity.kt, EqifyApplication.kt
-│     │  ├─ EqEngine.kt, EqProcessingService.kt, EqState.kt
-│     │  ├─ EqGainRamp.kt
+│     │  ├─ MainActivity.kt, EqifyApplication.kt, Onboarding.kt
+│     │  ├─ EqEngine.kt, EqProcessingService.kt, EqState.kt, EqGainRamp.kt
 │     │  ├─ OrbitPrototype.kt        # Debug-only stereo motion experiment
-│     │  ├─ EqProcessingSnapshot.kt, EqQuickSettingsTileService.kt
-│     │  ├─ OutputProtectionMode.kt, LimiterDiagnostics.kt
-│     │  ├─ EqProfileManager.kt, UserPreferencesRepository.kt
+│     │  ├─ EqProcessingSnapshot.kt, OutputProtectionMode.kt, LimiterDiagnostics.kt
+│     │  ├─ EqProfileManager.kt, UserPreferencesRepository.kt, GenreCurveOverrides.kt, GenreStrength.kt
+│     │  ├─ DeviceProfiles.kt, DeviceSoundCoordinator.kt, SoundLayers.kt
+│     │  ├─ VolumeBass.kt, VolumeFeatures.kt (cap, loudness), SleepTimer.kt (+ automation commands)
+│     │  ├─ Batch4Logic.kt (level match, balance, favourites, change log, safe listening, parametric import, spectrum)
+│     │  ├─ Batch4Android.kt (status hub, safe-listening alerts, Bass and Sleep tiles)
+│     │  ├─ BackupCodec.kt, NotificationControls.kt, ExternalControls.kt (shortcuts, Tasker)
+│     │  ├─ EqifyWidget.kt, WearBridge.kt, UpdateChecker.kt, ListeningStats.kt
 │     │  ├─ EqifyApi.kt, HeadphoneDataRepository.kt, HeadphoneEqDiskCache.kt
 │     │  ├─ GraphicEqImporter.kt, CustomEqProfileRepository.kt, HeadphoneCorrectionSelection.kt
 │     │  ├─ EqProfileCodec.kt, PresetNameRules.kt, BoundedTextReader.kt
 │     │  ├─ ProfileQrCode.kt, ProfileShareIo.kt, ProfileQrScanner.kt, PendingProfileImport.kt
-│     │  ├─ CrashReporting.kt, CrashScrubber.kt
-│     │  ├─ MediaListenerService.kt, NowPlayingState.kt
-│     │  ├─ GenreCoordinator.kt, GenreHistoryRepository.kt
-│     │  ├─ HeadphoneDetector.kt, HeadphoneMatcher.kt, DeviceHeadphoneMemory.kt, Localgenredetector.kt
-│     │  ├─ HomeViewModel.kt, SettingsViewModel.kt, EqTestTonePlayer.kt
-│     │  ├─ screens/{HomeScreen,EqScreen,HeadphonesScreen,SettingsScreen,AppearanceSettings}.kt
+│     │  ├─ CrashReporting.kt, CrashScrubber.kt, NotificationAccessInfo.kt, NowPlayingState.kt
+│     │  ├─ GenreCoordinator.kt, GenreHistoryRepository.kt, GenreChoice.kt, Localgenredetector.kt
+│     │  ├─ HeadphoneDetector.kt, HeadphoneMatcher.kt, DeviceHeadphoneMemory.kt
+│     │  ├─ HomeViewModel.kt, SettingsViewModel.kt, EqTestTonePlayer.kt (+ ToneGenerator)
+│     │  ├─ screens/{Home,Eq,Headphones,Settings}Screen.kt, AppearanceSettings, DeviceSettings,
+│     │  │   WeekInSound, HomeTools (sleep, test sound, changes), SpectrumSheet
 │     │  ├─ ui/theme/{Theme,Palette,ThemeSettings,Type,Dimens,Contrast}.kt
-│     │  └─ ui/components/{EqIcons,Containers,Controls,ToneCurve,Overlays,Motion,ComponentPreviews}.kt
-│     ├─ test/java/com/liteplane/eqify/ # JVM unit tests
+│     │  └─ ui/components/{EqIcons,Containers,Controls,ToneCurve,LayeredCurve,Overlays,Motion,ComponentPreviews}.kt
+│     ├─ test/java/com/liteplane/eqify/ # JVM unit tests (226)
 │     └─ androidTest/java/com/liteplane/eqify/ # Device test
+├─ wear/                          # Wear OS remote: WearMainActivity.kt (+ WearProtocol)
 └─ eqify-backend/
    ├─ index.js                    # Express API and live dataset scanner
    ├─ lib/autoeq-converter.js     # Shared pure parser and 8-band formulas
@@ -62,6 +72,7 @@ every clone. In particular, GitHub does not contain `autoeq-results/` or
 `generated/`.
 
 - `app/` - Android application.
+- `wear/` - Wear OS remote; same application ID and signing key as `app/`.
 - `app/src/main/java/com/liteplane/eqify/` - state, audio engine, services, API clients, persistence, and view models.
 - `app/src/main/java/com/liteplane/eqify/screens/` - Jetpack Compose screens.
 - `app/src/main/java/com/liteplane/eqify/ui/theme/` - Compose theme tokens.
@@ -70,7 +81,8 @@ every clone. In particular, GitHub does not contain `autoeq-results/` or
 - `FEATURE_GENRE_INSIGHTS_AND_CORRECTION.md` - implemented local correction/history/mix semantics and device-validation checklist.
 - `CLOUDFLARE_AUTOEQ_MIGRATION.md` - deferred, step-by-step plan for converting AutoEQ data and moving the API to Cloudflare Workers + D1.
 - `GITHUB_PAGES_AUTOEQ.md` - offline eight-band export format, Pages deployment, and Android static-data integration.
-- `EQify_PRD.docx` - product requirements reference when present. Read it as requirements only and do not modify it.
+- `EQify_Android_PRD_v2.md` - current product requirements and feature status (v3.0).
+- `EQify_PRD.docx` - the original v1.0 PRD, when present. Read it as requirements only and do not modify it.
 
 ## Running
 

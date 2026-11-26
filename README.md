@@ -1,14 +1,21 @@
 # EQify
 
 Android equalizer combining automatic genre tone profiles, headphone-specific
-AutoEQ correction, bass boost, manual eight-band control, and output protection.
-The client uses Kotlin and Jetpack Compose; the companion backend uses
-Node.js/Express.
+AutoEQ correction, bass boost, manual eight-band control, and output protection,
+plus per-device sound, loudness compensation, safe-listening reminders, a sleep
+timer, a widget and a Wear OS remote. The client uses Kotlin and Jetpack Compose
+(`app/`, and `wear/` for the watch); the companion backend uses Node.js/Express.
+
+For what's built and what's next, see the PRD,
+[EQify_Android_PRD_v2.md](EQify_Android_PRD_v2.md) (v3.0).
 
 ## Beta
 
-EQify is in public beta (0.1.0-beta). Install the APK from the GitHub Releases
-page; Android will ask you to allow installs from your browser or file manager.
+EQify is in public beta (latest: 0.5.0-beta). Builds are published on the
+public [eqify-releases](https://github.com/parthsharma365628/eqify-releases)
+repository. Install with [Obtainium](https://github.com/ImranR98/Obtainium) for
+automatic updates, or download the APK; Android will ask you to allow installs
+from your browser or file manager.
 Send bugs and ideas from **Settings → Send feedback**. See
 [PRIVACY.md](PRIVACY.md) for what data leaves the phone, and
 [RELEASING.md](RELEASING.md) for building a signed release.
@@ -16,8 +23,10 @@ Send bugs and ideas from **Settings → Send feedback**. See
 ### Installing the beta
 
 1. Uninstall any older EQify build first, so two equalizers don't compete.
-2. Download the APK from Releases and open it. Allow "Install unknown apps"
-   for your browser or file manager when Android asks.
+2. Download `EQify-<version>.apk` from Releases and open it. Allow "Install
+   unknown apps" for your browser or file manager when Android asks. The
+   optional watch app, `EQify-Wear-<version>.apk`, is installed on the watch
+   with adb (see the releases README).
 3. **Play Protect warning.** EQify isn't on the Play Store yet, so Play
    Protect may say it's unsafe or ask you to scan it. Tap **More details**,
    then **Install anyway**. You don't need to turn Play Protect off.
@@ -47,7 +56,8 @@ npm.cmd start
 
 The default Android backend URL, `http://10.0.2.2:3000/`, is for an emulator
 and debug builds only; release builds use the backend only when
-`EQIFY_BASE_URL` is an https URL.
+`EQIFY_BASE_URL` is an https URL. No such URL is configured for the published
+betas, so their genre lookup is on-device, Last.fm (optional) and iTunes.
 A physical device needs a reachable server URL configured through the
 `EQIFY_BASE_URL` Gradle property. The large AutoEQ source dataset, generated
 exports, build output, IDE state, and secrets must remain uncommitted.
@@ -61,6 +71,19 @@ Cloudflare remains a future migration plan.
 
 Genre corrections, recent tracks, and a seven-day genre mix are stored on-device
 with Room. The mix counts detected track observations, not listening time.
+
+### Documents
+
+- [AI.md](AI.md): architecture, guardrails and the rules that keep features from
+  breaking each other.
+- [EQify_Android_PRD_v2.md](EQify_Android_PRD_v2.md): product requirements and
+  feature status (v3.0).
+- Feature plans by release: [FEATURES_NEXT_PLAN.md](FEATURES_NEXT_PLAN.md)
+  (0.2), [FEATURES_BATCH2_PLAN.md](FEATURES_BATCH2_PLAN.md) (0.3),
+  [FEATURES_BATCH3_PLAN.md](FEATURES_BATCH3_PLAN.md) (0.4),
+  [FEATURES_BATCH4_PLAN.md](FEATURES_BATCH4_PLAN.md) (0.5), plus the
+  `FEATURE_*.md` files for earlier features.
+- [RELEASING.md](RELEASING.md) and [PRIVACY.md](PRIVACY.md).
 
 ### Try the Orbit prototype
 

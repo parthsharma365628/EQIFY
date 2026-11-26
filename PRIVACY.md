@@ -1,6 +1,6 @@
 # EQify privacy policy
 
-_Last updated: 23 November 2026. Applies to EQify for Android, version 0.1.0-beta and later._
+_Last updated: 27 November 2026. Applies to EQify for Android, version 0.1.0-beta and later, and the optional Wear OS app._
 
 EQify is an equalizer. It works on your phone and has no accounts. This page says what leaves your phone, and why.
 
@@ -26,7 +26,7 @@ These services have their own privacy policies: Apple, Last.fm, GitHub and Sentr
 
 ## What is stored on your phone only
 
-Your presets and customised genre curves, settings, genre corrections, recent tracks and the weekly genre mix. EQify also keeps imported GraphicEQ files and downloaded headphone corrections there. You can clear these in **Settings → Data & privacy**, or remove all of them by uninstalling the app.
+Your presets, favourites and customised genre curves, settings, device settings and volumes, genre corrections, recent tracks, the weekly genre mix and your safe-listening estimate. EQify also keeps imported GraphicEQ and ParametricEQ corrections and downloaded headphone corrections there. The "What changed" list is kept in memory only and is gone when EQify stops. You can clear these in **Settings → Data & privacy**, or remove all of them by uninstalling the app.
 
 **Live spectrum.** When you open Home → Live spectrum, EQify asks for the "Record audio" permission. Android requires it to read an app's own audio output. EQify reads only what is playing, only while that screen is open. It never uses the microphone, and never saves or sends audio.
 

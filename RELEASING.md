@@ -33,11 +33,21 @@ Without the signing properties, `assembleRelease` still works but produces `app-
    - Bump `versionCode`/`versionName` in `wear/build.gradle.kts` too.
    - Both must be signed with the same key: check with `apksigner verify --print-certs` on each.
 4. **Install the release APK on a real phone and smoke-test it.** Release builds are shrunk by R8 (no renaming), so check:
-   - headphone search and download
+   - headphone search and download, and song detection after the update
    - genre detection through iTunes
    - sharing and importing a profile, including the QR code
    - the crash-report switch
-5. Upload the APK to a GitHub Release with short notes on what changed.
+   - backup, then restore
+   - the volume features together (bass easing, loudness, volume limit) while pressing volume up and down
+   - a sleep-timer fade
+   - the widget, both new tiles and the app-icon shortcuts
+   - rotating with a sheet open
+   - the watch app, if it changed
+5. Publish on [eqify-releases](https://github.com/parthsharma365628/eqify-releases):
+   - Create a tag such as `v0.5.0-beta`, marked as a pre-release.
+   - Attach `EQify-<version>.apk` (a renamed `app-release.apk`) and, when it changed, `EQify-Wear-<version>.apk`.
+   - Paste the notes from `release-notes/v<version>.md` in that repository.
+   - Obtainium users and the in-app update check pick it up from there.
 
 ## Release vs debug
 
@@ -48,4 +58,4 @@ Without the signing properties, `assembleRelease` still works but produces `app-
 | R8 shrinking | Off | On (`-dontobfuscate`, so Sentry traces stay readable) |
 | Debug menu in Settings | Shown | Hidden |
 
-The app ID `com.liteplane.eqify` is permanent once published. Before the first public release, change it in `app/build.gradle.kts` if you want a different one. The debug build uses the same ID, so it installs as a new app next to any old `com.liteplane.eqify` install.
+The app ID `com.liteplane.eqify` is published and now permanent: changing it would make every update a separate app. The debug build uses the same ID but a different signing key, so it can't be installed over a release build (or the other way round): uninstall first, which deletes the app's data unless you back it up. Two manifest components keep `com.example.eqify` class names on purpose; see "Package name" in `AI.md`.

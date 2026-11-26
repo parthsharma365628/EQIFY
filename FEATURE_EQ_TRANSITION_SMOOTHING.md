@@ -1,11 +1,12 @@
 # Feature Plan: EQ Transition Smoothing (gain ramp on automatic changes)
 
-Status: implemented in source on 2026-10-17; Android compilation and device
-listening validation pending. The user's implementation request superseded the
+Status: implemented in source on 2026-10-17 and shipped since 0.1.0-beta.
+Builds and `EqGainRampTest` pass; device listening validation is still pending. The user's implementation request superseded the
 Phase 0 listening gate; do not claim an audible benefit until tested.
 
-This is the "Track-transition EQ crossfade" P2/M candidate in
-`EQify_Android_PRD_v2.md` (Section 6.3). The product name
+This was the "Track-transition EQ crossfade" P2/M candidate in
+`EQify_Android_PRD_v2.md` v2.1 (Section 6.3); v3.0 lists it in Section 5.1 as
+"Smooth EQ transitions". The product name
 "crossfade" is misleading: nothing about the audio signal is crossfaded. The
 feature ramps the **applied EQ gains** from the previous curve to the new curve
 over a short time instead of jumping. This document uses "transition smoothing"

@@ -1,8 +1,11 @@
 # Feature Plan: Custom AutoEQ Import (autoeq.app / Equalizer APO files)
 
-Status: GraphicEQ Path 1 (file or pasted 10-band table) implemented in source
-(2026-10-11); Android build and manual validation pending. ParametricEQ Path 2 remains unimplemented pending
-its exact-vs-heuristic and offline-vs-backend decisions.
+Status: **both paths implemented in source.** GraphicEQ Path 1 (file or pasted
+10-band table) since 0.1 (2026-10-11). ParametricEQ Path 2 since 0.5.0-beta
+(2026-11-27): offline in Kotlin, exact RBJ biquad responses, each band the mean
+response over its log-frequency span (`ParametricEqImporter` in `Batch4Logic.kt`,
+see `FEATURES_BATCH4_PLAN.md` §P). Builds and JVM tests pass; device validation
+pending.
 
 Implementation: `GraphicEqImporter.kt` parses/resamples; `CustomEqProfileRepository.kt`
 stores local profiles; `HeadphoneCorrectionSelection.kt` and
@@ -539,3 +542,4 @@ should append here rather than silently rewriting sections above.
 | 2026-10-11 | Codex | Re-checked current source; corrected Room presence, GraphicEQ spacing/preamp scope, JSON ID wording, bounded file reading, service-owned correction resolution/status, and Bluetooth selection ambiguity. | Avoid partial imports and a custom selection being overwritten by the current name-based service pipeline. |
 | 2026-10-11 | Codex | Recorded Path 1 implementation locations and the chosen Bluetooth behavior; left Path 2 pending. | Keep this plan aligned with source without implying unrun Android validation. |
 | 2026-10-11 | Codex | Added ten-row pasted GraphicEQ input as an alternative to file import; reused eight-band conversion and local storage. | autoeq.app may show copyable values without a downloadable file. |
+| 2026-11-27 | Claude | Path 2 implemented in 0.5.0-beta: Kotlin, offline, exact biquad response averaged per band; preamp ignored (protection handles headroom); same import menu detects the format. | Resolves both open Path 2 decisions. |
