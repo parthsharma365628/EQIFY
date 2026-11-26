@@ -1,4 +1,9 @@
+// Kept at its original class name on purpose: Android ties a user's grant to the full
+// class name (notification access for the listener, the added tile for the QS tile).
+// Renaming it would silently undo that for people who installed an earlier build.
 package com.example.eqify
+
+import com.liteplane.eqify.*
 
 import android.app.Notification
 import android.service.notification.NotificationListenerService

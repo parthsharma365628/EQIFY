@@ -22,7 +22,7 @@ EQIFY/
 ├─ CLOUDFLARE_AUTOEQ_MIGRATION.md  # This deferred D1/Worker plan
 ├─ app/
 │  ├─ build.gradle.kts              # EQIFY_BASE_URL (genre) and EQIFY_HEADPHONE_DATA_BASE_URL (Pages)
-│  └─ src/main/java/com/example/eqify/
+│  └─ src/main/java/com/liteplane/eqify/
 │     ├─ EqifyApi.kt                # Pages index/profile plus Last.fm/iTunes/Node genre models
 │     ├─ HeadphoneDataRepository.kt # Cached Pages index, local search, selected-profile fetch
 │     ├─ EqProcessingService.kt     # Compose/apply correction; may download selected Pages profile

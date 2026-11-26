@@ -19,7 +19,7 @@ EQIFY/
 ├─ AI.md                           # Full project architecture and rules
 ├─ CLOUDFLARE_AUTOEQ_MIGRATION.md  # Deferred Worker + D1 alternative
 ├─ GITHUB_PAGES_AUTOEQ.md          # This checkpoint and static-data contract
-├─ app/src/main/java/com/example/eqify/
+├─ app/src/main/java/com/liteplane/eqify/
 │  ├─ EqifyApi.kt                  # Genre and static Pages Retrofit APIs/models
 │  ├─ HeadphoneDataRepository.kt   # Cached local search and profile validation
 │  ├─ EqProcessingService.kt       # Downloads selected correction, applies EQ

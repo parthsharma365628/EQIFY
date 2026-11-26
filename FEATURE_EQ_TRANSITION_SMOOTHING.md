@@ -81,7 +81,7 @@ Non-goals:
 
 ### Pure interpolator (new file, no Android dependency)
 
-New file `EqGainRamp.kt` in `app/src/main/java/com/example/eqify/`. Keep the
+New file `EqGainRamp.kt` in `app/src/main/java/com/liteplane/eqify/`. Keep the
 interpolator free of Android types and model levels as `IntArray` millibels;
 convert to `Short` only after bounding by the device's level range.
 
@@ -218,7 +218,7 @@ final target; turning it on does not ramp until the next eligible change.
 
 ## Files expected to change
 
-Kotlin paths below are relative to `app/src/main/java/com/example/eqify/`;
+Kotlin paths below are relative to `app/src/main/java/com/liteplane/eqify/`;
 test, Gradle, and documentation paths are repository-relative.
 
 | File | Change |
@@ -228,7 +228,7 @@ test, Gradle, and documentation paths are repository-relative.
 | `EqProcessingService.kt` | Service-owned ramp job and token; classify auto emissions; manual collector cancels ramp before its existing instant write; snap on controls and stop. Preserve `collectLatest` stale check. |
 | `UserPreferencesRepository.kt` | New boolean preference with default `true`. |
 | `SettingsViewModel.kt`, `screens/SettingsScreen.kt` | Toggle and copy. |
-| `app/src/test/java/com/example/eqify/EqGainRampTest.kt` (new) | Pure interpolation/convexity/boundary tests. Add a separately testable coordinator with injected engine/clock if scheduler tests are included. |
+| `app/src/test/java/com/liteplane/eqify/EqGainRampTest.kt` (new) | Pure interpolation/convexity/boundary tests. Add a separately testable coordinator with injected engine/clock if scheduler tests are included. |
 | `gradle/libs.versions.toml`, `app/build.gradle.kts` | Add a test-only `kotlinx-coroutines-test` dependency aligned with the resolved coroutine runtime so the coordinator can be tested with virtual time; JUnit is already present. |
 | `AI.md` | Add a row to "Where to make a change" and `EqGainRamp.kt` to the layout and file reference. |
 | `EQify_Android_PRD_v2.md` | Mark the feature status after implementation. |

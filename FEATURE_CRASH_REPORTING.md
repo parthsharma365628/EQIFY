@@ -24,7 +24,7 @@ pattern), `EqEngine.kt` / `EqProcessingService.kt` / `GenreCoordinator.kt`
 | Privacy | `sendDefaultPii=false`, no user, no screenshots/view hierarchy, no user-interaction breadcrumbs, no performance tracing. `beforeSend`/`beforeBreadcrumb` scrub the current title, artist, selected headphone and Last.fm key, plus URL query strings. | Matches the app's "song data stays local" promise. iTunes URLs contain the title. |
 | Handled errors | Report once per process per category: equalizer attach failure, session-0 fallback failure, gain-apply failure, limiter FAILED (not UNSUPPORTED), genre-history write failure, receiver registration failure. | Problems that never crash but break EQ silently. Once per category avoids flooding the dashboard. Network failures are excluded, because offline is normal. |
 | Debug tools | Settings items in **debug builds only**: "Send test error" (handled event) and "Crash app (test)". | To verify the setup end to end. |
-| Release / env | `release = "com.example.eqify@<versionName>+<versionCode>"`, `environment = BuildConfig.BUILD_TYPE` | Separates debug noise from beta crashes. |
+| Release / env | `release = "com.liteplane.eqify@<versionName>+<versionCode>"`, `environment = BuildConfig.BUILD_TYPE` | Separates debug noise from beta crashes. |
 
 ## Not in scope
 - Mapping-file upload: R8 is off (`isMinifyEnabled = false`), so stack traces are already readable. Add the Sentry Gradle plugin and `SENTRY_AUTH_TOKEN` when minification is turned on.

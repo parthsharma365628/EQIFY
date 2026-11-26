@@ -8,7 +8,7 @@
         android:shortcutShortLabel="@string/shortcut_toggle_short">
         <intent
             android:action="com.liteplane.eqify.shortcut.TOGGLE"
-            android:targetClass="com.example.eqify.ShortcutActivity"
+            android:targetClass="com.liteplane.eqify.ShortcutActivity"
             android:targetPackage="com.liteplane.eqify" />
     </shortcut>
     <shortcut
@@ -18,7 +18,7 @@
         android:shortcutShortLabel="@string/shortcut_bass_short">
         <intent
             android:action="com.liteplane.eqify.shortcut.BASS"
-            android:targetClass="com.example.eqify.ShortcutActivity"
+            android:targetClass="com.liteplane.eqify.ShortcutActivity"
             android:targetPackage="com.liteplane.eqify" />
     </shortcut>
     <shortcut
@@ -28,7 +28,7 @@
         android:shortcutShortLabel="@string/shortcut_sleep_short">
         <intent
             android:action="com.liteplane.eqify.shortcut.SLEEP_30"
-            android:targetClass="com.example.eqify.ShortcutActivity"
+            android:targetClass="com.liteplane.eqify.ShortcutActivity"
             android:targetPackage="com.liteplane.eqify" />
     </shortcut>
 </shortcuts>

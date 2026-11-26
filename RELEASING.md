@@ -48,4 +48,4 @@ Without the signing properties, `assembleRelease` still works but produces `app-
 | R8 shrinking | Off | On (`-dontobfuscate`, so Sentry traces stay readable) |
 | Debug menu in Settings | Shown | Hidden |
 
-The app ID `com.liteplane.eqify` is permanent once published. Before the first public release, change it in `app/build.gradle.kts` if you want a different one. The debug build uses the same ID, so it installs as a new app next to any old `com.example.eqify` install.
+The app ID `com.liteplane.eqify` is permanent once published. Before the first public release, change it in `app/build.gradle.kts` if you want a different one. The debug build uses the same ID, so it installs as a new app next to any old `com.liteplane.eqify` install.

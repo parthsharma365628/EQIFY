@@ -13,7 +13,7 @@ val hasReleaseSigning = listOf(releaseStoreFile, releaseStorePassword, releaseKe
     .all { !it.isNullOrBlank() }
 
 android {
-    namespace = "com.example.eqify.wear"
+    namespace = "com.liteplane.eqify.wear"
     compileSdk {
         version = release(36) {
             minorApiLevel = 1

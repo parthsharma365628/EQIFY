@@ -5,11 +5,11 @@
 
 # Gson maps JSON onto these models by field name (Retrofit responses and the
 # cached headphone index). Keep their fields and constructors.
--keep class com.example.eqify.GenreRequest { *; }
--keep class com.example.eqify.GenreResponse { *; }
--keep class com.example.eqify.StaticHeadphone* { *; }
--keep class com.example.eqify.LastFm* { *; }
--keep class com.example.eqify.Itunes* { *; }
+-keep class com.liteplane.eqify.GenreRequest { *; }
+-keep class com.liteplane.eqify.GenreResponse { *; }
+-keep class com.liteplane.eqify.StaticHeadphone* { *; }
+-keep class com.liteplane.eqify.LastFm* { *; }
+-keep class com.liteplane.eqify.Itunes* { *; }
 
 # Gson generic types.
 -keep class com.google.gson.reflect.TypeToken { *; }
@@ -19,6 +19,6 @@
 -keep,allowobfuscation,allowshrinking interface retrofit2.Call
 -keep,allowobfuscation,allowshrinking class retrofit2.Response
 -keep,allowobfuscation,allowshrinking class kotlin.coroutines.Continuation
--keep interface com.example.eqify.*ApiService { *; }
+-keep interface com.liteplane.eqify.*ApiService { *; }
 -dontwarn javax.annotation.**
 -dontwarn org.codehaus.mojo.animal_sniffer.**

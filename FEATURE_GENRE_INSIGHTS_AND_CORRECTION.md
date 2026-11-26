@@ -42,7 +42,7 @@ Non-goals:
 | `HomeScreen` | `NowPlayingCard` already displays title, artist, genre, source, and confidence. | Current-track correction belongs here. `EqScreen` does not display current-track metadata. |
 | `EqProfileManager` | Contains fixed profile names and maps external genre strings to them. `Flat` and `Bass Boost` are utility profiles, not genres. | Picker choices should come from one genre-only source derived from this manager, excluding utility profiles. |
 | `UserPreferencesRepository` | Uses Preferences DataStore for settings and named preset values. | No Room/SQLDelight dependency exists. Preferences DataStore is not suitable for a queryable append-only event log. |
-| Tests | JVM tests live in `app/src/test/java/com/example/eqify/`. | Put pure normalization/aggregation tests there; persistence tests may need Android/Room test support. |
+| Tests | JVM tests live in `app/src/test/java/com/liteplane/eqify/`. | Put pure normalization/aggregation tests there; persistence tests may need Android/Room test support. |
 
 ### Important lifecycle limitation
 

@@ -25,7 +25,7 @@ EQIFY/
 │  ├─ build.gradle.kts            # Android SDK, Compose, dependencies, BASE_URL
 │  └─ src/
 │     ├─ main/AndroidManifest.xml # Activity, foreground service, tile, permissions
-│     ├─ main/java/com/example/eqify/
+│     ├─ main/java/com/liteplane/eqify/
 │     │  ├─ MainActivity.kt, EqifyApplication.kt
 │     │  ├─ EqEngine.kt, EqProcessingService.kt, EqState.kt
 │     │  ├─ EqGainRamp.kt
@@ -45,8 +45,8 @@ EQIFY/
 │     │  ├─ screens/{HomeScreen,EqScreen,HeadphonesScreen,SettingsScreen,AppearanceSettings}.kt
 │     │  ├─ ui/theme/{Theme,Palette,ThemeSettings,Type,Dimens,Contrast}.kt
 │     │  └─ ui/components/{EqIcons,Containers,Controls,ToneCurve,Overlays,Motion,ComponentPreviews}.kt
-│     ├─ test/java/com/example/eqify/ # JVM unit tests
-│     └─ androidTest/java/com/example/eqify/ # Device test
+│     ├─ test/java/com/liteplane/eqify/ # JVM unit tests
+│     └─ androidTest/java/com/liteplane/eqify/ # Device test
 └─ eqify-backend/
    ├─ index.js                    # Express API and live dataset scanner
    ├─ lib/autoeq-converter.js     # Shared pure parser and 8-band formulas
@@ -62,9 +62,9 @@ every clone. In particular, GitHub does not contain `autoeq-results/` or
 `generated/`.
 
 - `app/` - Android application.
-- `app/src/main/java/com/example/eqify/` - state, audio engine, services, API clients, persistence, and view models.
-- `app/src/main/java/com/example/eqify/screens/` - Jetpack Compose screens.
-- `app/src/main/java/com/example/eqify/ui/theme/` - Compose theme tokens.
+- `app/src/main/java/com/liteplane/eqify/` - state, audio engine, services, API clients, persistence, and view models.
+- `app/src/main/java/com/liteplane/eqify/screens/` - Jetpack Compose screens.
+- `app/src/main/java/com/liteplane/eqify/ui/theme/` - Compose theme tokens.
 - `eqify-backend/` - Express backend and backend tests.
 - `eqify-backend/autoeq-results/` - large external AutoEQ dataset; do not commit it.
 - `FEATURE_GENRE_INSIGHTS_AND_CORRECTION.md` - implemented local correction/history/mix semantics and device-validation checklist.
@@ -189,7 +189,7 @@ Use colour roles from `EqifyTheme.colors` (never hex values or `Color.White` in 
 
 ### Kotlin file reference
 
-Paths are relative to `app/src/main/java/com/example/eqify/`. “Owns” means logic/state in that file, not necessarily durable storage.
+Paths are relative to `app/src/main/java/com/liteplane/eqify/`. “Owns” means logic/state in that file, not necessarily durable storage.
 
 | File (lifecycle) | Purpose / responsibilities | Dependencies and invariants | Modify when |
 | --- | --- | --- | --- |
@@ -375,6 +375,14 @@ and static Pages models.
   - Content is capped at 840 dp.
   - `EqScreen` goes side by side in short landscape windows.
 
+## Package name
+
+- Code lives in `com.liteplane.eqify`, matching the application ID. The Wear app is in `com.liteplane.eqify.wear`.
+- **Two classes stay in `com.example.eqify` on purpose:** `MediaListenerService` and `EqQuickSettingsTileService`, both under `app/src/main/java/com/example/eqify/`.
+  - Android ties notification access and an added quick-settings tile to the full class name.
+  - Moving them would silently undo both for people on an earlier build.
+  - Don't rename them, and don't rename other manifest components that have shipped.
+
 ## 0.5.0 features (FEATURES_BATCH4_PLAN.md)
 
 - **Pure logic** lives in `Batch4Logic.kt`:
@@ -405,7 +413,7 @@ and static Pages models.
 ## Release builds
 
 See `RELEASING.md`. Release builds:
-- use the app ID `com.liteplane.eqify` (the namespace stays `com.example.eqify`)
+- use the app ID `com.liteplane.eqify` (the namespace stays `com.liteplane.eqify`)
 - are signed from `EQIFY_KEYSTORE_*` Gradle properties
 - block cleartext traffic (via the `usesCleartextTraffic` manifest placeholder)
 - call the genre backend only when `EQIFY_BASE_URL` is https (`BuildConfig.GENRE_BACKEND_ENABLED`)

@@ -30,7 +30,7 @@ val sentryDsn = providers.gradleProperty("EQIFY_SENTRY_DSN")
     .also { require(!it.contains('"') && !it.contains('\\')) { "EQIFY_SENTRY_DSN must be a plain URL" } }
 
 android {
-    namespace = "com.example.eqify"
+    namespace = "com.liteplane.eqify"
     compileSdk {
         version = release(36) {
             minorApiLevel = 1
