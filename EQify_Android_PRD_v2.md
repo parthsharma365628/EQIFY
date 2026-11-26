@@ -2,9 +2,9 @@
 
 Automatic Intelligent Equalizer
 
-Product Requirements Document | v3.0, November 2026 | Android-only scope
+Product Requirements Document | v3.1, November 2026 | Android-only scope
 
-> This document supersedes `EQify_PRD.docx` (v1.0, March 2026) **for the Android app only**; that file is kept unchanged. v3.0 reflects the repository at **0.5.0-beta** (versionCode 6, 2026-11-27). Design detail for each feature lives in the feature documents listed in Section 13; where this document and the repository disagree, the repository wins. The file name stays `…_v2.md` so links keep working; v2.1 is in git history.
+> This document supersedes `EQify_PRD.docx` (v1.0, March 2026) **for the Android app only**; that file is kept unchanged. v3.1 reflects the repository at **0.5.0-beta** (versionCode 6, 2026-11-27). Feature status lives in `STATUS.md`, and design detail in the feature documents listed in Section 13. Where this document and the repository disagree, the repository wins. The file name stays `…_v2.md` so links keep working; v2.1 is in git history.
 
 ---
 
@@ -72,85 +72,11 @@ Because the age range includes teenagers, safe-listening reminders (with a sensi
 
 ---
 
-## 5. Feature Status (0.5.0-beta)
+## 5. Feature Status
 
-**Status values**
-- **Device-validated:** run and checked on a real phone.
-- **Built:** in a release build and covered by unit tests, but not yet checked on a device.
-- **Prototype:** debug builds only.
-- **Not started.**
+Feature-by-feature status lives in **[STATUS.md](STATUS.md)**, updated with every release.
 
-"Built" is most of the table. That is the main risk (Section 11).
-
-### 5.1 Core sound
-
-| Feature | Version | Status | Notes |
-|---|---|---|---|
-| Automatic genre detection | 0.1 | Device-validated (earlier path); app-scoped coordinator built | Chain: user correction → local detector → optional Last.fm → iTunes. The Node backend step is **off in release builds** (no `https` URL configured). |
-| Genre source and confidence display | 0.1 | Built | Heuristic confidence, not a probability. |
-| Genre correction, recent tracks | 0.1 | Built | Room-backed; corrections can point at the user's own presets. |
-| Customisable genre curves | 0.1 | Built | Users can edit each built-in genre's curve. |
-| Genre strength | 0.2 | Built | Scales only automatic genre EQ, globally or per device. |
-| AutoEQ headphone correction (6,000+ profiles) | 0.1 | Device-validated | Static JSON on GitHub Pages; catalog cached, profiles downloaded on demand. |
-| Headphone detection (Bluetooth, USB-C, wired) | 0.1 | Built | Remembers the choice per device; no correction on the speaker or "Not headphones" devices. |
-| Custom correction import: GraphicEQ | 0.1 | Built | File or pasted autoeq.app table. |
-| Custom correction import: ParametricEQ | 0.5 | Built | AutoEQ `ParametricEQ.txt`; RBJ biquads; each band takes the mean response over its frequency span. Preamp ignored (protection handles headroom). |
-| Manual 8-band EQ, presets, A/B bypass | 0.1 | Device-validated | |
-| Match loudness (A/B) | 0.5 | Built | EQ lowered by its mean boost while comparing; off when leaving the EQ screen. |
-| Dialogue preset | 0.5 | Built | Built-in, not offered as a genre. |
-| Preset favourites and reorder | 0.5 | Built | Follow renames and deletes; in backups. |
-| Bass boost | 0.1 | Device-validated | Off / +3 / +6 / +9 dB. |
-| Ease bass at high volume | 0.3 | Built | Above 60% volume, bass fades to half at full volume. Off by default. |
-| Loudness compensation | 0.4 | Built | Below 50% volume, adds bass and treble. Off by default. Never overlaps bass easing (tested). |
-| Output protection (Balanced limiter / Safe / Off) | 0.1 | Device-validated | Balanced needs Android 9+. |
-| Smooth EQ transitions | 0.1 | Built | 250 ms ramp on genre and correction changes. |
-| Stereo balance | 0.5 | Built | Needs Balanced protection; otherwise links to Android's own setting. |
-| Per-device sound ("My devices") | 0.2 | Built | Each output can follow genre or use a preset, with its own bass and strength. |
-| Remember volume per device | 0.5 | Built | Off by default; never above the volume limit. |
-| Sound layers graph | 0.2 | Built | Tone, correction, bass and total, with a plain-language summary. |
-| Live spectrum | 0.5 | Built | `Visualizer`; asks for "Record audio" only when opened. Reads EQify's output, never the microphone. |
-| Test sounds | 0.4 | Built | Low/mid/high, left only, right only, 20 Hz–20 kHz sweep. |
-| Haptic slider ticks | 0.5 | Built | |
-
-### 5.2 Listening health
-
-| Feature | Version | Status | Notes |
-|---|---|---|---|
-| Safe-listening reminders | 0.5 | Built | WHO–ITU H.870: 80 dB / 40 h a week (adults) or 75 dB (sensitive), 3 dB exchange rate, rolling 7 days, headphones only. **Estimated** from volume, not measured (Android's own sound-dose data has no app API). Reminders at each 100%. On by default. |
-| Volume limit | 0.4 | Built | 50–90% of media volume. Off by default. |
-| Sleep timer | 0.4 | Built | 15–60 min or end of track; 30 s fade, pause through audio focus, volume restored. |
-
-### 5.3 Controls outside the app
-
-| Feature | Version | Status | Notes |
-|---|---|---|---|
-| Notification controls | 0.3 | Built | Pause/Resume, Bass cycle, Cancel sleep. |
-| Quick-settings tiles | 0.1 / 0.5 | Built | EQ on/off (0.1), Bass and Sleep timer (0.5). |
-| Home screen widget | 0.4 | Built | Status, Pause and Bass. |
-| App-icon shortcuts | 0.4 | Built | Pause, Bass, Sleep in 30 min. |
-| Tasker / automation | 0.4 | Built | Allowlisted broadcast commands. **Off by default.** |
-| Wear OS remote | 0.5 | Built | Separate APK, same ID and signing key; sideloaded. |
-
-### 5.4 Insight, sharing and data
-
-| Feature | Version | Status | Notes |
-|---|---|---|---|
-| Your week in sound | 0.2 | Built | Genres, top artists, time of day, shareable card. Counts detected songs. |
-| "What changed" log | 0.5 | Built | In memory only; no song titles. |
-| Profile sharing (code, file, QR, link) | 0.1 | Partly device-validated | QR scanning via Google's code scanner (no camera permission). |
-| Backup and restore | 0.3 | Built | Replace or Merge, validated before applying, Undo. Never includes history, listening dose, device volumes or the automation switch. |
-
-### 5.5 App, release and quality
-
-| Feature | Version | Status | Notes |
-|---|---|---|---|
-| Onboarding tour | 0.4 | Built | Three pages, then the permission steps; replay from Settings. |
-| Landscape and tablet layout | 0.4 | Built | Navigation rail at 600 dp+; side-by-side EQ in landscape. |
-| Themes | 0.1 | Device-validated | |
-| In-app update check | 0.2 | Built | Daily, against the public releases repo. |
-| Crash reporting (Sentry) | 0.1 | Built | Opt-out, scrubbed. |
-| Signed release builds, R8 | 0.1 | Done | `RELEASING.md`. |
-| Orbit stereo-motion prototype | — | Prototype | Debug only (Shreyansh); a possible step toward spatial audio. |
+At 0.5.0-beta, a handful of 0.1 features are device-validated: AutoEQ correction, manual EQ, bass, output protection and themes. Everything added in 0.2–0.5 is **built but not yet checked on a phone**. That is the main risk (Section 11) and the first roadmap item (Section 10).
 
 ---
 
@@ -324,7 +250,7 @@ Keep the core automatic EQ free, and keep the app free of ads.
 - **Safe-listening research:** the WHO–ITU H.870 summary (who.int) and Android's Sound dose documentation (source.android.com), read 2026-11-27.
 - **Competitor claims:** from v2.1's sources (Wavelet docs and Play listing, Poweramp's product page). Re-check before publishing.
 - **Effort ratings:** S = days, M = 1–2 weeks, L = 2–4 weeks, XL = a month or more, for two people. Estimates, not commitments.
-- **Keeping this current:** update Section 5 with every release, or move it to a `STATUS.md` if it gets out of date again.
+- **Keeping this current:** feature status moved to `STATUS.md` (2026-11-27). Update this document when goals, principles, metrics or the roadmap change.
 - **The original:** `EQify_PRD.docx` stays unmodified (`AI.md`).
 
 ### Change log
@@ -333,4 +259,5 @@ Keep the core automatic EQ free, and keep the app free of ads.
 |---|---|---|
 | v2.0 | 2026-09-25 | Android-only rewrite of the v1.0 PRD. |
 | v2.1 | 2026-10-11 | Pages headphone path validated; genre correction, history and weekly mix built. |
+| v3.1 | 2026-11-27 | Feature status moved to `STATUS.md`; Section 5 now points there. |
 | v3.0 | 2026-11-27 | Rewritten for 0.5.0-beta. Status table covers 0.1–0.5, with every feature marked validated or built. New sections: principles and non-goals, distribution and release, monetisation options. Metrics replaced with measurable beta metrics (no analytics by design). Architecture updated: gain chain, volume monitor, per-device sound, Wear module, backend off in release. Risks re-rated, with the untested backlog and feature growth as top risks. Local-player decision recorded. Roadmap: validate, publish, testers, then feedback-driven. |

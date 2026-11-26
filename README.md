@@ -6,8 +6,8 @@ plus per-device sound, loudness compensation, safe-listening reminders, a sleep
 timer, a widget and a Wear OS remote. The client uses Kotlin and Jetpack Compose
 (`app/`, and `wear/` for the watch); the companion backend uses Node.js/Express.
 
-For what's built and what's next, see the PRD,
-[EQify_Android_PRD_v2.md](EQify_Android_PRD_v2.md) (v3.0).
+For what's built, see [STATUS.md](STATUS.md); for goals and what's next, the PRD,
+[EQify_Android_PRD_v2.md](EQify_Android_PRD_v2.md).
 
 ## Beta
 
@@ -47,8 +47,7 @@ Send bugs and ideas from **Settings → Send feedback**. See
 From the repository root on Windows:
 
 ```powershell
-.\gradlew.bat assembleDebug
-.\gradlew.bat test
+.\scripts\build.ps1 test      # unit tests (also: debug, release, verify, all)
 Set-Location eqify-backend
 npm.cmd install
 npm.cmd start
@@ -74,10 +73,12 @@ with Room. The mix counts detected track observations, not listening time.
 
 ### Documents
 
+- [CLAUDE.md](CLAUDE.md): the short rules for AI assistants.
 - [AI.md](AI.md): architecture, guardrails and the rules that keep features from
   breaking each other.
-- [EQify_Android_PRD_v2.md](EQify_Android_PRD_v2.md): product requirements and
-  feature status (v3.0).
+- [STATUS.md](STATUS.md): what's built and what's been checked on a device.
+- [EQify_Android_PRD_v2.md](EQify_Android_PRD_v2.md): product requirements and roadmap.
+- [PLAN_TEMPLATE.md](PLAN_TEMPLATE.md): the template for new feature plans.
 - Feature plans by release: [FEATURES_NEXT_PLAN.md](FEATURES_NEXT_PLAN.md)
   (0.2), [FEATURES_BATCH2_PLAN.md](FEATURES_BATCH2_PLAN.md) (0.3),
   [FEATURES_BATCH3_PLAN.md](FEATURES_BATCH3_PLAN.md) (0.4),

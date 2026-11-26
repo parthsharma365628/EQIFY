@@ -28,10 +28,10 @@ Without the signing properties, `assembleRelease` still works but produces `app-
 ## Each release
 
 1. Increase `versionCode` (and update `versionName`) in `app/build.gradle.kts`.
-2. Build: `.\gradlew.bat testDebugUnitTest assembleRelease`
-3. Output: `app/build/outputs/apk/release/app-release.apk`, and the watch app at `wear/build/outputs/apk/release/wear-release.apk`.
-   - Bump `versionCode`/`versionName` in `wear/build.gradle.kts` too.
-   - Both must be signed with the same key: check with `apksigner verify --print-certs` on each.
+2. Build and check: `.\scripts\build.ps1 all`
+   - Runs the tests, builds both release APKs, checks they share app ID, version and signing key.
+   - Copies them to `EQify-<version>.apk` and `EQify-Wear-<version>.apk` in each module's `build/outputs/apk/release/`.
+3. Bump `versionCode`/`versionName` in `wear/build.gradle.kts` too when the watch app changed. The script warns when the versions differ.
 4. **Install the release APK on a real phone and smoke-test it.** Release builds are shrunk by R8 (no renaming), so check:
    - headphone search and download, and song detection after the update
    - genre detection through iTunes
@@ -43,6 +43,8 @@ Without the signing properties, `assembleRelease` still works but produces `app-
    - the widget, both new tiles and the app-icon shortcuts
    - rotating with a sheet open
    - the watch app, if it changed
+
+   Record what you checked in `STATUS.md` (mark features **Device-validated**).
 5. Publish on [eqify-releases](https://github.com/parthsharma365628/eqify-releases):
    - Create a tag such as `v0.5.0-beta`, marked as a pre-release.
    - Attach `EQify-<version>.apk` (a renamed `app-release.apk`) and, when it changed, `EQify-Wear-<version>.apk`.

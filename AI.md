@@ -15,8 +15,12 @@ or Gradle-generated file is shown):
 
 ```text
 EQIFY/
+├─ CLAUDE.md                     # Short rules, loaded automatically by Claude Code
 ├─ AI.md                         # Start here for architecture and guardrails
-├─ EQify_Android_PRD_v2.md       # Product requirements and feature status (v3.0)
+├─ STATUS.md                     # What's built and what's device-validated
+├─ PLAN_TEMPLATE.md              # Template for FEATURES_BATCH<n>_PLAN.md
+├─ scripts/build.ps1             # test / debug / release / verify / all
+├─ EQify_Android_PRD_v2.md       # Product requirements and roadmap (v3.1)
 ├─ FEATURES_NEXT_PLAN.md, FEATURES_BATCH{2,3,4}_PLAN.md # Plans for 0.2–0.5, with correction logs
 ├─ FEATURE_*.md                  # Earlier feature plans (genre insights, import, sharing, …)
 ├─ GITHUB_PAGES_AUTOEQ.md        # Static export checkpoint and publishing steps
@@ -81,7 +85,7 @@ every clone. In particular, GitHub does not contain `autoeq-results/` or
 - `FEATURE_GENRE_INSIGHTS_AND_CORRECTION.md` - implemented local correction/history/mix semantics and device-validation checklist.
 - `CLOUDFLARE_AUTOEQ_MIGRATION.md` - deferred, step-by-step plan for converting AutoEQ data and moving the API to Cloudflare Workers + D1.
 - `GITHUB_PAGES_AUTOEQ.md` - offline eight-band export format, Pages deployment, and Android static-data integration.
-- `EQify_Android_PRD_v2.md` - current product requirements and feature status (v3.0).
+- `EQify_Android_PRD_v2.md` - current product requirements and roadmap (v3.1). Feature status is in `STATUS.md`.
 - `EQify_PRD.docx` - the original v1.0 PRD, when present. Read it as requirements only and do not modify it.
 
 ## Running
@@ -89,9 +93,10 @@ every clone. In particular, GitHub does not contain `autoeq-results/` or
 Android, from the repository root on Windows:
 
 ```powershell
-.\gradlew.bat assembleDebug
-.\gradlew.bat test
+.\scripts\build.ps1 test      # or debug, release, verify, all
 ```
+
+`scripts/build.ps1` sets `JAVA_HOME` (`D:\ANDROID\jbr`) and the Gradle socket folder (`D:\ANDROID\gradle-sock`); a socket folder under the user temp path fails on this machine. Run it outside the sandbox. Plain `.\gradlew.bat` works only with those two variables set.
 
 The app is normally launched from Android Studio on an emulator or physical device. The default backend URL is `http://10.0.2.2:3000/`, which reaches the host computer from the Android emulator. A different URL can be supplied with the `EQIFY_BASE_URL` Gradle property; keep the trailing slash required by Retrofit.
 
