@@ -94,6 +94,32 @@ object EqState {
     private val _bassBoostLevel = MutableStateFlow(0f)
     val bassBoostLevel = _bassBoostLevel.asStateFlow()
 
+    // Volume-dependent sound (FEATURES_BATCH2_PLAN.md §1, FEATURES_BATCH3_PLAN.md §B).
+    // One media-volume reading feeds volume-aware bass and loudness compensation.
+    // While the sleep timer fades, both hold their last values so a fade never adds bass.
+    private val _mediaVolumeFraction = MutableStateFlow(0f)
+    val mediaVolumeFraction = _mediaVolumeFraction.asStateFlow()
+    private var volumeAwareBass = false
+    private var loudnessCompensation = false
+    /** The volume reading held while the sleep fade runs; null when not frozen. */
+    private var frozenFraction: Float? = null
+    private val _appliedBassBoost = MutableStateFlow(0f)
+    val appliedBassBoost = _appliedBassBoost.asStateFlow()
+    private val _appliedLoudness = MutableStateFlow(LoudnessCompensation.ZERO)
+    val appliedLoudness = _appliedLoudness.asStateFlow()
+    private fun recomputeVolumeFeatures() {
+        val f = frozenFraction ?: _mediaVolumeFraction.value
+        _appliedBassBoost.value = VolumeBass.apply(_bassBoostLevel.value, f, volumeAwareBass)
+        _appliedLoudness.value = LoudnessCompensation.curve(f, loudnessCompensation)
+    }
+    fun setMediaVolumeFraction(fraction: Float) { _mediaVolumeFraction.value = fraction; recomputeVolumeFeatures() }
+    fun setVolumeAwareBass(enabled: Boolean)    { volumeAwareBass = enabled; recomputeVolumeFeatures() }
+    fun setLoudnessCompensation(enabled: Boolean) { loudnessCompensation = enabled; recomputeVolumeFeatures() }
+    fun setVolumeFeaturesFrozen(frozen: Boolean) {
+        frozenFraction = if (frozen) (frozenFraction ?: _mediaVolumeFraction.value) else null
+        recomputeVolumeFeatures()
+    }
+
     // ── Output protection (synced from repository by service) ─────────
     private val _outputProtectionMode = MutableStateFlow(OutputProtectionMode.BALANCED)
     val outputProtectionMode get() = _outputProtectionMode.value
@@ -103,7 +129,7 @@ object EqState {
     fun setEnabled(enabled: Boolean)           { _isEqEnabled.value = enabled }
     fun setBypassed(bypassed: Boolean)         { _isBypassed.value = bypassed }
     fun setServiceRunning(running: Boolean)    { _isServiceRunning.value = running }
-    fun setBassBoost(level: Float)             { _bassBoostLevel.value = level }
+    fun setBassBoost(level: Float)             { _bassBoostLevel.value = level; recomputeVolumeFeatures() }
     fun setOutputProtectionMode(mode: OutputProtectionMode) {
         _outputProtectionMode.value = mode
     }

@@ -107,6 +107,12 @@ class UserPreferencesRepository(private val context: Context) {
         val UPDATE_LATEST_TAG     = stringPreferencesKey("update_latest_tag")
         val UPDATE_LATEST_URL     = stringPreferencesKey("update_latest_url")
         val UPDATE_DISMISSED      = stringPreferencesKey("update_dismissed_tag")
+        val VOLUME_AWARE_BASS     = booleanPreferencesKey("volume_aware_bass")
+        val NOTIFICATION_BASS_BUTTON = booleanPreferencesKey("notification_bass_button")
+        val LOUDNESS_COMPENSATION = booleanPreferencesKey("loudness_compensation")
+        val VOLUME_CAP_ENABLED    = booleanPreferencesKey("volume_cap_enabled")
+        val VOLUME_CAP_LEVEL      = floatPreferencesKey("volume_cap_level")
+        val AUTOMATION_ENABLED    = booleanPreferencesKey("automation_enabled")
     }
 
     // ── Standard settings ─────────────────────────────────────────────
@@ -216,6 +222,23 @@ class UserPreferencesRepository(private val context: Context) {
 
     /** Genre strength, 0–125% as 0..1.25 (FEATURES_NEXT_PLAN.md §2). */
     val genreStrength: Flow<Float> = pref { GenreStrength.normalise(it[Keys.GENRE_STRENGTH]) }
+
+    // ── Batch 2 (FEATURES_BATCH2_PLAN.md) ─────────────────────────────
+    val volumeAwareBass: Flow<Boolean> = pref { it[Keys.VOLUME_AWARE_BASS] ?: false }
+    suspend fun setVolumeAwareBass(enabled: Boolean) { context.dataStore.edit { it[Keys.VOLUME_AWARE_BASS] = enabled } }
+    val notificationBassButton: Flow<Boolean> = pref { it[Keys.NOTIFICATION_BASS_BUTTON] ?: true }
+    suspend fun setNotificationBassButton(enabled: Boolean) { context.dataStore.edit { it[Keys.NOTIFICATION_BASS_BUTTON] = enabled } }
+
+    // ── Batch 3 (FEATURES_BATCH3_PLAN.md) ─────────────────────────────
+    val loudnessCompensation: Flow<Boolean> = pref { it[Keys.LOUDNESS_COMPENSATION] ?: false }
+    suspend fun setLoudnessCompensation(enabled: Boolean) { context.dataStore.edit { it[Keys.LOUDNESS_COMPENSATION] = enabled } }
+    val volumeCapEnabled: Flow<Boolean> = pref { it[Keys.VOLUME_CAP_ENABLED] ?: false }
+    suspend fun setVolumeCapEnabled(enabled: Boolean) { context.dataStore.edit { it[Keys.VOLUME_CAP_ENABLED] = enabled } }
+    val volumeCapLevel: Flow<Float> = pref { VolumeCap.normalise(it[Keys.VOLUME_CAP_LEVEL]) }
+    suspend fun setVolumeCapLevel(value: Float) { context.dataStore.edit { it[Keys.VOLUME_CAP_LEVEL] = VolumeCap.normalise(value) } }
+    /** Other apps may send automation commands only when this is on (off by default). */
+    val automationEnabled: Flow<Boolean> = pref { it[Keys.AUTOMATION_ENABLED] ?: false }
+    suspend fun setAutomationEnabled(enabled: Boolean) { context.dataStore.edit { it[Keys.AUTOMATION_ENABLED] = enabled } }
 
     suspend fun setGenreStrength(value: Float) {
         context.dataStore.edit { it[Keys.GENRE_STRENGTH] = GenreStrength.normalise(value) }
@@ -530,4 +553,67 @@ class UserPreferencesRepository(private val context: Context) {
         return result
     }
 
+
+    // ── Backup and restore (FEATURES_BATCH2_PLAN.md §3) ───────────────
+
+    /** Everything a backup carries, except imported corrections (a separate file store). */
+    suspend fun exportBackupData(): BackupData {
+        val prefs = context.dataStore.data.first()
+        val settings = linkedMapOf<String, Any>()
+        BackupCodec.SETTINGS.forEach { (name, type) ->
+            val value: Any? = when (type) {
+                BackupCodec.Type.BOOLEAN -> prefs[booleanPreferencesKey(name)]
+                BackupCodec.Type.FLOAT -> prefs[floatPreferencesKey(name)]
+                BackupCodec.Type.STRING -> prefs[stringPreferencesKey(name)]
+            }
+            value?.let { v -> BackupCodec.normaliseSetting(name, v)?.let { settings[name] = it } }
+        }
+        val names = CustomPresetNameCodec.decode(prefs[Keys.CUSTOM_PRESET_NAMES] ?: "")
+        val presets = names.mapNotNull { name ->
+            val gains = prefs[stringPreferencesKey("custom_gains_$name")]
+                ?.split(",")?.mapNotNull { it.trim().toFloatOrNull() }
+            if (gains != null && gains.size == 8 && gains.all { it.isFinite() && it in -12f..12f }) name to gains else null
+        }
+        return BackupData(
+            settings = settings,
+            customPresets = presets,
+            genreOverrides = GenreCurveOverrides.decode(prefs[Keys.GENRE_OVERRIDES]),
+            deviceProfiles = DeviceProfiles.decode(prefs[Keys.DEVICE_PROFILES]),
+            deviceChoices = DeviceHeadphoneMemory.decode(prefs[Keys.DEVICE_CHOICES]),
+            favoriteHeadphones = CustomPresetNameCodec.decode(prefs[Keys.FAVORITE_HEADPHONES] ?: "")
+        )
+    }
+
+    /**
+     * Replaces every backed-up value with [data] in one atomic edit. Settings missing
+     * from [data] go back to their defaults. Never touches history, update state or keys.
+     */
+    suspend fun applyBackupData(data: BackupData) {
+        context.dataStore.edit { prefs ->
+            BackupCodec.SETTINGS.forEach { (name, type) ->
+                val value = data.settings[name]
+                when (type) {
+                    BackupCodec.Type.BOOLEAN -> booleanPreferencesKey(name).let { k ->
+                        if (value is Boolean) prefs[k] = value else prefs.remove(k) }
+                    BackupCodec.Type.FLOAT -> floatPreferencesKey(name).let { k ->
+                        if (value is Float) prefs[k] = value else prefs.remove(k) }
+                    BackupCodec.Type.STRING -> stringPreferencesKey(name).let { k ->
+                        if (value is String) prefs[k] = value else prefs.remove(k) }
+                }
+            }
+            if (data.settings.containsKey("output_protection_mode")) prefs.remove(Keys.LIMIT_OUTPUT_GAIN)
+            CustomPresetNameCodec.decode(prefs[Keys.CUSTOM_PRESET_NAMES] ?: "").forEach {
+                prefs.remove(stringPreferencesKey("custom_gains_$it"))
+            }
+            data.customPresets.forEach { (name, gains) ->
+                prefs[stringPreferencesKey("custom_gains_$name")] = gains.joinToString(",")
+            }
+            prefs[Keys.CUSTOM_PRESET_NAMES] = CustomPresetNameCodec.encode(data.customPresets.map { it.first })
+            if (data.genreOverrides.isEmpty()) prefs.remove(Keys.GENRE_OVERRIDES)
+            else prefs[Keys.GENRE_OVERRIDES] = GenreCurveOverrides.encode(data.genreOverrides)
+            prefs[Keys.DEVICE_PROFILES] = DeviceProfiles.encode(data.deviceProfiles)
+            prefs[Keys.DEVICE_CHOICES] = DeviceHeadphoneMemory.encode(data.deviceChoices)
+            prefs[Keys.FAVORITE_HEADPHONES] = CustomPresetNameCodec.encode(data.favoriteHeadphones)
+        }
+    }
 }

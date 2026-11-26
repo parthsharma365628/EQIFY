@@ -1,3 +1,7 @@
 <resources>
     <string name="app_name">EQify</string>
+    <string name="widget_description">EQ status with Pause and Bass buttons</string>
+    <string name="shortcut_toggle_short">Pause or resume EQ</string>
+    <string name="shortcut_bass_short">Change bass</string>
+    <string name="shortcut_sleep_short">Sleep in 30 min</string>
 </resources>

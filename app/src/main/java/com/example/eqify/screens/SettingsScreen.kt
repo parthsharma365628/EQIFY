@@ -7,6 +7,8 @@ import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import android.text.TextUtils
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -58,6 +60,13 @@ fun SettingsScreen(
     )
     val limiterStatus by vm.limiterDiagnosticStatus.collectAsState()
     val forceMono          by vm.forceMono.collectAsState(initial = false)
+    val volumeAwareBass    by vm.volumeAwareBass.collectAsState(initial = false)
+    val notificationBassButton by vm.notificationBassButton.collectAsState(initial = true)
+    val loudnessCompensation by vm.loudnessCompensation.collectAsState(initial = false)
+    val volumeCapEnabled by vm.volumeCapEnabled.collectAsState(initial = false)
+    val volumeCapLevel by vm.volumeCapLevel.collectAsState(initial = VolumeCap.DEFAULT)
+    val automationEnabled by vm.automationEnabled.collectAsState(initial = false)
+    var showAutomationHelp by remember { mutableStateOf(false) }
     val mediaListenerEnabled  by vm.mediaListenerEnabled.collectAsState(initial = true)
     val headphoneAutoDetect   by vm.headphoneAutoDetect.collectAsState(initial = true)
     val savedLastFmApiKey     by vm.lastFmApiKey.collectAsState(initial = "")
@@ -73,6 +82,16 @@ fun SettingsScreen(
     val crashReportingEnabled by vm.crashReportingEnabled.collectAsState()
     val crashReportMessage by vm.crashReportMessage.collectAsState()
     val themeSettings by vm.themeSettings.collectAsState()
+    val restorePreview by vm.restorePreview.collectAsState()
+    val backupMessage by vm.backupMessage.collectAsState()
+    val backupBusy by vm.backupBusy.collectAsState()
+    val undoSnapshot by vm.undoSnapshot.collectAsState()
+    val saveBackupLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json")
+    ) { uri -> if (uri != null) vm.exportBackup(uri) }
+    val openBackupLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri -> if (uri != null) vm.openBackup(uri) }
 
     // ── Runtime / permission state ────────────────────────────────────
     var isPermissionGranted by remember { mutableStateOf(isNotificationServiceEnabled(context)) }
@@ -175,6 +194,16 @@ fun SettingsScreen(
             onDismiss = { showLastFmSheet = false }
         )
     }
+    restorePreview?.let { preview ->
+        RestoreBackupSheet(
+            preview = preview,
+            busy = backupBusy,
+            onReplace = { vm.confirmRestore(merge = false) },
+            onMerge = { vm.confirmRestore(merge = true) },
+            onDismiss = vm::cancelRestore
+        )
+    }
+    if (showAutomationHelp) AutomationHelpSheet(onDismiss = { showAutomationHelp = false })
     if (showPrivacySheet) PrivacySheet(onDismiss = { showPrivacySheet = false })
     if (showLicencesSheet) LicencesSheet(onDismiss = { showLicencesSheet = false })
 
@@ -205,6 +234,12 @@ fun SettingsScreen(
             historyMessage?.let { StatusBanner(it, StatusKind.NEUTRAL, gutter, onDismiss = vm::dismissHistoryMessage) }
             customProfilesMessage?.let { StatusBanner(it, StatusKind.NEUTRAL, gutter, onDismiss = vm::dismissCustomProfilesMessage) }
             genreCurvesMessage?.let { StatusBanner(it, StatusKind.NEUTRAL, gutter, onDismiss = vm::dismissGenreCurvesMessage) }
+            backupMessage?.let {
+                StatusBanner(it, StatusKind.NEUTRAL, gutter,
+                    actionLabel = if (undoSnapshot != null) "Undo" else null,
+                    onAction = if (undoSnapshot != null) vm::undoRestore else null,
+                    onDismiss = vm::dismissBackupMessage)
+            }
 
             Group("Appearance") {
                 AppearanceSettings(
@@ -240,6 +275,48 @@ fun SettingsScreen(
                     subtitle = outputProtectionStatus(outputProtectionMode, limiterStatus),
                     onClick = { showOutputProtectionSheet = true },
                     icon = EqIcons.Warning
+                )
+                RowDivider()
+                SwitchRow(
+                    title = "Ease bass at high volume",
+                    subtitle = "Above 60% volume, bass boost fades to half at full volume to avoid distortion. Your bass setting stays the same",
+                    checked = volumeAwareBass,
+                    onCheckedChange = vm::setVolumeAwareBass,
+                    icon = EqIcons.Tune
+                )
+                RowDivider()
+                SwitchRow(
+                    title = "Loudness compensation",
+                    subtitle = "Below half volume, adds a little bass and treble so quiet music still sounds full",
+                    checked = loudnessCompensation,
+                    onCheckedChange = vm::setLoudnessCompensation,
+                    icon = EqIcons.GraphicEq
+                )
+                RowDivider()
+                SwitchRow(
+                    title = "Volume limit",
+                    subtitle = if (volumeCapEnabled) "Media volume can't go above ${Math.round(volumeCapLevel * 100)}%"
+                        else "Set a maximum media volume, for children or to protect hearing",
+                    checked = volumeCapEnabled,
+                    onCheckedChange = vm::setVolumeCapEnabled,
+                    icon = EqIcons.Warning
+                )
+                if (volumeCapEnabled) {
+                    SegmentedToggle(
+                        options = listOf(0.5f, 0.6f, 0.7f, 0.8f, 0.9f),
+                        selected = volumeCapLevel,
+                        onSelect = vm::setVolumeCapLevel,
+                        label = { "${Math.round(it * 100)}%" },
+                        modifier = Modifier.fillMaxWidth().padding(start = 56.dp, end = EqSpacing.m, bottom = EqSpacing.s)
+                    )
+                }
+                RowDivider()
+                SwitchRow(
+                    title = "Bass button in notification",
+                    subtitle = "Cycle bass boost (Off, +3, +6, +9 dB) from the EQify notification",
+                    checked = notificationBassButton,
+                    onCheckedChange = vm::setNotificationBassButton,
+                    icon = EqIcons.Equalizer
                 )
                 RowDivider()
                 SwitchRow(
@@ -292,6 +369,42 @@ fun SettingsScreen(
                     subtitle = "Optional. Improves genre detection",
                     onClick = { showLastFmSheet = true },
                     icon = EqIcons.Edit
+                )
+            }
+
+            Group("Automation") {
+                SwitchRow(
+                    title = "Allow other apps to control EQify",
+                    subtitle = "Lets Tasker and similar apps turn EQ on or off, set bass or a preset, or start the sleep timer",
+                    checked = automationEnabled,
+                    onCheckedChange = vm::setAutomationEnabled,
+                    icon = EqIcons.Tune
+                )
+                RowDivider()
+                SettingRow(
+                    title = "How to use automation",
+                    subtitle = "Commands for Tasker, and the shortcuts on EQify's app icon",
+                    icon = EqIcons.Info,
+                    onClick = { showAutomationHelp = true },
+                    trailing = { EqIcon(EqIcons.Expand, null, size = 20.dp) }
+                )
+            }
+
+            Group("Backup & restore") {
+                SettingRow(
+                    title = "Back up settings",
+                    subtitle = "Save presets, genre curves, devices and settings to a file",
+                    icon = EqIcons.Save,
+                    enabled = !backupBusy,
+                    onClick = { saveBackupLauncher.launch(vm.backupFileName()) }
+                )
+                RowDivider()
+                SettingRow(
+                    title = "Restore from backup",
+                    subtitle = "Open an EQify backup file. You review it before anything changes",
+                    icon = EqIcons.FileOpen,
+                    enabled = !backupBusy,
+                    onClick = { openBackupLauncher.launch(arrayOf("application/json", "text/plain", "application/octet-stream")) }
                 )
             }
 
@@ -402,6 +515,14 @@ fun SettingsScreen(
                     icon = EqIcons.Info
                 )
                 RowDivider()
+                SettingRow(
+                    title = "Show the tour again",
+                    subtitle = "A quick look at what EQify does, and its permissions",
+                    icon = EqIcons.Info,
+                    onClick = { Onboarding.show() },
+                    trailing = { EqIcon(EqIcons.Expand, null, size = 20.dp) }
+                )
+                RowDivider()
                 SettingRow(title = "AutoEQ database", subtitle = "Served from GitHub Pages + on-device cache",
                     icon = EqIcons.Download)
                 RowDivider()
@@ -446,6 +567,73 @@ fun SettingsScreen(
                     )
                 }
             }
+        }
+    }
+}
+
+// ── Automation (FEATURES_BATCH3_PLAN.md §E) ───────────────────────────
+
+@Composable
+private fun AutomationHelpSheet(onDismiss: () -> Unit) {
+    val c = EqifyTheme.colors
+    EqSheet(
+        title = "Automation",
+        subtitle = "Long-press EQify's icon for Pause or resume, Change bass and Sleep in 30 min.",
+        onDismiss = onDismiss
+    ) {
+        Text("In Tasker, use Send Intent with Target: Broadcast Receiver and one of these actions:",
+            style = MaterialTheme.typography.bodyMedium, color = c.textPrimary)
+        listOf(
+            "com.liteplane.eqify.action.SET_EQ" to "extra enabled: true or false",
+            "com.liteplane.eqify.action.SET_BASS" to "extra level: 0, 3, 6 or 9",
+            "com.liteplane.eqify.action.SET_PRESET" to "extra name: a preset name",
+            "com.liteplane.eqify.action.SET_AUTO_GENRE" to "extra enabled: true or false",
+            "com.liteplane.eqify.action.SLEEP_TIMER" to "extra minutes: 1–240, or 0 to cancel"
+        ).forEach { (action, extra) ->
+            Column {
+                Text(action, style = MaterialTheme.typography.bodySmall.tabular(), color = c.textPrimary)
+                Text(extra, style = MaterialTheme.typography.bodySmall, color = c.textMuted)
+            }
+        }
+        Text("Commands only work while \"Allow other apps\" is on. If EQify isn't running, the setting is saved " +
+            "and used when it next starts; the sleep timer needs EQify running.",
+            style = MaterialTheme.typography.bodySmall, color = c.textFaint)
+    }
+}
+
+// ── Backup and restore (FEATURES_BATCH2_PLAN.md §3) ───────────────────
+
+@Composable
+private fun RestoreBackupSheet(
+    preview: SettingsViewModel.RestorePreview,
+    busy: Boolean,
+    onReplace: () -> Unit,
+    onMerge: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val c = EqifyTheme.colors
+    val made = buildList {
+        preview.appVersion?.let { add("EQify $it") }
+        preview.createdAt?.takeIf { it > 0 }?.let {
+            add(java.time.Instant.ofEpochMilli(it).atZone(java.time.ZoneId.systemDefault()).toLocalDate().toString())
+        }
+    }.joinToString(", ")
+    EqSheet(
+        title = "Restore backup?",
+        subtitle = if (made.isNotEmpty()) "Made with $made." else null,
+        onDismiss = onDismiss
+    ) {
+        Text("This backup has ${preview.data.summary()}.", style = MaterialTheme.typography.bodyLarge, color = c.textPrimary)
+        Text("Replace: your presets, genre curves, devices and settings become the backup's.",
+            style = MaterialTheme.typography.bodyMedium, color = c.textMuted)
+        Text("Merge: keeps everything you have and adds what's missing. Your settings stay.",
+            style = MaterialTheme.typography.bodyMedium, color = c.textMuted)
+        Text("You can undo this until EQify closes. Backups include headphone and device names; " +
+            "the file stays on this phone unless you share it.",
+            style = MaterialTheme.typography.bodySmall, color = c.textFaint)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(EqSpacing.s)) {
+            TonalButton("Merge", onMerge, Modifier.weight(1f), enabled = !busy)
+            PrimaryButton("Replace", onReplace, Modifier.weight(1f), enabled = !busy)
         }
     }
 }

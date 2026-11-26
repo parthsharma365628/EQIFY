@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Long-press shortcuts (FEATURES_BATCH3_PLAN.md §E). -->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="toggle_eq"
+        android:enabled="true"
+        android:icon="@drawable/ic_eq_tile"
+        android:shortcutShortLabel="@string/shortcut_toggle_short">
+        <intent
+            android:action="com.liteplane.eqify.shortcut.TOGGLE"
+            android:targetClass="com.example.eqify.ShortcutActivity"
+            android:targetPackage="com.liteplane.eqify" />
+    </shortcut>
+    <shortcut
+        android:shortcutId="cycle_bass"
+        android:enabled="true"
+        android:icon="@drawable/ic_sym_equalizer"
+        android:shortcutShortLabel="@string/shortcut_bass_short">
+        <intent
+            android:action="com.liteplane.eqify.shortcut.BASS"
+            android:targetClass="com.example.eqify.ShortcutActivity"
+            android:targetPackage="com.liteplane.eqify" />
+    </shortcut>
+    <shortcut
+        android:shortcutId="sleep_30"
+        android:enabled="true"
+        android:icon="@drawable/ic_sym_bedtime"
+        android:shortcutShortLabel="@string/shortcut_sleep_short">
+        <intent
+            android:action="com.liteplane.eqify.shortcut.SLEEP_30"
+            android:targetClass="com.example.eqify.ShortcutActivity"
+            android:targetPackage="com.liteplane.eqify" />
+    </shortcut>
+</shortcuts>

@@ -340,6 +340,41 @@ and static Pages models.
 - **Listening stats:** `ListeningStats.kt` (pure; counts detected songs, never listening time) and `screens/WeekInSound.kt`.
   - The share card is captured with a graphics layer and shared via the `FileProvider` (`${applicationId}.fileprovider`, `cache/shared/` only).
 
+## 0.3.0 features (FEATURES_BATCH2_PLAN.md)
+
+- **Volume-aware bass:** `VolumeBass.kt` (pure curve).
+  - `EqState.appliedBassBoost` is the bass actually applied. It equals `bassBoostLevel` unless the setting is on and media volume is above 60%. Both EQ paths and the Sound layers sheet use the applied value. Home shows "Eased to …".
+  - `EqProcessingService` registers a `VOLUME_CHANGED_ACTION` receiver only while the setting is on, and re-reads volume when the output changes.
+- **Notification bass button:** `NotificationControls.kt`, `ACTION_CYCLE_BASS`. It goes through `DeviceSoundCoordinator.setBass`. Setting `notification_bass_button`, default on.
+- **Backup and restore:** `BackupCodec.kt` (pure: build, parse and validate, merge), `UserPreferencesRepository.exportBackupData`/`applyBackupData`, `CustomEqProfileRepository.replaceAll`, and `SettingsViewModel` (preview, Replace/Merge, Undo).
+  - Only keys in `BackupCodec.SETTINGS` are carried. **Add any new user setting there.**
+  - Never carried: history, update state, crash reporting, the Last.fm key, EQ on/off, song detection, theme.
+
+## 0.4.0 features (FEATURES_BATCH3_PLAN.md)
+
+- **One media-volume reader:** `EqProcessingService.refreshMediaVolume`, with its receiver registered while any of volume-aware bass, loudness or the volume cap is on.
+  - It clamps to the cap, then sets `EqState.mediaVolumeFraction`.
+  - `EqState` derives `appliedBassBoost` and `appliedLoudness` from it.
+  - **Never add a second volume receiver.**
+- **Gain chain:** tone → correction → applied bass → `LoudnessCompensation.add` → protection, in **both** EQ paths. `AutoSnapshot.requiresSnap` includes loudness.
+  - `LoudnessCompensation` (below 50%) and `VolumeBass` (above 60%) must never overlap. A test pins this.
+- **Volume cap:** `VolumeCap` (pure) clamps the media volume through `AudioManager`, not the limiter. The limiter is Balanced-only and shared with Orbit.
+- **Sleep timer:** `SleepTimer` (state and pure helpers), run by the service.
+  - The fade lowers the media volume with `EqState.setVolumeFeaturesFrozen(true)`, so loudness can't rise as it fades.
+  - It pauses through an audio-focus request, then restores the volume under the cap.
+- **Test sounds:** `ToneGenerator` (pure, stereo) and `EqTestTonePlayer.play(TestTone)`. Left/right tests set `OrbitPrototype.holdForTest`.
+- **Outside controls:** all go through service actions.
+  - The widget (`EqifyWidget`, RemoteViews) uses `getForegroundService` PendingIntents.
+  - Shortcuts (`ShortcutActivity`, `res/xml/shortcuts.xml`) start the service while briefly in the foreground.
+  - `AutomationReceiver` (exported) only acts when `automation_enabled` is on, and only for `AutomationCommand`'s allowlist. It sends to the running service, or saves the setting for next start.
+  - Bass is always routed through `DeviceSoundCoordinator.setBass`.
+- **Widget refresh:** the service calls `EqifyWidget.refresh` on snapshot, bass and sleep changes, and when it stops.
+- **Tour:** `PermissionWalkthrough` in `MainActivity` (6 steps: 3 tour pages, then the permission steps). The `eqify_onboarding/permissions_explained` flag is unchanged. `Onboarding.show()` replays it from Settings → About.
+- **Layout:** the activity handles rotation and resizing itself (`configChanges`), so it isn't recreated and the old portrait lock is gone.
+  - A `NavigationRail` is used at 600 dp and wider.
+  - Content is capped at 840 dp.
+  - `EqScreen` goes side by side in short landscape windows.
+
 ## Release builds
 
 See `RELEASING.md`. Release builds:

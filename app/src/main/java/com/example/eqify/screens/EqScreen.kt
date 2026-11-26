@@ -811,10 +811,10 @@ fun EqScreen(vm: EqScreenViewModel = viewModel()) {
         )
     }
 
-    Column(
-        Modifier.fillMaxSize().background(c.background).padding(horizontal = EqSpacing.screen),
-        verticalArrangement = Arrangement.spacedBy(EqSpacing.m)
-    ) {
+    // Phone landscape: controls beside the sliders, so the sliders keep their height (FEATURES_BATCH3_PLAN.md §H).
+    val config = androidx.compose.ui.platform.LocalConfiguration.current
+    val sideBySide = config.screenWidthDp > config.screenHeightDp && config.screenHeightDp < 600
+    val controls: @Composable ColumnScope.() -> Unit = {
         // Header: title, Save (only with unsaved changes), overflow menu
         Row(Modifier.fillMaxWidth().padding(top = EqSpacing.m), verticalAlignment = Alignment.CenterVertically) {
             Text("Equalizer", style = MaterialTheme.typography.headlineSmall, color = c.textPrimary,
@@ -878,8 +878,10 @@ fun EqScreen(vm: EqScreenViewModel = viewModel()) {
             StatusBanner(message, StatusKind.NEUTRAL, onDismiss = { vm.dismissShareMessage() })
         }
 
+    }
+    val sliders: @Composable ColumnScope.() -> Unit = {
         // Sliders on top of the live tone curve
-        EqCard(modifier = Modifier.weight(1f), contentPadding = PaddingValues(vertical = EqSpacing.m, horizontal = EqSpacing.s)) {
+        EqCard(modifier = Modifier.weight(1f).fillMaxWidth(), contentPadding = PaddingValues(vertical = EqSpacing.m, horizontal = EqSpacing.s)) {
             EqBandsPanel(
                 bands = bands,
                 dimmed = isBypassed,
@@ -893,7 +895,30 @@ fun EqScreen(vm: EqScreenViewModel = viewModel()) {
                 style = MaterialTheme.typography.bodySmall, color = c.textMuted,
                 modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
         }
-        Spacer(Modifier.height(EqSpacing.s))
+    }
+    if (sideBySide) {
+        Row(
+            Modifier.fillMaxSize().background(c.background).padding(horizontal = EqSpacing.screen),
+            horizontalArrangement = Arrangement.spacedBy(EqSpacing.l)
+        ) {
+            Column(
+                Modifier.weight(0.42f).fillMaxHeight().verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(EqSpacing.m), content = controls
+            )
+            Column(
+                Modifier.weight(0.58f).fillMaxHeight().padding(top = EqSpacing.m),
+                verticalArrangement = Arrangement.spacedBy(EqSpacing.m), content = sliders
+            )
+        }
+    } else {
+        Column(
+            Modifier.fillMaxSize().background(c.background).padding(horizontal = EqSpacing.screen),
+            verticalArrangement = Arrangement.spacedBy(EqSpacing.m)
+        ) {
+            controls()
+            sliders()
+            Spacer(Modifier.height(EqSpacing.s))
+        }
     }
 }
 
@@ -903,7 +928,7 @@ private fun SoundLayersSheet(strength: Float?, onDismiss: () -> Unit) {
     val c = EqifyTheme.colors
     val tone by EqState.activeToneGains.collectAsState()
     val correction by EqState.currentHeadphoneCorrection.collectAsState()
-    val bass by EqState.bassBoostLevel.collectAsState()
+    val bass by EqState.appliedBassBoost.collectAsState()
     val total by EqState.activeBandGains.collectAsState()
     val bypassed by EqState.isBypassed.collectAsState()
     val enabled by EqState.isEqEnabled.collectAsState()

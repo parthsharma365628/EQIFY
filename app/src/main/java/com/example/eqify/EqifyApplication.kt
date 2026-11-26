@@ -89,7 +89,7 @@ class EqifyApplication : Application() {
         }
     }
 
-    private suspend fun loadPresetGains(repo: UserPreferencesRepository, name: String): FloatArray {
+    internal suspend fun loadPresetGains(repo: UserPreferencesRepository, name: String): FloatArray {
         repo.loadCustomPresetGains(name)?.let { return it }
         // A customised built-in restores the user's version (FEATURE_CUSTOM_GENRE_CURVES.md).
         val overrides = repo.genreOverrides.first()

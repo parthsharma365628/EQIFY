@@ -151,6 +151,124 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch { repository.setOutputProtectionMode(mode) }
     }
 
+    // ── Batch 2 (FEATURES_BATCH2_PLAN.md) ─────────────────────────────
+    val volumeAwareBass = repository.volumeAwareBass
+    val notificationBassButton = repository.notificationBassButton
+    fun setVolumeAwareBass(enabled: Boolean) { viewModelScope.launch { repository.setVolumeAwareBass(enabled) } }
+    fun setNotificationBassButton(enabled: Boolean) { viewModelScope.launch { repository.setNotificationBassButton(enabled) } }
+
+    // ── Backup and restore (FEATURES_BATCH2_PLAN.md §3) ───────────────
+
+    data class RestorePreview(val data: BackupData, val appVersion: String?, val createdAt: Long?)
+
+    private val _restorePreview = MutableStateFlow<RestorePreview?>(null)
+    val restorePreview = _restorePreview.asStateFlow()
+    private val _backupMessage = MutableStateFlow<String?>(null)
+    val backupMessage = _backupMessage.asStateFlow()
+    private val _backupBusy = MutableStateFlow(false)
+    val backupBusy = _backupBusy.asStateFlow()
+    /** The settings before the last restore, for Undo in this session. */
+    private val _undoSnapshot = MutableStateFlow<BackupData?>(null)
+    val undoSnapshot = _undoSnapshot.asStateFlow()
+
+    fun backupFileName(): String = BackupCodec.fileName(java.time.LocalDate.now().toString())
+
+    private suspend fun currentBackupData(): BackupData =
+        repository.exportBackupData().copy(importedCorrections = customProfiles.profiles.value)
+
+    fun exportBackup(uri: android.net.Uri) {
+        val app = getApplication<Application>()
+        viewModelScope.launch {
+            _backupBusy.value = true
+            try {
+                val data = currentBackupData()
+                val json = BackupCodec.build(data, BuildConfig.VERSION_NAME, System.currentTimeMillis())
+                withContext(Dispatchers.IO) {
+                    app.contentResolver.openOutputStream(uri, "wt")?.use { it.write(json.toByteArray(Charsets.UTF_8)) }
+                        ?: error("Could not open the chosen file.")
+                }
+                _undoSnapshot.value = null
+                _backupMessage.value = "Backed up ${data.summary()}."
+            } catch (e: CancellationException) { throw e }
+            catch (e: Exception) { _backupMessage.value = "Could not save the backup: ${e.message}" }
+            finally { _backupBusy.value = false }
+        }
+    }
+
+    fun openBackup(uri: android.net.Uri) {
+        val app = getApplication<Application>()
+        viewModelScope.launch {
+            _backupBusy.value = true
+            try {
+                val doc = withContext(Dispatchers.IO) { BoundedTextReader.read(app, uri, BackupCodec.MAX_BYTES, "2 MB") }
+                when (val result = BackupCodec.parse(doc.text)) {
+                    is BackupCodec.Result.Error -> _backupMessage.value = result.message
+                    is BackupCodec.Result.Ok ->
+                        if (result.data.isEmpty) _backupMessage.value = "This backup is empty."
+                        else _restorePreview.value = RestorePreview(result.data, result.appVersion, result.createdAt)
+                }
+            } catch (e: CancellationException) { throw e }
+            catch (e: Exception) { _backupMessage.value = "Could not read the backup: ${e.message}" }
+            finally { _backupBusy.value = false }
+        }
+    }
+
+    fun cancelRestore() { _restorePreview.value = null }
+
+    fun confirmRestore(merge: Boolean) {
+        val preview = _restorePreview.value ?: return
+        viewModelScope.launch {
+            _backupBusy.value = true
+            try {
+                val before = currentBackupData()
+                val target = if (merge) BackupCodec.merge(before, preview.data) else preview.data
+                applyBackup(target)
+                _undoSnapshot.value = before
+                _restorePreview.value = null
+                _backupMessage.value = if (merge) "Added ${preview.data.summary()} from the backup."
+                    else "Restored ${preview.data.summary()}."
+            } catch (e: CancellationException) { throw e }
+            catch (e: Exception) { _backupMessage.value = "Could not restore: ${e.message}" }
+            finally { _backupBusy.value = false }
+        }
+    }
+
+    fun undoRestore() {
+        val before = _undoSnapshot.value ?: return
+        viewModelScope.launch {
+            try {
+                applyBackup(before)
+                _undoSnapshot.value = null
+                _backupMessage.value = "Restore undone. Your previous settings are back."
+            } catch (e: CancellationException) { throw e }
+            catch (e: Exception) { _backupMessage.value = "Could not undo: ${e.message}" }
+        }
+    }
+
+    fun dismissBackupMessage() { _backupMessage.value = null }
+
+    /** One place that writes a backup and brings the running app in line with it. */
+    private suspend fun applyBackup(data: BackupData) {
+        withContext(Dispatchers.IO) { customProfiles.replaceAll(data.importedCorrections) }
+        repository.applyBackupData(data)
+        // Runtime state otherwise read only at startup (EqifyApplication.restorePersistedState).
+        NowPlayingState.updateSelectedHeadphone(repository.selectedHeadphone.first())
+        if (!repository.autoGenreDetection.first()) NowPlayingState.updateCurrentGenre("")
+        val app = getApplication<Application>() as EqifyApplication
+        val last = repository.lastPreset.first()
+        EqState.restorePreset(last, app.loadPresetGains(repository, last))
+    }
+
+    // ── Batch 3 (FEATURES_BATCH3_PLAN.md) ─────────────────────────────
+    val loudnessCompensation = repository.loudnessCompensation
+    val volumeCapEnabled = repository.volumeCapEnabled
+    val volumeCapLevel = repository.volumeCapLevel
+    val automationEnabled = repository.automationEnabled
+    fun setLoudnessCompensation(enabled: Boolean) { viewModelScope.launch { repository.setLoudnessCompensation(enabled) } }
+    fun setVolumeCapEnabled(enabled: Boolean) { viewModelScope.launch { repository.setVolumeCapEnabled(enabled) } }
+    fun setVolumeCapLevel(value: Float) { viewModelScope.launch { repository.setVolumeCapLevel(value) } }
+    fun setAutomationEnabled(enabled: Boolean) { viewModelScope.launch { repository.setAutomationEnabled(enabled) } }
+
     fun setForceMono(enabled: Boolean) {
         // Persisted to DataStore. EqProcessingService.observeAutoEqPipeline
         // observes repository.forceMono in its combine — calls setMonoOutput() immediately.

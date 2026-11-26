@@ -34,8 +34,13 @@
             android:exported="true"
             android:label="@string/app_name"
             android:launchMode="singleTask"
-            android:screenOrientation="portrait"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden"
             android:theme="@style/Theme.EQify">
+            <!-- Rotation and resizing relayout in place instead of recreating the activity,
+                 so open sheets and pickers keep their state (FEATURES_BATCH3_PLAN.md §6). -->
+            <meta-data
+                android:name="android.app.shortcuts"
+                android:resource="@xml/shortcuts" />
             <property
                 android:name="android.window.PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY"
                 android:value="true" />
@@ -105,6 +110,39 @@
             </intent-filter>
         </service>
 
+        <!-- Batch 3 (FEATURES_BATCH3_PLAN.md §E, §G) -->
+        <activity
+            android:name=".ShortcutActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
+        <!-- Automation: ignored unless Settings → Automation is on; allowlisted actions only. -->
+        <receiver
+            android:name=".AutomationReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.liteplane.eqify.action.SET_EQ" />
+                <action android:name="com.liteplane.eqify.action.SET_BASS" />
+                <action android:name="com.liteplane.eqify.action.SET_PRESET" />
+                <action android:name="com.liteplane.eqify.action.SET_AUTO_GENRE" />
+                <action android:name="com.liteplane.eqify.action.SLEEP_TIMER" />
+            </intent-filter>
+        </receiver>
+
+        <receiver
+            android:name=".EqifyWidget"
+            android:exported="false"
+            android:label="EQify">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_eqify_info" />
+        </receiver>
     </application>
 
 </manifest>

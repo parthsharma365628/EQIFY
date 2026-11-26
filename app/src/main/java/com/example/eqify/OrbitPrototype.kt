@@ -34,6 +34,9 @@ internal object OrbitPrototype {
         FAILED("The audio effect stopped accepting changes. Toggle Orbit to retry.")
     }
 
+    /** Set while a left/right channel test plays, so the sweep doesn't move it. */
+    @Volatile var holdForTest = false
+
     fun request(enabled: Boolean) {
         if (BuildConfig.DEBUG) _requested.value = enabled
     }
@@ -86,10 +89,11 @@ internal object OrbitPrototype {
                 nextMusicCheck = now + IDLE_CHECK_MS
             }
             val epoch = EqEngine.orbitAttachmentEpoch()
-            if (!musicActive || epoch == null) {
+            if (!musicActive || epoch == null || holdForTest) {
                 EqEngine.resetOrbitGains()
                 lastEpoch = null
                 _status.value = if (epoch == null) Status.LIMITER else Status.WAITING
+                if (holdForTest) lastEpoch = null
                 delay(IDLE_CHECK_MS)
                 continue
             }

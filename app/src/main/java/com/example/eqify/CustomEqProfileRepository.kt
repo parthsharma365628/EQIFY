@@ -55,6 +55,13 @@ class CustomEqProfileRepository(context: Context) {
         save(_profiles.value.filterNot { it.id == id })
     }
 
+    /** Backup restore: replaces the whole store, keeping each profile's id. */
+    fun replaceAll(profiles: List<CustomEqProfile>) = synchronized(lock) {
+        ensureReadable()
+        require(profiles.all { p -> p.gains.size == 8 && p.gains.all { it.isFinite() && it in -12f..12f } })
+        save(profiles)
+    }
+
     fun clear() = synchronized(lock) {
         ensureReadable()
         save(emptyList())

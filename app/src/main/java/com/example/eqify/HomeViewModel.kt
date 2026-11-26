@@ -71,15 +71,30 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     val deviceSound = DeviceSoundCoordinator.state
 
-    fun playEqTestTone() {
-        if (_testToneMessage.value == "Playing test sound...") return
-        _testToneMessage.value = "Playing test sound..."
+    // ── Test sounds and sleep timer (FEATURES_BATCH3_PLAN.md §C, §D) ──
+    val playingTone = EqTestTonePlayer.current
+    val forceMono = repository.forceMono
+    val sleepTimer = SleepTimer.state
+
+    fun playTestTone(tone: TestTone) {
         viewModelScope.launch {
-            _testToneMessage.value = if (EqTestTonePlayer.play()) {
-                "Test complete: low, mid, and high tones"
-            } else "Test sound unavailable on this device"
+            _testToneMessage.value = if (EqTestTonePlayer.play(tone)) null
+                else "Test sound unavailable on this device"
         }
     }
+
+    /** The app is in the foreground, so it may start the service command directly. */
+    private fun sendToService(configure: android.content.Intent.() -> Unit) {
+        val intent = android.content.Intent(app, EqProcessingService::class.java).apply(configure)
+        runCatching { androidx.core.content.ContextCompat.startForegroundService(app, intent) }
+    }
+
+    fun startSleepTimer(minutes: Int) = sendToService {
+        action = EqProcessingService.ACTION_SLEEP_START
+        putExtra(EqProcessingService.EXTRA_MINUTES, minutes)
+    }
+
+    fun cancelSleepTimer() = sendToService { action = EqProcessingService.ACTION_SLEEP_CANCEL }
 }
 
 sealed class GenreUiState {

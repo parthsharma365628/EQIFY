@@ -53,6 +53,7 @@ object EqIcons {
     @DrawableRes val Save = R.drawable.ic_sym_save
     @DrawableRes val Reset = R.drawable.ic_sym_restart_alt
     @DrawableRes val Download = R.drawable.ic_sym_download
+    @DrawableRes val Bedtime = R.drawable.ic_sym_bedtime
 }
 
 /**

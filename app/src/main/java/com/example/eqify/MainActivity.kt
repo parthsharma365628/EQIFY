@@ -81,9 +81,10 @@ class MainActivity : ComponentActivity() {
                 val onboardingPrefs = remember {
                     getSharedPreferences("eqify_onboarding", MODE_PRIVATE)
                 }
-                var showWalkthrough by remember {
-                    mutableStateOf(!onboardingPrefs.getBoolean("permissions_explained", false))
+                LaunchedEffect(Unit) {
+                    if (!onboardingPrefs.getBoolean("permissions_explained", false)) Onboarding.show()
                 }
+                val showWalkthrough by Onboarding.visible.collectAsState()
                 EqifyApp()
                 if (showWalkthrough) {
                     PermissionWalkthrough(
@@ -111,7 +112,7 @@ class MainActivity : ComponentActivity() {
                         },
                         onFinish = {
                             onboardingPrefs.edit().putBoolean("permissions_explained", true).apply()
-                            showWalkthrough = false
+                            Onboarding.hide()
                         }
                     )
                 }
@@ -156,33 +157,45 @@ private fun PermissionWalkthrough(
     onRequestRuntimePermissions: () -> Unit,
     onFinish: () -> Unit
 ) {
+    // Tour pages first (FEATURES_BATCH3_PLAN.md §F), then the same permission steps as before.
     var step by rememberSaveable { mutableIntStateOf(0) }
+    val total = 6
     val title = when (step) {
         0 -> "Welcome to EQify"
-        1 -> "Notification access"
-        2 -> "Bluetooth and EQ service"
+        1 -> "Made for your headphones"
+        2 -> "Presets, bass and more"
+        3 -> "Notification access"
+        4 -> "Bluetooth and EQ service"
         else -> "Setup complete"
     }
     val description = when (step) {
-        0 -> "EQify needs a few Android permissions to detect the current song and keep EQ active."
-        1 -> NotificationAccessInfo.dialogText(
+        0 -> "EQify changes the sound to match the song that's playing: more punch for hip-hop, more air for " +
+            "classical. Turn Auto off in Settings to pick a preset yourself on the EQ tab."
+        1 -> "EQify corrects 6,000+ headphone models and remembers your choice for each device. " +
+            "On the phone speaker or in the car, correction switches off by itself."
+        2 -> "Save your own presets, add bass, and set how strong genre EQ is on Home. " +
+            "EQ → ⋮ → Show sound layers shows exactly what EQify changes."
+        3 -> NotificationAccessInfo.dialogText(
             "Notification access lets EQify detect the song you play. You can skip it: " +
                 "presets, headphone correction and bass still work."
         )
-        2 -> "Bluetooth access identifies connected headphones. Notification permission keeps the foreground EQ service visible."
-        else -> "The EQ service is ready. You can change these permissions later in Android Settings."
+        4 -> "Bluetooth access identifies connected headphones. Notification permission keeps the foreground EQ service visible."
+        else -> "The EQ service is ready. You can change these permissions later in Android Settings, " +
+            "and see this tour again in Settings → About."
     }
 
     val icon = when (step) {
         0 -> EqIcons.Equalizer
-        1 -> EqIcons.Music
-        2 -> EqIcons.Bluetooth
+        1 -> EqIcons.Headphones
+        2 -> EqIcons.Tune
+        3 -> EqIcons.Music
+        4 -> EqIcons.Bluetooth
         else -> EqIcons.CheckCircle
     }
     val primaryLabel = when (step) {
-        0 -> "Start"
-        1 -> "Open settings"
-        2 -> "Grant permissions"
+        0, 1, 2 -> "Next"
+        3 -> "Open settings"
+        4 -> "Grant permissions"
         else -> "Done"
     }
     val c = EqifyTheme.colors
@@ -205,7 +218,7 @@ private fun PermissionWalkthrough(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    repeat(4) { index ->
+                    repeat(total) { index ->
                         val width by animateDpAsState(if (index == step) 20.dp else 8.dp, label = "step-dot")
                         Box(Modifier.height(8.dp).width(width).clip(PillShape)
                             .background(if (index == step) c.textPrimary else c.outline))
@@ -216,21 +229,24 @@ private fun PermissionWalkthrough(
         confirmButton = {
             PrimaryButton(primaryLabel, onClick = {
                 when (step) {
-                    0 -> step = 1
-                    1 -> {
-                        step = 2
+                    0, 1 -> step += 1
+                    2 -> step = 3
+                    3 -> {
+                        step = 4
                         onOpenNotificationAccess()
                     }
-                    2 -> {
+                    4 -> {
                         onRequestRuntimePermissions()
-                        step = 3
+                        step = 5
                     }
                     else -> onFinish()
                 }
             })
         },
         dismissButton = {
-            if (step > 0 && step < 3) TextAction("Skip", { step += 1 })
+            // Tour pages skip to the permissions; permission pages skip one step, as before.
+            if (step < 3) TextAction("Skip tour", { step = 3 })
+            else if (step < 5) TextAction("Skip", { step += 1 })
         }
     )
 }
@@ -262,10 +278,15 @@ fun EqifyApp() {
         if (pendingImport != null && currentRoute != "eq") navigateToTopLevel("eq")
     }
 
+    // Window width decides bottom bar vs. rail (FEATURES_BATCH3_PLAN.md §H).
+    val config = androidx.compose.ui.platform.LocalConfiguration.current
+    val wide = config.screenWidthDp >= 600
+    val showNav = currentRoute == "home" || currentRoute == "eq"
+    val c = EqifyTheme.colors
+
     Scaffold(
         bottomBar = {
-            if (currentRoute == "home" || currentRoute == "eq") {
-                val c = EqifyTheme.colors
+            if (showNav && !wide) {
                 // Accent-container indicator; icons tinted by NavigationBarItem colors (no hand-drawn glyphs).
                 val itemColors = NavigationBarItemDefaults.colors(
                     selectedIconColor = c.onAccentContainer,
@@ -293,24 +314,56 @@ fun EqifyApp() {
             }
         }
     ) { innerPadding ->
-        NavHost(
-            navController    = navController,
-            startDestination = "home",
-            modifier         = Modifier.padding(innerPadding)
-        ) {
-            composable("home") {
-                HomeScreen(
-                    onNavigateToHeadphones = { navController.navigate("headphones") },
-                    onNavigateToSettings   = { navController.navigate("settings") },
-                    viewModel = homeViewModel
+        Row(Modifier.fillMaxSize().padding(innerPadding)) {
+            if (showNav && wide) {
+                val railColors = NavigationRailItemDefaults.colors(
+                    selectedIconColor = c.onAccentContainer,
+                    selectedTextColor = c.textPrimary,
+                    indicatorColor = c.accentContainer,
+                    unselectedIconColor = c.textMuted,
+                    unselectedTextColor = c.textMuted
                 )
+                NavigationRail(containerColor = c.surface) {
+                    Spacer(Modifier.weight(1f))
+                    NavigationRailItem(
+                        icon     = { EqIcon(EqIcons.Home, contentDescription = null, tint = LocalContentColor.current) },
+                        label    = { Text("Home", style = MaterialTheme.typography.labelMedium) },
+                        selected = currentRoute == "home",
+                        onClick  = { navigateToTopLevel("home") },
+                        colors   = railColors
+                    )
+                    NavigationRailItem(
+                        icon     = { EqIcon(EqIcons.Equalizer, contentDescription = null, tint = LocalContentColor.current) },
+                        label    = { Text("EQ", style = MaterialTheme.typography.labelMedium) },
+                        selected = currentRoute == "eq",
+                        onClick  = { navigateToTopLevel("eq") },
+                        colors   = railColors
+                    )
+                    Spacer(Modifier.weight(1f))
+                }
             }
-            composable("eq") { EqScreen() }
-            composable("headphones") {
-                HeadphonesScreen(onNavigateBack = { navController.popBackStack() })
-            }
-            composable("settings") {
-                SettingsScreen(onNavigateBack = { navController.popBackStack() })
+            // Content stays readable on tablets: capped and centred.
+            Box(Modifier.weight(1f).fillMaxHeight().background(c.background), contentAlignment = Alignment.TopCenter) {
+                NavHost(
+                    navController    = navController,
+                    startDestination = "home",
+                    modifier         = Modifier.widthIn(max = 840.dp).fillMaxSize()
+                ) {
+                    composable("home") {
+                        HomeScreen(
+                            onNavigateToHeadphones = { navController.navigate("headphones") },
+                            onNavigateToSettings   = { navController.navigate("settings") },
+                            viewModel = homeViewModel
+                        )
+                    }
+                    composable("eq") { EqScreen() }
+                    composable("headphones") {
+                        HeadphonesScreen(onNavigateBack = { navController.popBackStack() })
+                    }
+                    composable("settings") {
+                        SettingsScreen(onNavigateBack = { navController.popBackStack() })
+                    }
+                }
             }
         }
     }

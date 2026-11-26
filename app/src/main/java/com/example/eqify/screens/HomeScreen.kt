@@ -65,6 +65,12 @@ fun HomeScreen(
     val recentTracks         by viewModel.recentTracks.collectAsState()
     val correctionMessage    by viewModel.correctionMessage.collectAsState()
     var showRecent by remember { mutableStateOf(false) }
+    var showSleep by remember { mutableStateOf(false) }
+    var showTestSound by remember { mutableStateOf(false) }
+    val sleepState by viewModel.sleepTimer.collectAsState()
+    val playingTone by viewModel.playingTone.collectAsState()
+    val forceMono by viewModel.forceMono.collectAsState(initial = false)
+    val appliedLoudness by EqState.appliedLoudness.collectAsState()
     var showMix by remember { mutableStateOf(false) }
     var correctionTarget by remember { mutableStateOf<Pair<String, String>?>(null) }
     val customPresets by viewModel.customPresetNames.collectAsState()
@@ -81,6 +87,19 @@ fun HomeScreen(
     }
     if (showMix) {
         WeekInSoundSheet(weekStats, onRecent = { showMix = false; showRecent = true }, onDismiss = { showMix = false })
+    }
+    if (showSleep) {
+        SleepTimerSheet(
+            state = sleepState,
+            endOfTrackAvailable = mediaListenerEnabled,
+            onStart = { viewModel.startSleepTimer(it); showSleep = false },
+            onCancel = viewModel::cancelSleepTimer,
+            onDismiss = { showSleep = false }
+        )
+    }
+    if (showTestSound) {
+        TestSoundSheet(playing = playingTone, forceMono = forceMono, enabled = serviceRunning,
+            onPlay = viewModel::playTestTone, onDismiss = { showTestSound = false })
     }
     if (showRecent) {
         RecentTracksSheet(recentTracks, onCorrect = { title, artist ->
@@ -100,7 +119,8 @@ fun HomeScreen(
         // DESIGN_REVIEW.md item 6: no cards on Home. Rows run full width with
         // hairline dividers; everything else sits in the screen gutter.
         val gutter = Modifier.padding(horizontal = EqSpacing.screen)
-        TopBar(onSettingsClick = onNavigateToSettings, modifier = gutter)
+        TopBar(onSettingsClick = onNavigateToSettings, onSleepClick = { showSleep = true },
+            sleepActive = sleepState != SleepTimer.State.Off, modifier = gutter)
 
         detectionPrompt?.let { prompt ->
             DetectionBanner(prompt, onChoose = {
@@ -148,7 +168,8 @@ fun HomeScreen(
             bassLevel = bassLevel,
             onBassChange = { viewModel.setBassBoost(it) },
             testToneMessage = testToneMessage,
-            onTestEq = viewModel::playEqTestTone,
+            onTestEq = { showTestSound = true },
+            loudnessPeak = LoudnessCompensation.peak(appliedLoudness),
             // Only while automatic genre EQ is what's playing; a manual preset ignores it.
             showGenreStrength = effective.autoGenre && effective.devicePreset == null && !manualOverride && isEqEnabled,
             genreStrength = effective.genreStrength,
@@ -209,13 +230,16 @@ private fun DetectionBanner(prompt: HeadphoneDetector.Prompt, onChoose: () -> Un
 // ── Top bar ───────────────────────────────────────────────────────────
 
 @Composable
-private fun TopBar(onSettingsClick: () -> Unit, modifier: Modifier = Modifier) {
+private fun TopBar(onSettingsClick: () -> Unit, onSleepClick: () -> Unit, sleepActive: Boolean,
+                   modifier: Modifier = Modifier) {
     Row(
         modifier.fillMaxWidth().padding(top = EqSpacing.m),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text("EQify", style = MaterialTheme.typography.headlineSmall, color = EqifyTheme.colors.textPrimary,
             modifier = Modifier.weight(1f))
+        IconAction(EqIcons.Bedtime, if (sleepActive) "Sleep timer, running" else "Sleep timer", onSleepClick,
+            tint = if (sleepActive) EqifyTheme.colors.accent else EqifyTheme.colors.textMuted)
         IconAction(EqIcons.Settings, "Settings", onSettingsClick)
     }
 }
@@ -371,6 +395,7 @@ private fun SoundCard(
     bassLevel: Float,
     onBassChange: (Float) -> Unit,
     testToneMessage: String?,
+    loudnessPeak: Float = 0f,
     onTestEq: () -> Unit,
     showGenreStrength: Boolean = false,
     genreStrength: Float = GenreStrength.DEFAULT,
@@ -419,6 +444,17 @@ private fun SoundCard(
                     style = MaterialTheme.typography.labelMedium.condensed().tabular(),
                     color = if (bassLevel > 0f) c.accent else c.textMuted)
             }
+            // Volume-aware bass (FEATURES_BATCH2_PLAN.md §1).
+            val appliedBass by EqState.appliedBassBoost.collectAsState()
+            if (bassLevel > 0f && appliedBass < bassLevel) {
+                Text("Eased to +${"%.1f".format(appliedBass)} dB at this volume",
+                    style = MaterialTheme.typography.bodySmall, color = c.textMuted)
+            }
+            // Loudness compensation (FEATURES_BATCH3_PLAN.md §B).
+            if (eqEnabled && loudnessPeak > 0f) {
+                Text("Loudness compensation +${"%.1f".format(loudnessPeak)} dB at this volume",
+                    style = MaterialTheme.typography.bodySmall, color = c.textMuted)
+            }
             SegmentedToggle(
                 options = BASS_STEPS,
                 // An unexpected stored level (not one of the steps) shows no segment selected, as before.
@@ -433,9 +469,9 @@ private fun SoundCard(
             GenreStrengthControl(genreStrength, onGenreStrengthChange, strengthScope)
         }
         TextAction(
-            text = testToneMessage ?: "Play test sound",
+            text = testToneMessage ?: "Test sound",
             onClick = onTestEq,
-            enabled = serviceRunning && testToneMessage != "Playing test sound...",
+            enabled = serviceRunning,
             icon = EqIcons.Play,
             modifier = Modifier.padding(horizontal = EqSpacing.s)
         )

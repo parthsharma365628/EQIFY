@@ -28,6 +28,10 @@ These services have their own privacy policies: Apple, Last.fm, GitHub and Sentr
 
 Your presets and customised genre curves, settings, genre corrections, recent tracks and the weekly genre mix. EQify also keeps imported GraphicEQ files and downloaded headphone corrections there. You can clear these in **Settings → Data & privacy**, or remove all of them by uninstalling the app.
 
+**Automation.** If you turn on Settings → Automation, other apps on your phone (like Tasker) can turn EQ on or off, set bass or a preset, or start the sleep timer. They can't read anything from EQify. It is off by default.
+
+**Backups.** Settings → Backup & restore saves your presets, genre curves, device settings and other settings to a file you choose. It includes your headphone and device names, but no listening history. EQify never uploads it; it goes only where you save or share it.
+
 ## What EQify does not do
 
 There are no ads or analytics, no account, and no selling or sharing of data for marketing. EQify never reads your messages or other notifications.
