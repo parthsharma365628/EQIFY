@@ -375,6 +375,33 @@ and static Pages models.
   - Content is capped at 840 dp.
   - `EqScreen` goes side by side in short landscape windows.
 
+## 0.5.0 features (FEATURES_BATCH4_PLAN.md)
+
+- **Pure logic** lives in `Batch4Logic.kt`:
+  - `LevelMatch`, `StereoBalance`, `PresetFavorites`, `ChangeLog` (in memory), `DeviceVolumes`
+  - `SafeListening` (WHO H.870 dose estimate, 7-day buckets)
+  - `ParametricEqImporter` (RBJ biquads, band = mean response over its log span)
+  - `SpectrumBars`
+- **Android side** lives in `Batch4Android.kt`: `ExternalStatus`, `SafeListeningAlerts`, `BassTileService`, `SleepTileService`.
+- **Status hub:** call `ExternalStatus.refresh(context)`, never the widget, tiles or watch directly. It updates the widget, both tiles and `WearBridge.publishStatus`.
+- **Per-channel input gain:** `EqEngine` is the only writer and always writes balance + Orbit. `resetOrbitGains` returns to the balance.
+- **Gain chain:** tone → correction → bass → loudness → level match (only while `EqState.levelMatchActive`) → protection, in both paths.
+- **Media volume:** one receiver, registered when any of bass easing, loudness, cap, safe listening or device-volume memory is on.
+  - Device volume isn't saved during a fade, a cap clamp, or the 2.5 s after a restore.
+  - A restore goes through `VolumeCap.limit`.
+- **Safe listening:** the service ticks once a second while music plays on a headphone-type output, and writes once a minute (`addListeningDose`). It alerts at each 100% step (`safe_listening_alerted`).
+  - The dose is never backed up.
+  - Android's own CSD has no app API.
+- **Presets:**
+  - "Dialogue" is a built-in, but not a genre (kept out of `correctionGenres`).
+  - Backups rename presets that now have reserved names.
+  - `favorite_presets` follows renames and deletes inside the repository.
+- **Spectrum:** `Visualizer(0)` with `RECORD_AUDIO`, only while `SpectrumSheet` is open.
+- **Wear:** the `:wear` module (`WearMainActivity`, `WearProtocol`).
+  - The phone side is `WearBridge` and `WearCommandService`.
+  - Commands act only while the EQ service runs.
+  - Keep `applicationId` and signing identical across both modules.
+
 ## Release builds
 
 See `RELEASING.md`. Release builds:

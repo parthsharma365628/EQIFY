@@ -52,6 +52,9 @@ class EqProcessingService : Service() {
         const val ACTION_SET_AUTO_GENRE = "com.example.eqify.ACTION_SET_AUTO_GENRE"
         const val ACTION_SLEEP_START = "com.example.eqify.ACTION_SLEEP_START"
         const val ACTION_SLEEP_CANCEL = "com.example.eqify.ACTION_SLEEP_CANCEL"
+        // Safe-listening alert actions (FEATURES_BATCH4_PLAN.md L).
+        const val ACTION_LOWER_VOLUME = "com.example.eqify.ACTION_LOWER_VOLUME"
+        const val ACTION_ENABLE_VOLUME_LIMIT = "com.example.eqify.ACTION_ENABLE_VOLUME_LIMIT"
         const val EXTRA_LEVEL = "level"
         const val EXTRA_NAME = "name"
         const val EXTRA_MINUTES = "minutes"
@@ -65,6 +68,7 @@ class EqProcessingService : Service() {
     private var serviceActive = false
     private var lastAutoSnapshot: AutoSnapshot? = null
     private var lastNotificationText = "EQify starting…"
+    private var lastLoggedTone: String? = null
     private var showBassButton = true
 
     // Volume-aware bass: follow media volume (FEATURES_BATCH2_PLAN.md §1).
@@ -162,6 +166,27 @@ class EqProcessingService : Service() {
             }
             ACTION_SLEEP_START -> startSleepTimer(intent.getIntExtra(EXTRA_MINUTES, 0))
             ACTION_SLEEP_CANCEL -> cancelSleepTimer()
+            ACTION_LOWER_VOLUME -> {
+                dismissSafeListeningAlert()
+                if (fadeOriginalVolume == null) {
+                    val audio = getSystemService(AUDIO_SERVICE) as AudioManager
+                    runCatching {
+                        val max = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+                        val target = max / 2
+                        if (audio.getStreamVolume(AudioManager.STREAM_MUSIC) > target)
+                            audio.setStreamVolume(AudioManager.STREAM_MUSIC, target, AudioManager.FLAG_SHOW_UI)
+                    }
+                    refreshMediaVolume()
+                }
+            }
+            ACTION_ENABLE_VOLUME_LIMIT -> {
+                dismissSafeListeningAlert()
+                serviceScope.launch {
+                    val repository = (application as EqifyApplication).repository
+                    repository.setVolumeCapLevel(VolumeCap.DEFAULT)
+                    repository.setVolumeCapEnabled(true)
+                }
+            }
             ACTION_CYCLE_BASS -> serviceScope.launch {
                 // Through the coordinator, so a device's own bass setting is edited (AI.md).
                 DeviceSoundCoordinator.setBass(NotificationControls.nextBass(EqState.bassBoostLevel.value))
@@ -188,7 +213,7 @@ class EqProcessingService : Service() {
         volumeReceiverRegistered = false
         serviceScope.cancel()
         EqState.setServiceRunning(false)
-        EqifyWidget.refresh(this)
+        ExternalStatus.refresh(this)
         Log.d(TAG, "Service destroyed")
     }
 
@@ -214,7 +239,7 @@ class EqProcessingService : Service() {
                 status to activeProfile
             }.distinctUntilChanged().collect { (status, activeProfile) ->
                 repository.setProcessingSnapshot(status, activeProfile)
-                EqifyWidget.refresh(this@EqProcessingService)
+                ExternalStatus.refresh(this@EqProcessingService)
             }
         }
     }
@@ -232,6 +257,8 @@ class EqProcessingService : Service() {
                 VolumeCap.clampIndex(volume, max, volumeCapLevel)?.let { capped ->
                     audio.setStreamVolume(AudioManager.STREAM_MUSIC, capped, 0)
                     volume = capped
+                    clampedJustNow = true
+                    ChangeLog.add("Volume limited to ${Math.round(volumeCapLevel * 100)}%")
                     if (!capToastShown) {
                         capToastShown = true
                         Toast.makeText(this, "EQify volume limit is on (${Math.round(volumeCapLevel * 100)}%)",
@@ -242,6 +269,79 @@ class EqProcessingService : Service() {
             VolumeBass.fraction(volume, max)
         }.getOrDefault(0f)
         EqState.setMediaVolumeFraction(fraction)
+        rememberDeviceVolume(fraction)
+    }
+
+    // ── Per-device volume memory (FEATURES_BATCH4_PLAN.md S7) ─────────
+    private var deviceVolumeMemory = false
+    private var clampedJustNow = false
+    private var restoringUntil = 0L
+
+    /** Saves the user's own volume for the current output: not during a fade, a clamp or a restore. */
+    private fun rememberDeviceVolume(fraction: Float) {
+        val wasClamp = clampedJustNow
+        clampedJustNow = false
+        if (!deviceVolumeMemory || wasClamp || fadeOriginalVolume != null) return
+        if (SystemClock.elapsedRealtime() < restoringUntil) return
+        val key = HeadphoneDetector.output.value?.key ?: return
+        val repository = (application as EqifyApplication).repository
+        serviceScope.launch { repository.setDeviceVolume(key, fraction) }
+    }
+
+    private suspend fun restoreDeviceVolume(key: String, label: String) {
+        if (!deviceVolumeMemory || fadeOriginalVolume != null) return
+        val saved = (application as EqifyApplication).repository.deviceVolumes.first()[key] ?: return
+        // Android may set its own per-device volume first; let it settle.
+        restoringUntil = SystemClock.elapsedRealtime() + 2_500
+        delay(1_000)
+        if (fadeOriginalVolume != null || HeadphoneDetector.output.value?.key != key) return
+        val audio = getSystemService(AUDIO_SERVICE) as AudioManager
+        runCatching {
+            val max = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+            val index = VolumeCap.limit(DeviceVolumes.toIndex(saved, max), max, volumeCapEnabled, volumeCapLevel)
+            if (index != audio.getStreamVolume(AudioManager.STREAM_MUSIC)) {
+                audio.setStreamVolume(AudioManager.STREAM_MUSIC, index, 0)
+                ChangeLog.add("Volume set to ${Math.round(index * 100f / max)}% for $label")
+            }
+        }
+        refreshMediaVolume()
+    }
+
+    // ── Safe listening (FEATURES_BATCH4_PLAN.md, research) ────────────
+    private var safeListeningJob: kotlinx.coroutines.Job? = null
+
+    private fun setSafeListening(enabled: Boolean) {
+        if (!enabled) { safeListeningJob?.cancel(); safeListeningJob = null; return }
+        if (safeListeningJob != null) return
+        val repository = (application as EqifyApplication).repository
+        val audio = getSystemService(AUDIO_SERVICE) as AudioManager
+        safeListeningJob = serviceScope.launch {
+            var pending = 0.0
+            var lastFlush = SystemClock.elapsedRealtime()
+            while (true) {
+                delay(1_000)
+                val out = HeadphoneDetector.output.value
+                val onHeadphones = out != null && out.kind != AudioOutputKind.SPEAKER &&
+                    !HeadphoneDetector.correctionSuppressed.value
+                if (onHeadphones && runCatching { audio.isMusicActive }.getOrDefault(false)) {
+                    val mode = repository.safeListeningMode.first()
+                    val level = SafeListening.estimatedLevelDb(EqState.mediaVolumeFraction.value,
+                        if (EqState.isEqEnabled.value && !EqState.isBypassed.value) EqState.activeBandGains.value else FloatArray(8))
+                    pending += SafeListening.doseFor(level, 1.0, mode)
+                }
+                val now = SystemClock.elapsedRealtime()
+                if (pending > 0.0 && now - lastFlush >= 60_000) {
+                    val weekly = repository.addListeningDose(java.time.LocalDate.now(), pending)
+                    pending = 0.0
+                    lastFlush = now
+                    SafeListening.alertStep(weekly, repository.safeListeningAlerted.first())?.let { step ->
+                        repository.setSafeListeningAlerted(step)
+                        ChangeLog.add("Safe listening: ${SafeListening.percent(weekly)}% of this week's allowance")
+                        SafeListeningAlerts.notify(this@EqProcessingService, SafeListening.percent(weekly))
+                    }
+                }
+            }
+        }
     }
 
     private fun setVolumeMonitor(needed: Boolean) {
@@ -259,12 +359,17 @@ class EqProcessingService : Service() {
         val repository = (application as EqifyApplication).repository
         serviceScope.launch {
             combine(
-                repository.volumeAwareBass, repository.loudnessCompensation,
-                repository.volumeCapEnabled, repository.volumeCapLevel
-            ) { bass, loud, capOn, cap -> listOf(bass, loud, capOn, cap) }.collect { (bass, loud, capOn, cap) ->
+                combine(repository.volumeAwareBass, repository.loudnessCompensation,
+                    repository.volumeCapEnabled, repository.volumeCapLevel) { a, b, c, d -> listOf(a, b, c, d) },
+                combine(repository.safeListeningEnabled, repository.deviceVolumeMemory) { a, b -> a to b }
+            ) { first, second -> first to second }.collect { (first, second) ->
+                val (bass, loud, capOn, cap) = first
+                val (safe, devVol) = second
                 volumeCapEnabled = capOn as Boolean
                 volumeCapLevel = cap as Float
-                setVolumeMonitor(bass as Boolean || loud as Boolean || capOn)
+                deviceVolumeMemory = devVol
+                setSafeListening(safe)
+                setVolumeMonitor(bass as Boolean || loud as Boolean || capOn || safe || devVol)
                 refreshMediaVolume()
                 EqState.setVolumeAwareBass(bass)
                 EqState.setLoudnessCompensation(loud as Boolean)
@@ -273,12 +378,29 @@ class EqProcessingService : Service() {
         serviceScope.launch {
             SleepTimer.state.collect {
                 updateNotification(lastNotificationText)
-                EqifyWidget.refresh(this@EqProcessingService)
+                ExternalStatus.refresh(this@EqProcessingService)
             }
         }
         // Volume is per output: re-read it when the headphones change.
         serviceScope.launch {
-            HeadphoneDetector.output.map { it?.key }.distinctUntilChanged().collect { refreshMediaVolume() }
+            var previousKey: String? = null
+            HeadphoneDetector.output.distinctUntilChanged { a, b -> a?.key == b?.key }.collectLatest { out ->
+                refreshMediaVolume()
+                val key = out?.key
+                if (key != previousKey) {
+                    if (out != null) ChangeLog.add("Now playing on ${out.displayName}")
+                    else if (previousKey != null) ChangeLog.add("Output disconnected")
+                    previousKey = key
+                    if (out != null) restoreDeviceVolume(out.key, out.displayName)
+                }
+            }
+        }
+        // Stereo balance (FEATURES_BATCH4_PLAN.md S2).
+        serviceScope.launch {
+            repository.balance.collect { b ->
+                val (l, r) = StereoBalance.channelGains(b)
+                EqEngine.setBalance(l, r)
+            }
         }
         serviceScope.launch {
             repository.notificationBassButton.collect { show ->
@@ -290,9 +412,13 @@ class EqProcessingService : Service() {
         serviceScope.launch {
             EqState.bassBoostLevel.collect {
                 updateNotification(lastNotificationText)
-                EqifyWidget.refresh(this@EqProcessingService)
+                ExternalStatus.refresh(this@EqProcessingService)
             }
         }
+    }
+
+    private fun dismissSafeListeningAlert() {
+        runCatching { getSystemService(NotificationManager::class.java).cancel(1002) }
     }
 
     // ── Commands from shortcuts, automation and the widget ────────────
@@ -360,6 +486,7 @@ class EqProcessingService : Service() {
         val audio = getSystemService(AUDIO_SERVICE) as AudioManager
         val original = audio.getStreamVolume(AudioManager.STREAM_MUSIC)
         SleepTimer.publish(SleepTimer.State.Fading)
+        ChangeLog.add("Sleep timer: fading out")
         // Loudness and bass easing hold still, so the fade never adds bass (plan §1).
         EqState.setVolumeFeaturesFrozen(true)
         fadeOriginalVolume = original
@@ -427,11 +554,15 @@ class EqProcessingService : Service() {
                     // Loudness compensation is the next layer, before protection (FEATURES_BATCH3_PLAN.md §2).
                     combine(EqState.appliedBassBoost,
                         DeviceSoundCoordinator.state.map { it.effective.genreStrength }.distinctUntilChanged(),
-                        EqState.appliedLoudness
-                    ) { b, s, loud -> Triple(b, s, loud) },
+                        EqState.appliedLoudness,
+                        EqState.levelMatchActive
+                    ) { b, s, loud, match -> Triple(b, s, loud) to match },
                     repository.smoothEqTransitions,
                     HeadphoneDetector.correctionSuppressed
-                ) { l, m, bs, smooth, noHp -> AudioSettingsState(l, m, bs.first, smooth, noHp, bs.second, bs.third) },
+                ) { l, m, bsm, smooth, noHp ->
+                    val bs = bsm.first
+                    AudioSettingsState(l, m, bs.first, smooth, noHp, bs.second, bs.third, bsm.second)
+                },
                 combine(
                     DeviceSoundCoordinator.state.map { it.effective.autoGenre to it.effective.devicePreset }
                         .distinctUntilChanged(),
@@ -458,6 +589,7 @@ class EqProcessingService : Service() {
                     correctionSuppressed = t2.correctionSuppressed,
                     genreStrength = t2.genreStrength,
                     loudness      = t2.loudness,
+                    levelMatch    = t2.levelMatch,
                     autoGenre     = t3.autoGenre,
                     baseToneGains = t3.baseToneGains,
                     toneName      = t3.toneName,
@@ -486,6 +618,7 @@ class EqProcessingService : Service() {
                         limiterState == LimiterDiagnosticState.UNSUPPORTED)
                 ) {
                     Log.w(TAG, "Balanced protection unavailable; switching to Safe")
+                    ChangeLog.add("Output protection switched to Safe (limiter unavailable)")
                     repository.setOutputProtectionMode(OutputProtectionMode.SAFE)
                 }
 
@@ -569,6 +702,8 @@ class EqProcessingService : Service() {
                     EqProfileManager.combineGains(appliedTone, hpCorrection, pipe.bassBoost),
                     pipe.loudness
                 )
+                // A/B level match: only while the EQ screen compares (FEATURES_BATCH4_PLAN.md S1).
+                if (pipe.levelMatch) combined = LevelMatch.apply(combined, LevelMatch.offset(combined))
 
                 val useSafeProtection =
                     pipe.outputProtectionMode == OutputProtectionMode.SAFE ||
@@ -616,6 +751,11 @@ class EqProcessingService : Service() {
 
                 val hpShort = pipe.headphone.split(" ").takeLast(2).joinToString(" ")
                 updateNotification(listOf(displayName, bassTag, hpShort).filter { it.isNotBlank() }.joinToString(", "))
+                if (!pipe.manualOverride && displayName != lastLoggedTone) {
+                    lastLoggedTone = displayName
+                    ChangeLog.add(if (pipe.autoGenre && pipe.devicePreset == null) "Tone switched to $displayName"
+                        else "Tone set to $displayName")
+                }
                 Log.d(TAG, "Auto-EQ: $displayName gains=${combined.map { "%.1f".format(it) }}")
             }
         }
@@ -650,6 +790,7 @@ class EqProcessingService : Service() {
                     ),
                     EqState.appliedLoudness.value
                 )
+                if (EqState.levelMatchActive.value) finalGains = LevelMatch.apply(finalGains, LevelMatch.offset(finalGains))
                 val protectionMode = EqState.outputProtectionMode
                 val useSafeProtection =
                     protectionMode == OutputProtectionMode.SAFE ||
@@ -682,7 +823,8 @@ class EqProcessingService : Service() {
         val genreStrength: Float = GenreStrength.DEFAULT,
         /** The connected device always uses this preset (FEATURES_NEXT_PLAN.md §4). */
         val devicePreset: String? = null,
-        val loudness: List<Float> = LoudnessCompensation.ZERO
+        val loudness: List<Float> = LoudnessCompensation.ZERO,
+        val levelMatch: Boolean = false
     )
 
     private data class SourceState(
@@ -711,7 +853,8 @@ class EqProcessingService : Service() {
         /** Phone speaker / "Not headphones" device: apply no headphone correction. */
         val correctionSuppressed: Boolean,
         val genreStrength: Float,
-        val loudness: List<Float>
+        val loudness: List<Float>,
+        val levelMatch: Boolean
     )
 
     private data class AutoSnapshot(
@@ -731,11 +874,12 @@ class EqProcessingService : Service() {
         val genreStrength: Float,
         val devicePreset: String?,
         val loudness: List<Float>,
+        val levelMatch: Boolean,
         val outputGains: FloatArray
     ) {
         fun requiresSnap(pipe: EqPipe): Boolean =
             enabled != pipe.enabled || bypassed != pipe.bypassed ||
-                bassBoost != pipe.bassBoost || loudness != pipe.loudness || mono != pipe.mono ||
+                bassBoost != pipe.bassBoost || loudness != pipe.loudness || levelMatch != pipe.levelMatch || mono != pipe.mono ||
                 outputProtectionMode != pipe.outputProtectionMode ||
                 smoothTransitions != pipe.smoothTransitions ||
                 autoGenre != pipe.autoGenre || devicePreset != pipe.devicePreset ||
@@ -753,7 +897,7 @@ class EqProcessingService : Service() {
                 pipe.baseToneGains.copyOf(), pipe.toneName, pipe.autoGenre,
                 pipe.manualOverride, pipe.enabled, pipe.bypassed, pipe.bassBoost,
                 pipe.mono, pipe.outputProtectionMode, pipe.smoothTransitions,
-                pipe.genreStrength, pipe.devicePreset, pipe.loudness, output.copyOf()
+                pipe.genreStrength, pipe.devicePreset, pipe.loudness, pipe.levelMatch, output.copyOf()
             )
         }
     }

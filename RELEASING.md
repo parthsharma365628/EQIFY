@@ -29,7 +29,9 @@ Without the signing properties, `assembleRelease` still works but produces `app-
 
 1. Increase `versionCode` (and update `versionName`) in `app/build.gradle.kts`.
 2. Build: `.\gradlew.bat testDebugUnitTest assembleRelease`
-3. Output: `app/build/outputs/apk/release/app-release.apk`.
+3. Output: `app/build/outputs/apk/release/app-release.apk`, and the watch app at `wear/build/outputs/apk/release/wear-release.apk`.
+   - Bump `versionCode`/`versionName` in `wear/build.gradle.kts` too.
+   - Both must be signed with the same key: check with `apksigner verify --print-certs` on each.
 4. **Install the release APK on a real phone and smoke-test it.** Release builds are shrunk by R8 (no renaming), so check:
    - headphone search and download
    - genre detection through iTunes

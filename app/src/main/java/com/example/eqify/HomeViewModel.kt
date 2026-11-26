@@ -75,6 +75,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     val playingTone = EqTestTonePlayer.current
     val forceMono = repository.forceMono
     val sleepTimer = SleepTimer.state
+    // Batch 4 (FEATURES_BATCH4_PLAN.md S6, L)
+    val changes = ChangeLog.entries
+    val safeListeningEnabled = repository.safeListeningEnabled
+    val listeningDose = repository.listeningDose
 
     fun playTestTone(tone: TestTone) {
         viewModelScope.launch {

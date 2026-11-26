@@ -7,6 +7,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.floatPreferencesKey
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -113,6 +114,15 @@ class UserPreferencesRepository(private val context: Context) {
         val VOLUME_CAP_ENABLED    = booleanPreferencesKey("volume_cap_enabled")
         val VOLUME_CAP_LEVEL      = floatPreferencesKey("volume_cap_level")
         val AUTOMATION_ENABLED    = booleanPreferencesKey("automation_enabled")
+        val FAVORITE_PRESETS      = stringPreferencesKey("favorite_presets")
+        val BALANCE               = floatPreferencesKey("balance")
+        val HAPTICS               = booleanPreferencesKey("haptics")
+        val SAFE_LISTENING        = booleanPreferencesKey("safe_listening_enabled")
+        val SAFE_LISTENING_MODE   = stringPreferencesKey("safe_listening_mode")
+        val LISTENING_DOSE        = stringPreferencesKey("listening_dose")
+        val SAFE_LISTENING_ALERTED = intPreferencesKey("safe_listening_alerted")
+        val DEVICE_VOLUME_MEMORY  = booleanPreferencesKey("device_volume_memory")
+        val DEVICE_VOLUMES        = stringPreferencesKey("device_volumes")
     }
 
     // ── Standard settings ─────────────────────────────────────────────
@@ -239,6 +249,50 @@ class UserPreferencesRepository(private val context: Context) {
     /** Other apps may send automation commands only when this is on (off by default). */
     val automationEnabled: Flow<Boolean> = pref { it[Keys.AUTOMATION_ENABLED] ?: false }
     suspend fun setAutomationEnabled(enabled: Boolean) { context.dataStore.edit { it[Keys.AUTOMATION_ENABLED] = enabled } }
+
+    // ── Batch 4 (FEATURES_BATCH4_PLAN.md) ─────────────────────────────
+    val favoritePresets: Flow<List<String>> = pref { CustomPresetNameCodec.decode(it[Keys.FAVORITE_PRESETS] ?: "") }
+    suspend fun editFavoritePresets(transform: (List<String>) -> List<String>) {
+        context.dataStore.edit { prefs ->
+            val current = CustomPresetNameCodec.decode(prefs[Keys.FAVORITE_PRESETS] ?: "")
+            prefs[Keys.FAVORITE_PRESETS] = CustomPresetNameCodec.encode(transform(current))
+        }
+    }
+    val balance: Flow<Float> = pref { StereoBalance.normalise(it[Keys.BALANCE]) }
+    suspend fun setBalance(value: Float) { context.dataStore.edit { it[Keys.BALANCE] = StereoBalance.normalise(value) } }
+    val haptics: Flow<Boolean> = pref { it[Keys.HAPTICS] ?: true }
+    suspend fun setHaptics(enabled: Boolean) { context.dataStore.edit { it[Keys.HAPTICS] = enabled } }
+    val safeListeningEnabled: Flow<Boolean> = pref { it[Keys.SAFE_LISTENING] ?: true }
+    suspend fun setSafeListeningEnabled(enabled: Boolean) { context.dataStore.edit { it[Keys.SAFE_LISTENING] = enabled } }
+    val safeListeningMode: Flow<SafeListening.Mode> = pref { SafeListening.Mode.fromStorage(it[Keys.SAFE_LISTENING_MODE]) }
+    suspend fun setSafeListeningMode(mode: SafeListening.Mode) { context.dataStore.edit { it[Keys.SAFE_LISTENING_MODE] = mode.name } }
+    val listeningDose: Flow<Map<java.time.LocalDate, Double>> = pref { SafeListening.decode(it[Keys.LISTENING_DOSE]) }
+    val safeListeningAlerted: Flow<Int> = pref { it[Keys.SAFE_LISTENING_ALERTED] ?: 0 }
+    /** Adds [dose] to today and returns the new weekly total. One atomic edit. */
+    suspend fun addListeningDose(today: java.time.LocalDate, dose: Double): Double {
+        var weekly = 0.0
+        context.dataStore.edit { prefs ->
+            val next = SafeListening.add(SafeListening.decode(prefs[Keys.LISTENING_DOSE]), today, dose)
+            prefs[Keys.LISTENING_DOSE] = SafeListening.encode(next)
+            weekly = SafeListening.weekly(next, today)
+            // The window rolled back below an alerted step: allow that step to alert again later.
+            val alerted = prefs[Keys.SAFE_LISTENING_ALERTED] ?: 0
+            if (weekly.toInt() < alerted) prefs[Keys.SAFE_LISTENING_ALERTED] = weekly.toInt()
+        }
+        return weekly
+    }
+    suspend fun setSafeListeningAlerted(step: Int) { context.dataStore.edit { it[Keys.SAFE_LISTENING_ALERTED] = step } }
+    suspend fun clearListeningDose() {
+        context.dataStore.edit { it.remove(Keys.LISTENING_DOSE); it.remove(Keys.SAFE_LISTENING_ALERTED) }
+    }
+    val deviceVolumeMemory: Flow<Boolean> = pref { it[Keys.DEVICE_VOLUME_MEMORY] ?: false }
+    suspend fun setDeviceVolumeMemory(enabled: Boolean) { context.dataStore.edit { it[Keys.DEVICE_VOLUME_MEMORY] = enabled } }
+    val deviceVolumes: Flow<Map<String, Float>> = pref { DeviceVolumes.decode(it[Keys.DEVICE_VOLUMES]) }
+    suspend fun setDeviceVolume(key: String, fraction: Float) {
+        context.dataStore.edit { prefs ->
+            prefs[Keys.DEVICE_VOLUMES] = DeviceVolumes.encode(DeviceVolumes.decode(prefs[Keys.DEVICE_VOLUMES]) + (key to fraction))
+        }
+    }
 
     suspend fun setGenreStrength(value: Float) {
         context.dataStore.edit { it[Keys.GENRE_STRENGTH] = GenreStrength.normalise(value) }
@@ -517,6 +571,7 @@ class UserPreferencesRepository(private val context: Context) {
         val current = customPresetNames.first().toMutableList()
         current.removeAll { it.equals(presetName, ignoreCase = true) }
         saveCustomPresetNamesList(current)
+        editFavoritePresets { PresetFavorites.remove(it, presetName) }
     }
 
     suspend fun renameCustomPreset(oldName: String, newName: String) {
@@ -540,6 +595,8 @@ class UserPreferencesRepository(private val context: Context) {
                 names.map { if (it == oldName) name else it }
             )
             if (prefs[Keys.LAST_PRESET] == oldName) prefs[Keys.LAST_PRESET] = name
+            prefs[Keys.FAVORITE_PRESETS] = CustomPresetNameCodec.encode(PresetFavorites.rename(
+                CustomPresetNameCodec.decode(prefs[Keys.FAVORITE_PRESETS] ?: ""), oldName, name))
         }
     }
 
@@ -580,7 +637,8 @@ class UserPreferencesRepository(private val context: Context) {
             genreOverrides = GenreCurveOverrides.decode(prefs[Keys.GENRE_OVERRIDES]),
             deviceProfiles = DeviceProfiles.decode(prefs[Keys.DEVICE_PROFILES]),
             deviceChoices = DeviceHeadphoneMemory.decode(prefs[Keys.DEVICE_CHOICES]),
-            favoriteHeadphones = CustomPresetNameCodec.decode(prefs[Keys.FAVORITE_HEADPHONES] ?: "")
+            favoriteHeadphones = CustomPresetNameCodec.decode(prefs[Keys.FAVORITE_HEADPHONES] ?: ""),
+            favoritePresets = CustomPresetNameCodec.decode(prefs[Keys.FAVORITE_PRESETS] ?: "")
         )
     }
 
@@ -614,6 +672,7 @@ class UserPreferencesRepository(private val context: Context) {
             prefs[Keys.DEVICE_PROFILES] = DeviceProfiles.encode(data.deviceProfiles)
             prefs[Keys.DEVICE_CHOICES] = DeviceHeadphoneMemory.encode(data.deviceChoices)
             prefs[Keys.FAVORITE_HEADPHONES] = CustomPresetNameCodec.encode(data.favoriteHeadphones)
+            prefs[Keys.FAVORITE_PRESETS] = CustomPresetNameCodec.encode(data.favoritePresets)
         }
     }
 }

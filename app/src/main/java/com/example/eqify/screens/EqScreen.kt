@@ -96,6 +96,15 @@ class EqScreenViewModel(application: Application) : AndroidViewModel(application
 
     private val repository = (application as EqifyApplication).repository
 
+    // ── Favourites and haptics (FEATURES_BATCH4_PLAN.md S4, S5) ───────
+    val favoritePresets = repository.favoritePresets
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    val haptics = repository.haptics.stateIn(viewModelScope, SharingStarted.Eagerly, true)
+    fun toggleFavorite(name: String) { viewModelScope.launch { repository.editFavoritePresets { PresetFavorites.toggle(it, name) } } }
+    fun moveFavorite(name: String, up: Boolean) {
+        viewModelScope.launch { repository.editFavoritePresets { PresetFavorites.move(it, name, up) } }
+    }
+
     private val defaultPresetNames = EqProfileManager.defaultProfiles.keys.toList()
 
     val customPresetNames: StateFlow<List<String>> = repository.customPresetNames
@@ -688,6 +697,12 @@ fun EqScreen(vm: EqScreenViewModel = viewModel()) {
     var showLayers by remember { mutableStateOf(false) }
     if (showLayers) SoundLayersSheet(genreStrengthNote, onDismiss = { showLayers = false })
     val isBypassed        by EqState.isBypassed.collectAsState()
+    val favorites         by vm.favoritePresets.collectAsState()
+    val haptics           by vm.haptics.collectAsState()
+    // A/B level match (FEATURES_BATCH4_PLAN.md S1): only while this screen is open.
+    val levelMatch        by EqState.levelMatchActive.collectAsState()
+    val outputGains       by EqState.activeBandGains.collectAsState()
+    DisposableEffect(Unit) { onDispose { EqState.setLevelMatchActive(false) } }
     var renameTarget by remember { mutableStateOf<String?>(null) }
     var renameDraft by remember { mutableStateOf("") }
     var renameError by remember { mutableStateOf<String?>(null) }
@@ -730,7 +745,8 @@ fun EqScreen(vm: EqScreenViewModel = viewModel()) {
         onRename = { renameTarget = it; renameDraft = it; renameError = null; vm.closePresetPicker() },
         onNewProfile = { vm.openNewProfile() }, onDismiss = { vm.closePresetPicker() },
         onShare = { vm.openShare(it) }, onImport = { vm.openImport() },
-        customised = genreOverrides.keys, onResetToDefault = { vm.resetToDefault(it) }
+        customised = genreOverrides.keys, onResetToDefault = { vm.resetToDefault(it) },
+        favorites = favorites, onToggleFavorite = vm::toggleFavorite, onMoveFavorite = vm::moveFavorite
     )
 
     // ── Profile sharing ───────────────────────────────────────────────
@@ -859,6 +875,18 @@ fun EqScreen(vm: EqScreenViewModel = viewModel()) {
             )
         }
 
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Match loudness", style = MaterialTheme.typography.bodyMedium, color = c.textPrimary)
+                Text(
+                    if (levelMatch) "EQ lowered by ${"%.1f".format(LevelMatch.offset(outputGains))} dB so EQ and Original compare fairly"
+                    else "Compare EQ and Original at the same loudness",
+                    style = MaterialTheme.typography.bodySmall, color = c.textMuted
+                )
+            }
+            Switch(checked = levelMatch, onCheckedChange = { EqState.setLevelMatchActive(it) })
+        }
+
         deviceSourceLabel?.let {
             Text("Preset set by $it. Change it in Headphones > My devices.",
                 style = MaterialTheme.typography.bodySmall, color = c.textMuted)
@@ -885,6 +913,7 @@ fun EqScreen(vm: EqScreenViewModel = viewModel()) {
             EqBandsPanel(
                 bands = bands,
                 dimmed = isBypassed,
+                haptics = haptics,
                 onChange = { index, gain -> vm.updateBand(index, gain) },
                 onReadoutClick = { preciseBand = it },
                 modifier = Modifier.fillMaxSize()
@@ -973,6 +1002,7 @@ private val TrackInset = 12.dp
 private fun EqBandsPanel(
     bands: List<Float>,
     dimmed: Boolean,
+    haptics: Boolean = true,
     onChange: (Int, Float) -> Unit,
     onReadoutClick: (Int) -> Unit,
     modifier: Modifier = Modifier
@@ -1011,6 +1041,7 @@ private fun EqBandsPanel(
                         gainDb = bands.getOrElse(i) { 0f },
                         band = labels[i],
                         dimmed = dimmed,
+                        haptics = haptics,
                         onChange = { onChange(i, it) },
                         modifier = Modifier.weight(1f).fillMaxHeight()
                     )
@@ -1039,9 +1070,13 @@ private fun EqBandTrack(
     band: String,
     dimmed: Boolean,
     onChange: (Float) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    haptics: Boolean = true
 ) {
     val currentOnChange by rememberUpdatedState(onChange)
+    // A tick per 1 dB step, a stronger one at 0 dB (FEATURES_BATCH4_PLAN.md S5).
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
+    val currentHaptics by rememberUpdatedState(haptics)
     val currentGain by rememberUpdatedState(gainDb)
     val quantize: (Float) -> Float = { ((it * 2).roundToInt() / 2f).coerceIn(-12f, 12f) }
     // Theme values must be read here: the draw lambda is not composable.
@@ -1064,13 +1099,23 @@ private fun EqBandTrack(
             }
             .pointerInput(Unit) {
                 var dragGain = 0f
+                var lastStep = 0
                 detectVerticalDragGestures(
-                    onDragStart = { dragGain = currentGain },
+                    onDragStart = { dragGain = currentGain; lastStep = kotlin.math.floor(currentGain).toInt() },
                     onVerticalDrag = { change, dragAmount ->
                         change.consume()
                         val usableHeight = (size.height - 2 * TrackInset.toPx()).coerceAtLeast(1f)
                         dragGain = (dragGain - dragAmount * 24f / usableHeight).coerceIn(-12f, 12f)
-                        currentOnChange(quantize(dragGain))
+                        val q = quantize(dragGain)
+                        val step = kotlin.math.floor(q).toInt()
+                        if (currentHaptics && step != lastStep) {
+                            haptic.performHapticFeedback(
+                                if (q == 0f) androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress
+                                else androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove
+                            )
+                        }
+                        lastStep = step
+                        currentOnChange(q)
                     }
                 )
             }
@@ -1134,7 +1179,9 @@ fun PresetPickerDialog(
     onSelect: (String) -> Unit, onDelete: (String) -> Unit, onRename: (String) -> Unit,
     onNewProfile: () -> Unit, onDismiss: () -> Unit,
     onShare: (String) -> Unit = {}, onImport: () -> Unit = {},
-    customised: Set<String> = emptySet(), onResetToDefault: (String) -> Unit = {}
+    customised: Set<String> = emptySet(), onResetToDefault: (String) -> Unit = {},
+    favorites: List<String> = emptyList(), onToggleFavorite: (String) -> Unit = {},
+    onMoveFavorite: (String, Boolean) -> Unit = { _, _ -> }
 ) {
     EqSheet(
         title = "EQ presets",
@@ -1146,13 +1193,28 @@ fun PresetPickerDialog(
         }
     ) {
         val builtIn = allPresets.filter { candidate -> customPresets.none { it.equals(candidate, ignoreCase = true) } }
+        val favs = PresetFavorites.present(favorites, customPresets + builtIn)
+        fun isFav(name: String) = favs.any { it.equals(name, true) }
+        if (favs.isNotEmpty()) {
+            SectionHeader("Favourites")
+            EqCard(contentPadding = PaddingValues(0.dp)) {
+                favs.forEachIndexed { i, name ->
+                    if (i > 0) HorizontalDivider(color = EqifyTheme.colors.outline)
+                    FavoriteRow(name, name == activePreset, onSelect = { onSelect(name) },
+                        canUp = i > 0, canDown = i < favs.size - 1,
+                        onUp = { onMoveFavorite(name, true) }, onDown = { onMoveFavorite(name, false) },
+                        onUnstar = { onToggleFavorite(name) })
+                }
+            }
+        }
         if (customPresets.isNotEmpty()) {
             SectionHeader("My presets")
             EqCard(contentPadding = PaddingValues(0.dp)) {
                 customPresets.forEachIndexed { i, name ->
                     if (i > 0) HorizontalDivider(color = EqifyTheme.colors.outline)
                     PresetRow(name, name == activePreset, isCustom = true, onSelect = { onSelect(name) },
-                        onDelete = { onDelete(name) }, onRename = { onRename(name) }, onShare = { onShare(name) })
+                        onDelete = { onDelete(name) }, onRename = { onRename(name) }, onShare = { onShare(name) },
+                        favorite = isFav(name), onToggleFavorite = { onToggleFavorite(name) })
                 }
             }
         }
@@ -1164,7 +1226,8 @@ fun PresetPickerDialog(
                 PresetRow(name, name == activePreset, isCustom = false, onSelect = { onSelect(name) },
                     onDelete = {}, onShare = { onShare(name) },
                     subtitle = if (isCustomised) "Customised" else null,
-                    onResetToDefault = if (isCustomised) ({ onResetToDefault(name) }) else null)
+                    onResetToDefault = if (isCustomised) ({ onResetToDefault(name) }) else null,
+                    favorite = isFav(name), onToggleFavorite = { onToggleFavorite(name) })
             }
         }
     }
@@ -1176,7 +1239,9 @@ private fun PresetRow(
     onSelect: () -> Unit, onDelete: () -> Unit, onRename: () -> Unit = {},
     onShare: (() -> Unit)? = null,
     subtitle: String? = null,
-    onResetToDefault: (() -> Unit)? = null
+    onResetToDefault: (() -> Unit)? = null,
+    favorite: Boolean = false,
+    onToggleFavorite: (() -> Unit)? = null
 ) {
     val c = EqifyTheme.colors
     var menuOpen by remember { mutableStateOf(false) }
@@ -1187,6 +1252,12 @@ private fun PresetRow(
         onClick = onSelect,
         modifier = Modifier.semantics { selected = isActive },
         trailing = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+            if (onToggleFavorite != null) {
+                IconAction(if (favorite) EqIcons.Star else EqIcons.StarOutline,
+                    if (favorite) "Remove $name from favourites" else "Add $name to favourites", onToggleFavorite,
+                    tint = if (favorite) c.accent else c.textMuted)
+            }
             Box {
                 if (isCustom) {
                     IconAction(EqIcons.More, "Options for $name", { menuOpen = true })
@@ -1203,6 +1274,33 @@ private fun PresetRow(
                     }
                 } else if (onShare != null) {
                     IconAction(EqIcons.Share, "Share $name", onShare)
+                }
+            }
+            }
+        }
+    )
+}
+
+/** A favourite preset, with move up/down (FEATURES_BATCH4_PLAN.md S4). */
+@Composable
+private fun FavoriteRow(
+    name: String, isActive: Boolean, onSelect: () -> Unit,
+    canUp: Boolean, canDown: Boolean, onUp: () -> Unit, onDown: () -> Unit, onUnstar: () -> Unit
+) {
+    val c = EqifyTheme.colors
+    var menuOpen by remember { mutableStateOf(false) }
+    SettingRow(
+        title = name,
+        icon = if (isActive) EqIcons.CheckCircle else EqIcons.Star,
+        onClick = onSelect,
+        modifier = Modifier.semantics { selected = isActive },
+        trailing = {
+            Box {
+                IconAction(EqIcons.More, "Options for favourite $name", { menuOpen = true })
+                DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }, containerColor = c.surfaceHighest) {
+                    if (canUp) MenuItem("Move up", EqIcons.Expand) { menuOpen = false; onUp() }
+                    if (canDown) MenuItem("Move down", EqIcons.Expand) { menuOpen = false; onDown() }
+                    MenuItem("Remove from favourites", EqIcons.StarOutline) { menuOpen = false; onUnstar() }
                 }
             }
         }

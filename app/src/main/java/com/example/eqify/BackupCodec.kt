@@ -18,11 +18,12 @@ data class BackupData(
     val deviceProfiles: Map<String, DeviceProfile> = emptyMap(),
     val deviceChoices: Map<String, DeviceChoice> = emptyMap(),
     val favoriteHeadphones: List<String> = emptyList(),
-    val importedCorrections: List<CustomEqProfile> = emptyList()
+    val importedCorrections: List<CustomEqProfile> = emptyList(),
+    val favoritePresets: List<String> = emptyList()
 ) {
     val isEmpty: Boolean get() = settings.isEmpty() && customPresets.isEmpty() && genreOverrides.isEmpty() &&
         deviceProfiles.isEmpty() && deviceChoices.isEmpty() && favoriteHeadphones.isEmpty() &&
-        importedCorrections.isEmpty()
+        importedCorrections.isEmpty() && favoritePresets.isEmpty()
 
     /** For example "6 presets, 3 genre curves, 2 devices, settings". */
     fun summary(): String {
@@ -58,6 +59,11 @@ object BackupCodec {
         "loudness_compensation" to Type.BOOLEAN,
         "volume_cap_enabled" to Type.BOOLEAN,
         "volume_cap_level" to Type.FLOAT,
+        "balance" to Type.FLOAT,
+        "haptics" to Type.BOOLEAN,
+        "safe_listening_enabled" to Type.BOOLEAN,
+        "safe_listening_mode" to Type.STRING,
+        "device_volume_memory" to Type.BOOLEAN,
         "update_auto_check" to Type.BOOLEAN,
         "selected_headphone" to Type.STRING,
         "headphone_correction_source" to Type.STRING,
@@ -98,6 +104,7 @@ object BackupCodec {
         root.addProperty("deviceProfiles", DeviceProfiles.encode(data.deviceProfiles))
         root.addProperty("deviceHeadphoneChoices", DeviceHeadphoneMemory.encode(data.deviceChoices))
         root.add("favoriteHeadphones", JsonArray().apply { data.favoriteHeadphones.forEach { add(it) } })
+        root.add("favoritePresets", JsonArray().apply { data.favoritePresets.forEach { add(it) } })
         root.add("importedCorrections", JsonArray().apply {
             data.importedCorrections.forEach { p ->
                 add(JsonObject().apply {
@@ -158,11 +165,14 @@ object BackupCodec {
         root.arr("customPresets")?.forEach { el ->
             val o = el.takeIf { it.isJsonObject }?.asJsonObject ?: throw BadBackup("A preset in this backup is damaged.")
             val name = o.str("name")?.trim().orEmpty()
-            if (name.isEmpty() || name.length > 100 || PresetNameRules.isReserved(name))
+            if (name.isEmpty() || name.length > 100)
                 throw BadBackup("A preset in this backup has an invalid name.")
             if (presets.any { it.first.equals(name, true) })
                 throw BadBackup("This backup has two presets named \"$name\".")
-            presets += name to gains(o.get("gains"), "preset \"$name\"")
+            val g = gains(o.get("gains"), "preset \"$name\"")
+            // A name that is now a built-in (for example Dialogue) keeps the preset under a new name.
+            val safeName = if (PresetNameRules.isReserved(name)) PresetNameRules.uniqueName("$name (Custom)", presets.map { it.first }) else name
+            presets += safeName to g
         }
 
         val overrides = linkedMapOf<String, List<Float>>()
@@ -172,6 +182,11 @@ object BackupCodec {
             if (!GenreCurveOverrides.isValidCurve(g)) throw BadBackup("The genre curve \"$name\" is damaged.")
             overrides[name] = g
         }
+
+        val favoritePresets = root.arr("favoritePresets")?.mapNotNull { el ->
+            el.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }?.asString?.trim()
+                ?.takeIf { it.isNotEmpty() && it.length <= 100 }
+        }?.distinctBy { it.lowercase() }.orEmpty()
 
         val favorites = root.arr("favoriteHeadphones")?.mapNotNull { el ->
             el.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }?.asString?.trim()
@@ -202,7 +217,8 @@ object BackupCodec {
             deviceProfiles = DeviceProfiles.decode(root.str("deviceProfiles")),
             deviceChoices = DeviceHeadphoneMemory.decode(root.str("deviceHeadphoneChoices")),
             favoriteHeadphones = favorites,
-            importedCorrections = corrections
+            importedCorrections = corrections,
+            favoritePresets = favoritePresets
         )
     }
 
@@ -211,6 +227,8 @@ object BackupCodec {
         "bass_boost_level" -> DeviceProfiles.normaliseBass(value as Float)
         "genre_strength" -> GenreStrength.normalise(value as Float)
         "volume_cap_level" -> VolumeCap.normalise(value as Float)
+        "balance" -> StereoBalance.normalise(value as Float)
+        "safe_listening_mode" -> SafeListening.Mode.entries.firstOrNull { it.name == value }?.name
         "output_protection_mode" -> OutputProtectionMode.fromStorageValue(value as String)?.name
         "headphone_correction_source" -> (value as String).takeIf { it in setOf("dataset", "custom", "none") }
         "selected_headphone", "custom_correction_id", "last_preset" -> (value as String).trim().takeIf { it.isNotEmpty() }
@@ -238,6 +256,7 @@ object BackupCodec {
             deviceProfiles = incoming.deviceProfiles + current.deviceProfiles,
             deviceChoices = incoming.deviceChoices + current.deviceChoices,
             favoriteHeadphones = (current.favoriteHeadphones + incoming.favoriteHeadphones).distinct(),
+            favoritePresets = (current.favoritePresets + incoming.favoritePresets).distinctBy { it.lowercase() },
             importedCorrections = current.importedCorrections +
                 incoming.importedCorrections.filter { inc -> current.importedCorrections.none { it.id == inc.id } }
         )

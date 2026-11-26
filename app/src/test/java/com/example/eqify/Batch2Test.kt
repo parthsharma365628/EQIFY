@@ -128,10 +128,12 @@ class BackupCodecTest {
         assertTrue(BackupCodec.parse(text) is BackupCodec.Result.Error)
     }
 
-    @Test fun reservedAndDuplicatePresetNamesRejected() {
+    @Test fun reservedNamesRenamedDuplicatesRejected() {
+        // A name that became a built-in is kept under a new name (FEATURES_BATCH4_PLAN.md §5).
         val builtIn = EqProfileManager.defaultProfiles.keys.first()
-        assertTrue(BackupCodec.parse(BackupCodec.build(BackupData(customPresets = listOf(builtIn to curve)), "x", 1L))
-            is BackupCodec.Result.Error)
+        val r = BackupCodec.parse(BackupCodec.build(BackupData(customPresets = listOf(builtIn to curve)), "x", 1L))
+            as BackupCodec.Result.Ok
+        assertEquals("$builtIn (Custom)", r.data.customPresets.single().first)
         assertTrue(BackupCodec.parse(BackupCodec.build(BackupData(customPresets = listOf("A" to curve, "a" to curve)), "x", 1L))
             is BackupCodec.Result.Error)
     }

@@ -43,8 +43,8 @@ android {
         minSdk = 26
         targetSdk = 36
         // Increase versionCode for every build you hand out.
-        versionCode = 5
-        versionName = "0.4.0-beta"
+        versionCode = 6
+        versionName = "0.5.0-beta"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -121,6 +121,8 @@ dependencies {
     implementation("com.google.android.gms:play-services-code-scanner:16.1.0")
     // Play services pulls fragment 1.0.0, which breaks registerForActivityResult; force a modern one.
     implementation("androidx.fragment:fragment:1.8.5")
+    // Wear OS bridge (FEATURES_BATCH4_PLAN.md W): Data Layer messages and status.
+    implementation("com.google.android.gms:play-services-wearable:19.0.0")
     // Crash/ANR/native-crash reporting; initialized manually in EqifyApplication.
     implementation("io.sentry:sentry-android:7.14.0")
     implementation(libs.androidx.core.ktx)

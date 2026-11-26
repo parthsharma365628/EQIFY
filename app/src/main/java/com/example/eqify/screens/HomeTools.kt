@@ -91,3 +91,23 @@ internal fun TestSoundSheet(
             style = MaterialTheme.typography.bodySmall, color = c.textMuted)
     }
 }
+
+/** "What changed" (FEATURES_BATCH4_PLAN.md S6): the session's automatic changes, newest first. */
+@Composable
+internal fun ChangesSheet(entries: List<ChangeLog.Entry>, onDismiss: () -> Unit) {
+    val c = EqifyTheme.colors
+    val format = remember { java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT) }
+    EqSheet(title = "What changed", subtitle = "Automatic changes since EQify started. Not saved.", onDismiss = onDismiss) {
+        if (entries.isEmpty()) {
+            Text("Nothing yet. Changes appear here as songs, headphones and settings change.",
+                style = MaterialTheme.typography.bodyMedium, color = c.textMuted)
+        }
+        entries.forEach { e ->
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(EqSpacing.m)) {
+                Text(format.format(java.util.Date(e.atMillis)), style = MaterialTheme.typography.bodySmall.tabular(),
+                    color = c.textMuted, modifier = Modifier.width(64.dp))
+                Text(e.text, style = MaterialTheme.typography.bodyMedium, color = c.textPrimary, modifier = Modifier.weight(1f))
+            }
+        }
+    }
+}

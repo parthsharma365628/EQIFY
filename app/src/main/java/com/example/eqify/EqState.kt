@@ -115,6 +115,11 @@ object EqState {
     fun setMediaVolumeFraction(fraction: Float) { _mediaVolumeFraction.value = fraction; recomputeVolumeFeatures() }
     fun setVolumeAwareBass(enabled: Boolean)    { volumeAwareBass = enabled; recomputeVolumeFeatures() }
     fun setLoudnessCompensation(enabled: Boolean) { loudnessCompensation = enabled; recomputeVolumeFeatures() }
+    // A/B level match (FEATURES_BATCH4_PLAN.md S1): on only while the EQ screen compares.
+    private val _levelMatchActive = MutableStateFlow(false)
+    val levelMatchActive = _levelMatchActive.asStateFlow()
+    fun setLevelMatchActive(active: Boolean) { _levelMatchActive.value = active }
+
     fun setVolumeFeaturesFrozen(frozen: Boolean) {
         frozenFraction = if (frozen) (frozenFraction ?: _mediaVolumeFraction.value) else null
         recomputeVolumeFeatures()

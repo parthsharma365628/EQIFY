@@ -71,6 +71,12 @@ fun HomeScreen(
     val playingTone by viewModel.playingTone.collectAsState()
     val forceMono by viewModel.forceMono.collectAsState(initial = false)
     val appliedLoudness by EqState.appliedLoudness.collectAsState()
+    var showChanges by remember { mutableStateOf(false) }
+    var showSpectrum by remember { mutableStateOf(false) }
+    val changes by viewModel.changes.collectAsState()
+    val safeListeningEnabled by viewModel.safeListeningEnabled.collectAsState(initial = false)
+    val listeningDose by viewModel.listeningDose.collectAsState(initial = emptyMap())
+    val weeklyDose = SafeListening.weekly(listeningDose, java.time.LocalDate.now())
     var showMix by remember { mutableStateOf(false) }
     var correctionTarget by remember { mutableStateOf<Pair<String, String>?>(null) }
     val customPresets by viewModel.customPresetNames.collectAsState()
@@ -101,6 +107,8 @@ fun HomeScreen(
         TestSoundSheet(playing = playingTone, forceMono = forceMono, enabled = serviceRunning,
             onPlay = viewModel::playTestTone, onDismiss = { showTestSound = false })
     }
+    if (showChanges) ChangesSheet(changes, onDismiss = { showChanges = false })
+    if (showSpectrum) SpectrumSheet(onDismiss = { showSpectrum = false })
     if (showRecent) {
         RecentTracksSheet(recentTracks, onCorrect = { title, artist ->
             showRecent = false
@@ -179,6 +187,26 @@ fun HomeScreen(
         )
 
         GenreMixRow(genreMix, onClick = { showMix = true })
+
+        // Safe listening note from 80% of the weekly allowance (FEATURES_BATCH4_PLAN.md L).
+        if (safeListeningEnabled && weeklyDose >= SafeListening.NOTE_FROM) {
+            StatusBanner(
+                "You've used about ${SafeListening.percent(weeklyDose)}% of this week's listening allowance (estimated). " +
+                    "A little lower volume lets you listen longer safely.",
+                if (weeklyDose >= 1.0) StatusKind.WARNING else StatusKind.NEUTRAL, gutter
+            )
+        }
+
+        Column(Modifier.fillMaxWidth()) {
+            SettingRow(title = "Live spectrum", subtitle = "See the frequencies of what's playing",
+                icon = EqIcons.GraphicEq, onClick = { showSpectrum = true },
+                trailing = { EqIcon(EqIcons.Expand, null, size = 20.dp) })
+            HorizontalDivider(color = EqifyTheme.colors.outline, modifier = Modifier.padding(start = 56.dp))
+            SettingRow(title = "What changed",
+                subtitle = changes.firstOrNull()?.text ?: "Automatic changes EQify made",
+                icon = EqIcons.Refresh, onClick = { showChanges = true },
+                trailing = { EqIcon(EqIcons.Expand, null, size = 20.dp) })
+        }
     }
 }
 

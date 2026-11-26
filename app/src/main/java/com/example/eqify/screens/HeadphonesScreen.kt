@@ -129,7 +129,10 @@ class HeadphonesViewModel(application: Application) : AndroidViewModel(applicati
                 val profile = withContext(Dispatchers.IO) {
                     val document = BoundedTextReader.read(app, uri, maxBytes = 1_048_576, limitLabel = "1 MiB")
                     val filename = document.displayName ?: "GraphicEQ.txt"
-                    val result = GraphicEqImporter.convert(document.text)
+                    // AutoEQ ParametricEQ.txt or GraphicEQ (FEATURES_BATCH4_PLAN.md P).
+                    val result = if (ParametricEqImporter.looksParametric(document.text)) {
+                        ParametricEqImporter.convert(document.text).let { GraphicEqImporter.Result(it.gains, it.limited) }
+                    } else GraphicEqImporter.convert(document.text)
                     customProfilesRepository.importProfile(filename.substringBeforeLast('.').ifBlank { "Imported EQ" },
                         filename, result.gains) to result.limited
                 }
@@ -582,7 +585,7 @@ private fun AddCorrectionButton(onImportFile: () -> Unit, onPaste: () -> Unit) {
     Box {
         TonalButton("Add correction", { open = true }, icon = EqIcons.Add)
         DropdownMenu(expanded = open, onDismissRequest = { open = false }, containerColor = EqifyTheme.colors.surfaceHighest) {
-            HpMenuItem("Import GraphicEQ file", EqIcons.FileOpen) { open = false; onImportFile() }
+            HpMenuItem("Import GraphicEQ or ParametricEQ file", EqIcons.FileOpen) { open = false; onImportFile() }
             HpMenuItem("Paste 10-band values", EqIcons.Paste) { open = false; onPaste() }
         }
     }
@@ -606,7 +609,7 @@ private fun CustomProfileRow(
     var menu by remember { mutableStateOf(false) }
     SettingRow(
         title = profile.displayName,
-        subtitle = if (selected) "In use" else "From a GraphicEQ file",
+        subtitle = if (selected) "In use" else "Imported correction",
         icon = if (selected) EqIcons.CheckCircle else EqIcons.GraphicEq,
         onClick = onSelect,
         modifier = Modifier.semantics { this.selected = selected },

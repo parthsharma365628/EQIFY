@@ -28,6 +28,12 @@ These services have their own privacy policies: Apple, Last.fm, GitHub and Sentr
 
 Your presets and customised genre curves, settings, genre corrections, recent tracks and the weekly genre mix. EQify also keeps imported GraphicEQ files and downloaded headphone corrections there. You can clear these in **Settings → Data & privacy**, or remove all of them by uninstalling the app.
 
+**Live spectrum.** When you open Home → Live spectrum, EQify asks for the "Record audio" permission. Android requires it to read an app's own audio output. EQify reads only what is playing, only while that screen is open. It never uses the microphone, and never saves or sends audio.
+
+**Safe listening.** EQify estimates your weekly listening from your volume level, on the phone only. The estimate is not included in backups and never leaves the phone.
+
+**Wear OS.** The optional watch app talks only to EQify on your paired phone, through Google Play services on your devices.
+
 **Automation.** If you turn on Settings → Automation, other apps on your phone (like Tasker) can turn EQ on or off, set bass or a preset, or start the sleep timer. They can't read anything from EQify. It is off by default.
 
 **Backups.** Settings → Backup & restore saves your presets, genre curves, device settings and other settings to a file you choose. It includes your headphone and device names, but no listening history. EQify never uploads it; it goes only where you save or share it.

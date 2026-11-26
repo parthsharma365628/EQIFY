@@ -42,6 +42,10 @@ object EqEngine {
     private var appliedLevels: IntArray? = null
     private var limiterProtectionRequested = false
     private var orbitGainsDirty = false
+    // Stereo balance (FEATURES_BATCH4_PLAN.md §1): per-channel input gain on the same
+    // processor as Orbit. Every channel write adds balance + orbit in one place.
+    private var balanceLeftDb = 0f
+    private var balanceRightDb = 0f
 
     private val _limiterDiagnosticStatus = MutableStateFlow(initialLimiterStatus())
     val limiterDiagnosticStatus = _limiterDiagnosticStatus.asStateFlow()
@@ -267,11 +271,12 @@ object EqEngine {
                 )
             }
             dynamicsProcessor = processor
-            if (BuildConfig.DEBUG) {
-                // If another client took control during a sweep, neutralize the
-                // old gains as soon as we can write to this attachment again.
-                processor.setControlStatusListener { _, hasControl ->
-                    if (hasControl && dynamicsProcessor === processor) resetOrbitGains()
+            // If another client took control, neutralize old Orbit gains and put the
+            // balance back as soon as we can write to this attachment again.
+            processor.setControlStatusListener { _, hasControl ->
+                if (hasControl && dynamicsProcessor === processor) {
+                    resetOrbitGains()
+                    writeBalance()
                 }
             }
             publishLimiterStatus(
@@ -292,6 +297,7 @@ object EqEngine {
                 throw IllegalStateException("DynamicsProcessing refused the enable request")
             }
             logLimiterReadback(processor)
+            writeBalance()
             publishLimiterStatus(
                 LimiterDiagnosticStatus(
                     state = if (effectEnabled) {
@@ -416,8 +422,8 @@ object EqEngine {
             if (!processor.hasControl()) return false
             // Either channel may already have changed when a later write fails.
             orbitGainsDirty = true
-            processor.setInputGainbyChannel(0, gains.leftDb)
-            processor.setInputGainbyChannel(1, gains.rightDb)
+            processor.setInputGainbyChannel(0, gains.leftDb + balanceLeftDb)
+            processor.setInputGainbyChannel(1, gains.rightDb + balanceRightDb)
             true
         } catch (e: Exception) {
             Log.w(TAG, "Orbit gain write failed", e)
@@ -432,13 +438,35 @@ object EqEngine {
         var restored = true
         for (channel in 0 until LIMITER_CHANNEL_COUNT) {
             try {
-                processor.setInputGainbyChannel(channel, 0f)
+                processor.setInputGainbyChannel(channel, if (channel == 0) balanceLeftDb else balanceRightDb)
             } catch (e: Exception) {
                 restored = false
                 Log.w(TAG, "Could not restore Orbit channel $channel", e)
             }
         }
         orbitGainsDirty = !restored
+    }
+
+    /** Stereo balance; applied when the Balanced processor is attached (plan S2). */
+    fun setBalance(leftDb: Float, rightDb: Float) {
+        balanceLeftDb = leftDb.coerceIn(-StereoBalance.MAX_CUT_DB, 0f)
+        balanceRightDb = rightDb.coerceIn(-StereoBalance.MAX_CUT_DB, 0f)
+        writeBalance()
+    }
+
+    /** True when balance can be heard: the processor exists and is enabled. */
+    fun isBalanceAvailable(): Boolean = dynamicsProcessor != null && _limiterDiagnosticStatus.value.enabled
+
+    private fun writeBalance() {
+        if (orbitGainsDirty) return      // Orbit's next write already includes the balance
+        val processor = dynamicsProcessor ?: return
+        try {
+            if (!processor.hasControl()) return
+            processor.setInputGainbyChannel(0, balanceLeftDb)
+            processor.setInputGainbyChannel(1, balanceRightDb)
+        } catch (e: Exception) {
+            Log.w(TAG, "Balance write failed", e)
+        }
     }
 
     // ── Gain application ──────────────────────────────────────────────

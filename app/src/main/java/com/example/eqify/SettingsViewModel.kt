@@ -267,6 +267,21 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     fun setLoudnessCompensation(enabled: Boolean) { viewModelScope.launch { repository.setLoudnessCompensation(enabled) } }
     fun setVolumeCapEnabled(enabled: Boolean) { viewModelScope.launch { repository.setVolumeCapEnabled(enabled) } }
     fun setVolumeCapLevel(value: Float) { viewModelScope.launch { repository.setVolumeCapLevel(value) } }
+    // ── Batch 4 (FEATURES_BATCH4_PLAN.md) ─────────────────────────────
+    val balance = repository.balance
+    val haptics = repository.haptics
+    val deviceVolumeMemory = repository.deviceVolumeMemory
+    val safeListeningEnabled = repository.safeListeningEnabled
+    val safeListeningMode = repository.safeListeningMode
+    val listeningDose = repository.listeningDose
+    val limiterStatusForBalance = EqEngine.limiterDiagnosticStatus
+    fun setBalance(value: Float) { viewModelScope.launch { repository.setBalance(value) } }
+    fun setHaptics(enabled: Boolean) { viewModelScope.launch { repository.setHaptics(enabled) } }
+    fun setDeviceVolumeMemory(enabled: Boolean) { viewModelScope.launch { repository.setDeviceVolumeMemory(enabled) } }
+    fun setSafeListeningEnabled(enabled: Boolean) { viewModelScope.launch { repository.setSafeListeningEnabled(enabled) } }
+    fun setSafeListeningMode(mode: SafeListening.Mode) { viewModelScope.launch { repository.setSafeListeningMode(mode) } }
+    fun resetListeningDose() { viewModelScope.launch { repository.clearListeningDose() } }
+
     fun setAutomationEnabled(enabled: Boolean) { viewModelScope.launch { repository.setAutomationEnabled(enabled) } }
 
     fun setForceMono(enabled: Boolean) {

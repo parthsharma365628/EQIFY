@@ -67,6 +67,13 @@ fun SettingsScreen(
     val volumeCapLevel by vm.volumeCapLevel.collectAsState(initial = VolumeCap.DEFAULT)
     val automationEnabled by vm.automationEnabled.collectAsState(initial = false)
     var showAutomationHelp by remember { mutableStateOf(false) }
+    val balance by vm.balance.collectAsState(initial = 0f)
+    val haptics by vm.haptics.collectAsState(initial = true)
+    val deviceVolumeMemory by vm.deviceVolumeMemory.collectAsState(initial = false)
+    val safeListeningEnabled by vm.safeListeningEnabled.collectAsState(initial = true)
+    val safeListeningMode by vm.safeListeningMode.collectAsState(initial = SafeListening.Mode.ADULT)
+    val listeningDose by vm.listeningDose.collectAsState(initial = emptyMap())
+    var showSafeListeningInfo by remember { mutableStateOf(false) }
     val mediaListenerEnabled  by vm.mediaListenerEnabled.collectAsState(initial = true)
     val headphoneAutoDetect   by vm.headphoneAutoDetect.collectAsState(initial = true)
     val savedLastFmApiKey     by vm.lastFmApiKey.collectAsState(initial = "")
@@ -204,6 +211,8 @@ fun SettingsScreen(
         )
     }
     if (showAutomationHelp) AutomationHelpSheet(onDismiss = { showAutomationHelp = false })
+    if (showSafeListeningInfo) SafeListeningInfoSheet(onReset = { vm.resetListeningDose(); showSafeListeningInfo = false },
+        onDismiss = { showSafeListeningInfo = false })
     if (showPrivacySheet) PrivacySheet(onDismiss = { showPrivacySheet = false })
     if (showLicencesSheet) LicencesSheet(onDismiss = { showLicencesSheet = false })
 
@@ -311,6 +320,28 @@ fun SettingsScreen(
                     )
                 }
                 RowDivider()
+                // Stereo balance (FEATURES_BATCH4_PLAN.md S2): needs the Balanced processor.
+                BalanceRow(balance = balance, available = limiterStatus.enabled,
+                    onChange = vm::setBalance, onOpenSystem = {
+                        runCatching { context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
+                    })
+                RowDivider()
+                SwitchRow(
+                    title = "Remember volume per device",
+                    subtitle = "Each pair of headphones, the car and the speaker get back their last volume when they connect",
+                    checked = deviceVolumeMemory,
+                    onCheckedChange = vm::setDeviceVolumeMemory,
+                    icon = EqIcons.Bluetooth
+                )
+                RowDivider()
+                SwitchRow(
+                    title = "Slider ticks",
+                    subtitle = "A light tick per dB while dragging EQ sliders, stronger at 0 dB",
+                    checked = haptics,
+                    onCheckedChange = vm::setHaptics,
+                    icon = EqIcons.Tune
+                )
+                RowDivider()
                 SwitchRow(
                     title = "Bass button in notification",
                     subtitle = "Cycle bass boost (Off, +3, +6, +9 dB) from the EQify notification",
@@ -369,6 +400,35 @@ fun SettingsScreen(
                     subtitle = "Optional. Improves genre detection",
                     onClick = { showLastFmSheet = true },
                     icon = EqIcons.Edit
+                )
+            }
+
+            Group("Safe listening") {
+                val weekly = SafeListening.weekly(listeningDose, java.time.LocalDate.now())
+                SwitchRow(
+                    title = "Listening allowance",
+                    subtitle = if (safeListeningEnabled) "This week: about ${SafeListening.percent(weekly)}% (estimated). Reminders at 100%"
+                        else "Track your weekly listening against WHO safe-listening guidance",
+                    checked = safeListeningEnabled,
+                    onCheckedChange = vm::setSafeListeningEnabled,
+                    icon = EqIcons.Headphones
+                )
+                if (safeListeningEnabled) {
+                    SegmentedToggle(
+                        options = SafeListening.Mode.entries.toList(),
+                        selected = safeListeningMode,
+                        onSelect = vm::setSafeListeningMode,
+                        label = { if (it == SafeListening.Mode.ADULT) "Adults" else "Sensitive" },
+                        modifier = Modifier.fillMaxWidth().padding(start = 56.dp, end = EqSpacing.m, bottom = EqSpacing.s)
+                    )
+                }
+                RowDivider()
+                SettingRow(
+                    title = "How this works",
+                    subtitle = "What's estimated, and the WHO guidance it follows",
+                    icon = EqIcons.Info,
+                    onClick = { showSafeListeningInfo = true },
+                    trailing = { EqIcon(EqIcons.Expand, null, size = 20.dp) }
                 )
             }
 
@@ -568,6 +628,53 @@ fun SettingsScreen(
                 }
             }
         }
+    }
+}
+
+// ── Batch 4 rows (FEATURES_BATCH4_PLAN.md) ────────────────────────────
+
+@Composable
+private fun BalanceRow(balance: Float, available: Boolean, onChange: (Float) -> Unit, onOpenSystem: () -> Unit) {
+    val c = EqifyTheme.colors
+    var dragging by remember { mutableStateOf<Float?>(null) }
+    val shown = dragging ?: balance
+    Column(Modifier.fillMaxWidth().padding(start = 56.dp, end = EqSpacing.m, top = EqSpacing.s, bottom = EqSpacing.s)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Stereo balance", style = MaterialTheme.typography.bodyLarge, color = c.textPrimary, modifier = Modifier.weight(1f))
+            Text(StereoBalance.label(shown), style = MaterialTheme.typography.labelMedium, color = c.textMuted)
+        }
+        Slider(
+            value = shown, valueRange = -100f..100f, steps = 39, enabled = available,
+            onValueChange = { dragging = StereoBalance.normalise(it) },
+            onValueChangeFinished = { dragging?.let(onChange); dragging = null }
+        )
+        if (!available) {
+            Text("Needs Balanced output protection on Android 9 or later. You can also use Android's own balance in Accessibility settings.",
+                style = MaterialTheme.typography.bodySmall, color = c.textMuted)
+            TextAction("Open Accessibility settings", onOpenSystem)
+        } else if (balance != 0f) {
+            TextAction("Centre", { onChange(0f) })
+        }
+    }
+}
+
+@Composable
+private fun SafeListeningInfoSheet(onReset: () -> Unit, onDismiss: () -> Unit) {
+    val c = EqifyTheme.colors
+    EqSheet(title = "Safe listening", subtitle = "Based on the WHO–ITU safe listening standard.", onDismiss = onDismiss) {
+        Text("The WHO suggests a weekly sound allowance: 80 dB for 40 hours for adults, or 75 dB for 40 hours in sensitive mode " +
+            "(children, or if you want to be careful). Every 3 dB louder halves the time.",
+            style = MaterialTheme.typography.bodyMedium, color = c.textPrimary)
+        Text("EQify can't measure the sound at your ears, so it estimates: your media volume, Android's volume curve, " +
+            "a 100 dB maximum for headphones at full volume, and your EQ boost. It counts only while music plays on " +
+            "headphones, over the last 7 days.",
+            style = MaterialTheme.typography.bodyMedium, color = c.textMuted)
+        Text("You'll get a reminder at 100%, 200% and so on, with options to lower the volume or turn on the volume limit. " +
+            "Some phones (Android 14 and later) also warn you themselves.",
+            style = MaterialTheme.typography.bodyMedium, color = c.textMuted)
+        Text("Your listening allowance stays on this phone and isn't included in backups.",
+            style = MaterialTheme.typography.bodySmall, color = c.textFaint)
+        TextAction("Reset this week's count", onReset, destructive = true)
     }
 }
 

@@ -24,3 +24,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "EQify"
 include(":app")
+include(":wear")

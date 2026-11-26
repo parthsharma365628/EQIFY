@@ -14,6 +14,9 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Live spectrum only (FEATURES_BATCH4_PLAN.md A): Android requires it for Visualizer, which
+         reads EQify's own audio output, not the microphone. Asked only when the analyser opens. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
     <application
         android:name=".EqifyApplication"
@@ -131,6 +134,37 @@
                 <action android:name="com.liteplane.eqify.action.SLEEP_TIMER" />
             </intent-filter>
         </receiver>
+
+        <!-- Batch 4 (FEATURES_BATCH4_PLAN.md) -->
+        <service
+            android:name=".BassTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_sym_equalizer"
+            android:label="Bass"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+        <service
+            android:name=".SleepTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_sym_bedtime"
+            android:label="Sleep timer"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+        <!-- Watch commands; Google Play services binds it. -->
+        <service
+            android:name=".WearCommandService"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.google.android.gms.wearable.MESSAGE_RECEIVED" />
+                <data android:scheme="wear" android:host="*" android:pathPrefix="/eqify/command" />
+            </intent-filter>
+        </service>
 
         <receiver
             android:name=".EqifyWidget"

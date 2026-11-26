@@ -28,10 +28,12 @@ object EqProfileManager {
         "K-Pop"      to floatArrayOf(2f, 2f, 2f, 3f, 4f, 3f, 3f, 4f),
         "Country"    to floatArrayOf(2f, 3f, 3f, 2f, 2f, 1f, 2f, 2f),
         "Ambient"    to floatArrayOf(2f, 1f, 0f, -1f, -1f, 1f, 3f, 4f),
+        // Films and videos: clearer voices without thinning the music (FEATURES_BATCH4_PLAN.md D).
+        "Dialogue"   to floatArrayOf(0f, -1f, -1f, 1f, 3f, 5f, 3f, 0f),
     )
 
     val correctionGenres: List<String> get() = defaultProfiles.keys
-        .filterNot { it == "Flat" || it == "Bass Boost" }
+        .filterNot { it == "Flat" || it == "Bass Boost" || it == "Dialogue" }
 
     private val genreKeywords = listOf(
         "afrobeats" to "Afrobeats",
