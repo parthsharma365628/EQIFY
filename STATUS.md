@@ -2,12 +2,13 @@
 
 The one place that says what's built and what's been checked on a device. Update it
 with every release: `CLAUDE.md` asks for this after each implementation.
-Last updated: 2026-11-27, **0.5.0-beta** (versionCode 6).
+Last updated: 2026-11-27, **0.5.0-beta** (versionCode 6). First emulator check on 2026-11-27: song detection, the tour and the genre-strength slider work.
 
 Design detail is in the feature plans; product goals are in `EQify_Android_PRD_v2.md`.
 
 **Status values**
 - **Device-validated:** run and checked on a real phone.
+- **Emulator-checked:** run and checked on the Android emulator. Screens, permissions and song detection behave as on a phone; audio effects don't, so sound still needs a phone.
 - **Built:** in a release build and covered by unit tests, but not yet checked on a device.
 - **Prototype:** debug builds only.
 - **Not started.**
@@ -18,11 +19,11 @@ Design detail is in the feature plans; product goals are in `EQify_Android_PRD_v
 
 | Feature | Version | Status | Notes |
 |---|---|---|---|
-| Automatic genre detection | 0.1 | Device-validated (earlier path); app-scoped coordinator built | Chain: user correction → local detector → optional Last.fm → iTunes. The Node backend step is **off in release builds** (no `https` URL configured). |
+| Automatic genre detection | 0.1 | Device-validated (earlier path); **app-scoped coordinator emulator-checked** (2026-11-27, 0.5.0-beta debug, after the package rename) | Chain: user correction → local detector → optional Last.fm → iTunes. The Node backend step is **off in release builds** (no `https` URL configured). |
 | Genre source and confidence display | 0.1 | Built | Heuristic confidence, not a probability. |
 | Genre correction, recent tracks | 0.1 | Built | Room-backed; corrections can point at the user's own presets. |
 | Customisable genre curves | 0.1 | Built | Users can edit each built-in genre's curve. |
-| Genre strength | 0.2 | Built | Scales only automatic genre EQ, globally or per device. |
+| Genre strength | 0.2 | **Emulator-checked** (slider, 2026-11-27) | Scales only automatic genre EQ, globally or per device. The audible effect still needs a phone. |
 | AutoEQ headphone correction (6,000+ profiles) | 0.1 | Device-validated | Static JSON on GitHub Pages; catalog cached, profiles downloaded on demand. |
 | Headphone detection (Bluetooth, USB-C, wired) | 0.1 | Built | Remembers the choice per device; no correction on the speaker or "Not headphones" devices. |
 | Custom correction import: GraphicEQ | 0.1 | Built | File or pasted autoeq.app table. |
@@ -76,7 +77,7 @@ Design detail is in the feature plans; product goals are in `EQify_Android_PRD_v
 
 | Feature | Version | Status | Notes |
 |---|---|---|---|
-| Onboarding tour | 0.4 | Built | Three pages, then the permission steps; replay from Settings. |
+| Onboarding tour | 0.4 | **Emulator-checked** (2026-11-27) | Three pages, then the permission steps; replay from Settings. |
 | Landscape and tablet layout | 0.4 | Built | Navigation rail at 600 dp+; side-by-side EQ in landscape. |
 | Themes | 0.1 | Device-validated | |
 | In-app update check | 0.2 | Built | Daily, against the public releases repo. |
@@ -88,4 +89,6 @@ Design detail is in the feature plans; product goals are in `EQify_Android_PRD_v
 
 - **A new feature:** add a row with its version and status **Built**.
 - **After testing on a phone:** change it to **Device-validated**, and add the device and date in Notes (for example, "Pixel 7, Android 15, 2026-12-02").
+- **After testing on the emulator:** use **Emulator-checked** with the date. Audio features stay **Built** until heard on a phone.
+- **Testing tip:** uninstall any old `com.example.eqify` build first. It keeps its own notification access and EQ, so two equalizers compete and the new app can't detect songs.
 - **A problem found on a device:** keep it **Built**, note the problem, and link the issue.
